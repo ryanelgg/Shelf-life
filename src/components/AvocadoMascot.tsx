@@ -11,6 +11,17 @@ interface AvocadoMascotProps {
   onTipShow?: (tip: string) => void;
 }
 
+// Earthy hand-drawn palette
+const SKIN      = '#4d6d3b';
+const SKIN_LINE = '#2b3f1a';
+const FLESH     = '#cdd98f';
+const FLESH_SHD = '#b5c47a';
+const PIT       = '#7c5130';
+const PIT_LINE  = '#4d3118';
+const LEAF      = '#3e6a2e';
+const LEAF_LINE = '#264a1c';
+const FACE      = '#3a2010';
+
 export function AvocadoMascot({ size = 56, isStatic = false, className = '', onTipShow }: AvocadoMascotProps) {
   const { avocadoTipIndex, nextAvocadoTip } = useStore();
   const [expression, setExpression] = useState<Expression>('happy');
@@ -38,7 +49,6 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
     tapTimesRef.current.push(now);
     tapTimesRef.current = tapTimesRef.current.filter(t => now - t < 500);
 
-    // Show a tip
     const tip = AVOCADO_TIPS[avocadoTipIndex % AVOCADO_TIPS.length];
     setShowTip(true);
     onTipShow?.(tip);
@@ -61,136 +71,116 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
   }, [isStatic, avocadoTipIndex, nextAvocadoTip, triggerReaction, onTipShow]);
 
   const renderEyes = () => {
-    const eyeBaseStyle: React.CSSProperties = {
+    const eye: React.CSSProperties = {
       width: s * 0.1,
       height: s * 0.12,
       borderRadius: '50%',
-      background: '#3D2914',
+      background: FACE,
       transition: 'all 0.15s ease',
+      position: 'relative',
     };
+    // small white glint — keeps life in the eyes without going 3D
+    const glint = (
+      <div style={{ position: 'absolute', width: s * 0.03, height: s * 0.03, background: '#fff', borderRadius: '50%', top: s * 0.018, left: s * 0.012 }} />
+    );
 
     switch (expression) {
       case 'excited':
         return (
           <div style={{ display: 'flex', gap: s * 0.15 }}>
-            <div style={{ ...eyeBaseStyle, width: s * 0.11, height: s * 0.13, background: '#3D2914' }}>
-              <div style={{ width: s * 0.04, height: s * 0.04, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.02 }} />
-            </div>
-            <div style={{ ...eyeBaseStyle, width: s * 0.11, height: s * 0.13, background: '#3D2914' }}>
-              <div style={{ width: s * 0.04, height: s * 0.04, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.02 }} />
-            </div>
+            <div style={{ ...eye, width: s * 0.11, height: s * 0.13 }}>{glint}</div>
+            <div style={{ ...eye, width: s * 0.11, height: s * 0.13 }}>{glint}</div>
           </div>
         );
       case 'wink':
         return (
           <div style={{ display: 'flex', gap: s * 0.15, alignItems: 'center' }}>
-            <div style={{ ...eyeBaseStyle }}>
-              <div style={{ width: s * 0.035, height: s * 0.035, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.015 }} />
-            </div>
-            <div style={{ width: s * 0.12, height: s * 0.03, borderRadius: s * 0.02, background: '#3D2914', marginTop: s * 0.02 }} />
+            <div style={eye}>{glint}</div>
+            <div style={{ width: s * 0.12, height: s * 0.025, borderRadius: s * 0.02, background: FACE, marginTop: s * 0.02 }} />
           </div>
         );
       case 'sleepy':
         return (
           <div style={{ display: 'flex', gap: s * 0.15, alignItems: 'center' }}>
-            <div style={{ width: s * 0.1, height: s * 0.03, borderRadius: s * 0.02, background: '#3D2914' }} />
-            <div style={{ width: s * 0.1, height: s * 0.03, borderRadius: s * 0.02, background: '#3D2914' }} />
+            <div style={{ width: s * 0.1, height: s * 0.025, borderRadius: s * 0.02, background: FACE }} />
+            <div style={{ width: s * 0.1, height: s * 0.025, borderRadius: s * 0.02, background: FACE }} />
           </div>
         );
       case 'surprised':
         return (
           <div style={{ display: 'flex', gap: s * 0.14 }}>
-            <div style={{ ...eyeBaseStyle, width: s * 0.13, height: s * 0.15 }}>
-              <div style={{ width: s * 0.05, height: s * 0.05, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.02 }} />
-            </div>
-            <div style={{ ...eyeBaseStyle, width: s * 0.13, height: s * 0.15 }}>
-              <div style={{ width: s * 0.05, height: s * 0.05, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.02 }} />
-            </div>
+            <div style={{ ...eye, width: s * 0.13, height: s * 0.15 }}>{glint}</div>
+            <div style={{ ...eye, width: s * 0.13, height: s * 0.15 }}>{glint}</div>
           </div>
         );
       case 'love':
         return (
           <div style={{ display: 'flex', gap: s * 0.1, fontSize: s * 0.18 }}>
-            <span>❤️</span>
-            <span>❤️</span>
+            <span>❤️</span><span>❤️</span>
           </div>
         );
       case 'thinking':
         return (
           <div style={{ display: 'flex', gap: s * 0.15, alignItems: 'center' }}>
-            <div style={{ ...eyeBaseStyle, transform: 'translateY(-2px)' }}>
-              <div style={{ width: s * 0.035, height: s * 0.035, background: '#FFF', borderRadius: '50%', marginTop: s * 0.015, marginLeft: s * 0.015 }} />
-            </div>
-            <div style={{ ...eyeBaseStyle, width: s * 0.11, height: s * 0.08, borderRadius: '50%' }}>
-              <div style={{ width: s * 0.04, height: s * 0.04, background: '#FFF', borderRadius: '50%', marginTop: s * 0.01, marginLeft: s * 0.04 }} />
+            <div style={{ ...eye, transform: 'translateY(-2px)' }}>{glint}</div>
+            <div style={{ ...eye, width: s * 0.11, height: s * 0.08, borderRadius: '50%' }}>
+              <div style={{ position: 'absolute', width: s * 0.03, height: s * 0.03, background: '#fff', borderRadius: '50%', top: s * 0.008, left: s * 0.04 }} />
             </div>
           </div>
         );
-      default: // happy, normal
+      default:
         return (
           <div style={{ display: 'flex', gap: s * 0.15 }}>
-            <div style={eyeBaseStyle}>
-              <div style={{ width: s * 0.035, height: s * 0.035, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.015 }} />
-            </div>
-            <div style={eyeBaseStyle}>
-              <div style={{ width: s * 0.035, height: s * 0.035, background: '#FFF', borderRadius: '50%', marginTop: s * 0.02, marginLeft: s * 0.015 }} />
-            </div>
+            <div style={eye}>{glint}</div>
+            <div style={eye}>{glint}</div>
           </div>
         );
     }
   };
 
   const renderMouth = () => {
+    const stroke = FACE;
     switch (expression) {
       case 'excited':
+      case 'love':
         return (
           <svg width={s * 0.28} height={s * 0.16} viewBox="0 0 20 12" fill="none">
-            <path d="M3 2 C6 12, 14 12, 17 2" stroke="#3D2914" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+            <path d="M3 2 C6 12, 14 12, 17 2" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" />
           </svg>
         );
       case 'surprised':
         return (
-          <div style={{
-            width: s * 0.1,
-            height: s * 0.1,
-            borderRadius: '50%',
-            border: `${Math.max(2, s * 0.03)}px solid #3D2914`,
-          }} />
-        );
-      case 'love':
-        return (
-          <svg width={s * 0.28} height={s * 0.16} viewBox="0 0 20 12" fill="none">
-            <path d="M3 2 C6 12, 14 12, 17 2" stroke="#3D2914" strokeWidth="2.2" strokeLinecap="round" fill="none" />
-          </svg>
+          <div style={{ width: s * 0.1, height: s * 0.1, borderRadius: '50%', border: `${Math.max(2, s * 0.03)}px solid ${stroke}` }} />
         );
       case 'sleepy':
         return (
           <svg width={s * 0.2} height={s * 0.1} viewBox="0 0 16 8" fill="none">
-            <path d="M4 4 C6 2, 10 2, 12 4" stroke="#3D2914" strokeWidth="2" strokeLinecap="round" fill="none" />
+            <path d="M4 4 C6 2, 10 2, 12 4" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
           </svg>
         );
       case 'thinking':
         return (
           <svg width={s * 0.18} height={s * 0.1} viewBox="0 0 14 8" fill="none">
-            <path d="M3 5 C5 3, 9 3, 11 5" stroke="#3D2914" strokeWidth="1.8" strokeLinecap="round" fill="none" />
+            <path d="M3 5 C5 3, 9 3, 11 5" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
           </svg>
         );
       case 'wink':
         return (
           <svg width={s * 0.24} height={s * 0.14} viewBox="0 0 18 10" fill="none">
-            <path d="M4 3 C7 10, 11 10, 14 3" stroke="#3D2914" strokeWidth="2" strokeLinecap="round" fill="none" />
+            <path d="M4 3 C7 10, 11 10, 14 3" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
           </svg>
         );
       default:
         return (
           <svg width={s * 0.24} height={s * 0.14} viewBox="0 0 18 10" fill="none">
-            <path d="M4 3 C7 9, 11 9, 14 3" stroke="#3D2914" strokeWidth="2" strokeLinecap="round" fill="none" />
+            <path d="M4 3 C7 9, 11 9, 14 3" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
           </svg>
         );
     }
   };
 
   const blushSize = s * 0.07;
+  const showBlush = ['happy', 'excited', 'love', 'wink'].includes(expression);
 
   return (
     <div
@@ -245,70 +235,59 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
         </div>
       )}
 
-      {/* Ambient glow */}
-      {!isStatic && (
-        <div style={{
-          position: 'absolute',
-          width: s * 0.9,
-          height: s * 0.9,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(139, 195, 74, 0.2) 0%, transparent 70%)',
-          filter: `blur(${s * 0.15}px)`,
-          pointerEvents: 'none',
-        }} />
-      )}
-
-      {/* Leaf */}
+      {/* Leaf — botanical, hand-drawn */}
       <svg
-        style={{ position: 'absolute', top: s * -0.08, left: '50%', transform: 'translateX(-30%)' }}
-        width={s * 0.3}
-        height={s * 0.25}
-        viewBox="0 0 24 20"
+        style={{ position: 'absolute', top: s * -0.06, left: '50%', transform: 'translateX(-25%)' }}
+        width={s * 0.34}
+        height={s * 0.32}
+        viewBox="0 0 28 26"
         fill="none"
       >
+        {/* Stem */}
+        <path d="M14 24 L14 18" stroke={SKIN_LINE} strokeWidth="1.4" strokeLinecap="round" />
+        {/* Leaf blade — slightly asymmetric for hand-drawn feel */}
         <path
-          d="M12 18 C12 18, 4 12, 6 4 C8 -1, 16 -1, 18 4 C20 12, 12 18, 12 18Z"
-          fill="#558B2F"
-          stroke="#33691E"
-          strokeWidth="0.8"
+          d="M14 18 C14 18, 4 12, 6 4 C7 0, 13 -1, 16 2 C20 6, 20 14, 14 18 Z"
+          fill={LEAF}
+          stroke={LEAF_LINE}
+          strokeWidth="1.2"
+          strokeLinejoin="round"
         />
-        <path d="M12 16 L12 4" stroke="#33691E" strokeWidth="0.6" opacity="0.5" />
-        <path d="M12 8 L9 5" stroke="#33691E" strokeWidth="0.4" opacity="0.4" />
-        <path d="M12 10 L15 7" stroke="#33691E" strokeWidth="0.4" opacity="0.4" />
+        {/* Midrib */}
+        <path d="M14 17 L13 5" stroke={LEAF_LINE} strokeWidth="0.7" opacity="0.55" />
+        {/* Side veins */}
+        <path d="M13 8 L9 6"  stroke={LEAF_LINE} strokeWidth="0.5" opacity="0.45" />
+        <path d="M13 11 L8 10" stroke={LEAF_LINE} strokeWidth="0.5" opacity="0.4" />
+        <path d="M14 14 L17 12" stroke={LEAF_LINE} strokeWidth="0.5" opacity="0.4" />
       </svg>
 
-      {/* Avocado body */}
+      {/* Avocado body — flat illustrated, no gradients */}
       <svg width={s} height={s} viewBox="0 0 80 80" style={{ position: 'relative', zIndex: 1 }}>
-        {/* Outer skin (dark green) */}
-        <ellipse cx="40" cy="42" rx="34" ry="36" fill="#558B2F" />
-        <ellipse cx="40" cy="42" rx="34" ry="36" fill="url(#avoGrad)" />
-
-        {/* Inner flesh (creamy yellow-green) */}
-        <ellipse cx="40" cy="44" rx="26" ry="28" fill="#C5E1A5" />
-        <ellipse cx="40" cy="44" rx="26" ry="28" fill="url(#fleshGrad)" />
-
-        {/* Pit (brown) */}
-        <ellipse cx="40" cy="52" rx="10" ry="11" fill="#795548" />
-        <ellipse cx="40" cy="52" rx="10" ry="11" fill="url(#pitGrad)" />
-
-        {/* Pit highlight */}
-        <ellipse cx="37" cy="49" rx="4" ry="4.5" fill="#8D6E63" opacity="0.6" />
-
-        <defs>
-          <radialGradient id="avoGrad" cx="40%" cy="30%">
-            <stop offset="0%" stopColor="#689F38" />
-            <stop offset="100%" stopColor="#33691E" />
-          </radialGradient>
-          <radialGradient id="fleshGrad" cx="45%" cy="35%">
-            <stop offset="0%" stopColor="#F0F4C3" />
-            <stop offset="60%" stopColor="#C5E1A5" />
-            <stop offset="100%" stopColor="#AED581" />
-          </radialGradient>
-          <radialGradient id="pitGrad" cx="40%" cy="35%">
-            <stop offset="0%" stopColor="#8D6E63" />
-            <stop offset="100%" stopColor="#4E342E" />
-          </radialGradient>
-        </defs>
+        {/* Outer skin — slightly organic path */}
+        <path
+          d="M40 7 C31 7, 14 21, 14 38 C14 56, 23 72, 35 75 C37 76, 43 76, 45 75 C57 72, 66 56, 66 38 C66 21, 49 7, 40 7 Z"
+          fill={SKIN}
+          stroke={SKIN_LINE}
+          strokeWidth="2.2"
+          strokeLinejoin="round"
+        />
+        {/* Inner flesh */}
+        <path
+          d="M40 16 C33 16, 22 27, 21 40 C20 54, 28 68, 39 70 C40 70, 41 70, 42 70 C52 68, 60 54, 59 40 C58 27, 47 16, 40 16 Z"
+          fill={FLESH}
+        />
+        {/* Hand-drawn texture strokes in flesh */}
+        <path d="M28 37 C27 44, 28 53, 30 59" stroke={FLESH_SHD} strokeWidth="1.1" opacity="0.45" fill="none" strokeLinecap="round" />
+        <path d="M52 36 C53 43, 52 52, 50 58" stroke={FLESH_SHD} strokeWidth="1.1" opacity="0.35" fill="none" strokeLinecap="round" />
+        {/* Pit — organic circle */}
+        <path
+          d="M40 43 C34 43, 28 47.5, 28 53.5 C28 60, 33.5 64, 40 64 C46.5 64, 52 60, 52 53.5 C52 47.5, 46 43, 40 43 Z"
+          fill={PIT}
+          stroke={PIT_LINE}
+          strokeWidth="1.4"
+        />
+        {/* Pit subtle highlight line — gives warmth without 3D */}
+        <path d="M35 50 C37 48, 41 48, 43 50" stroke="#9a6840" strokeWidth="1" opacity="0.5" fill="none" strokeLinecap="round" />
       </svg>
 
       {/* Face overlay */}
@@ -327,69 +306,44 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
         {renderMouth()}
       </div>
 
-      {/* Blush cheeks */}
-      {(expression === 'happy' || expression === 'excited' || expression === 'love' || expression === 'wink') && (
+      {/* Blush — earthy terracotta, softer than before */}
+      {showBlush && (
         <>
           <div style={{
-            position: 'absolute',
-            top: s * 0.48,
-            left: s * 0.22,
-            width: blushSize,
-            height: blushSize * 0.6,
-            borderRadius: '50%',
-            background: 'rgba(255, 138, 128, 0.4)',
-            filter: `blur(${s * 0.02}px)`,
-            zIndex: 2,
-            pointerEvents: 'none',
+            position: 'absolute', top: s * 0.48, left: s * 0.22,
+            width: blushSize, height: blushSize * 0.55, borderRadius: '50%',
+            background: 'rgba(195, 110, 80, 0.28)',
+            filter: `blur(${s * 0.025}px)`,
+            zIndex: 2, pointerEvents: 'none',
           }} />
           <div style={{
-            position: 'absolute',
-            top: s * 0.48,
-            right: s * 0.22,
-            width: blushSize,
-            height: blushSize * 0.6,
-            borderRadius: '50%',
-            background: 'rgba(255, 138, 128, 0.4)',
-            filter: `blur(${s * 0.02}px)`,
-            zIndex: 2,
-            pointerEvents: 'none',
+            position: 'absolute', top: s * 0.48, right: s * 0.22,
+            width: blushSize, height: blushSize * 0.55, borderRadius: '50%',
+            background: 'rgba(195, 110, 80, 0.28)',
+            filter: `blur(${s * 0.025}px)`,
+            zIndex: 2, pointerEvents: 'none',
           }} />
         </>
       )}
 
-      {/* Sparkle particles */}
+      {/* Tiny illustrated sparkles — asterisk style, not digital dots */}
       {!isStatic && (
         <>
-          <div className="avo-sparkle avo-sparkle-1" style={{
-            position: 'absolute',
-            width: s * 0.05,
-            height: s * 0.05,
-            borderRadius: '50%',
-            background: '#8BC34A',
-            boxShadow: '0 0 4px rgba(139, 195, 74, 0.6)',
-            top: '8%',
-            right: '15%',
-          }} />
-          <div className="avo-sparkle avo-sparkle-2" style={{
-            position: 'absolute',
-            width: s * 0.035,
-            height: s * 0.035,
-            borderRadius: '50%',
-            background: '#AED581',
-            boxShadow: '0 0 3px rgba(174, 213, 129, 0.6)',
-            bottom: '15%',
-            left: '12%',
-          }} />
-          <div className="avo-sparkle avo-sparkle-3" style={{
-            position: 'absolute',
-            width: s * 0.04,
-            height: s * 0.04,
-            borderRadius: '50%',
-            background: '#CDDC39',
-            boxShadow: '0 0 3px rgba(205, 220, 57, 0.6)',
-            top: '25%',
-            left: '8%',
-          }} />
+          <svg className="avo-sparkle avo-sparkle-1" style={{ position: 'absolute', top: '6%', right: '12%' }}
+            width={s * 0.09} height={s * 0.09} viewBox="0 0 10 10" fill="none">
+            <line x1="5" y1="1" x2="5" y2="9" stroke={SKIN} strokeWidth="1.4" strokeLinecap="round" />
+            <line x1="1" y1="5" x2="9" y2="5" stroke={SKIN} strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+          <svg className="avo-sparkle avo-sparkle-2" style={{ position: 'absolute', bottom: '18%', left: '10%' }}
+            width={s * 0.07} height={s * 0.07} viewBox="0 0 10 10" fill="none">
+            <line x1="5" y1="2" x2="5" y2="8" stroke={LEAF} strokeWidth="1.4" strokeLinecap="round" />
+            <line x1="2" y1="5" x2="8" y2="5" stroke={LEAF} strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+          <svg className="avo-sparkle avo-sparkle-3" style={{ position: 'absolute', top: '24%', left: '7%' }}
+            width={s * 0.07} height={s * 0.07} viewBox="0 0 10 10" fill="none">
+            <line x1="5" y1="2" x2="5" y2="8" stroke={PIT} strokeWidth="1.4" strokeLinecap="round" />
+            <line x1="2" y1="5" x2="8" y2="5" stroke={PIT} strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
         </>
       )}
     </div>

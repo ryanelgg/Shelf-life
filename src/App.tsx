@@ -6,7 +6,7 @@ import { PantryScreen } from './screens/PantryScreen';
 import { AddItemScreen } from './screens/AddItemScreen';
 import { CookScreen } from './screens/CookScreen';
 import { ImpactScreen } from './screens/ImpactScreen';
-import { ShoppingListScreen } from './screens/ShoppingListScreen';
+import { PlanScreen } from './screens/PlanScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 
 export default function App() {
@@ -16,7 +16,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      meta.setAttribute('content', theme === 'light' ? '#F5F7FA' : '#070D18');
+      meta.setAttribute('content', '#faf7f2');
     }
   }, [theme]);
 
@@ -38,7 +38,7 @@ export default function App() {
     add: <AddItemScreen />,
     cook: <CookScreen />,
     impact: <ImpactScreen />,
-    lists: <ShoppingListScreen />,
+    plan: <PlanScreen />,
   };
 
   return (

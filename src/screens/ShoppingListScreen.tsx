@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
+import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
-import { FOOD_EMOJI } from '../types';
+import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import type { FoodCategory, ShoppingItem } from '../types';
 
 export function ShoppingListScreen() {
@@ -79,8 +80,8 @@ export function ShoppingListScreen() {
             background: 'var(--accent)',
             border: 'none',
             borderRadius: '10px',
-            color: 'var(--accent-dark)',
-            fontFamily: 'Syne, sans-serif',
+            color: '#fff',
+            fontFamily: "'Cormorant Garamond', serif",
             fontSize: '12px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -112,7 +113,7 @@ export function ShoppingListScreen() {
                 borderRadius: '10px',
                 padding: '10px 14px',
                 color: 'var(--text-primary)',
-                fontFamily: 'Syne, sans-serif',
+                fontFamily: "'Cormorant Garamond', serif",
                 fontSize: '13px',
                 outline: 'none',
                 boxSizing: 'border-box',
@@ -126,8 +127,8 @@ export function ShoppingListScreen() {
                 background: 'var(--accent)',
                 border: 'none',
                 borderRadius: '10px',
-                color: 'var(--accent-dark)',
-                fontFamily: 'Syne, sans-serif',
+                color: '#fff',
+                fontFamily: "'Cormorant Garamond', serif",
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -143,7 +144,7 @@ export function ShoppingListScreen() {
                 border: '1px solid var(--tab-border)',
                 borderRadius: '10px',
                 color: 'var(--text-muted)',
-                fontFamily: 'Syne, sans-serif',
+                fontFamily: "'Cormorant Garamond', serif",
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -229,7 +230,7 @@ export function ShoppingListScreen() {
                     gap: '10px',
                     padding: '8px 10px',
                     borderRadius: '8px',
-                    background: item.checked ? 'rgba(139, 195, 74, 0.06)' : 'transparent',
+                    background: item.checked ? 'rgba(74, 124, 89, 0.04)' : 'transparent',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                   }}
@@ -243,7 +244,7 @@ export function ShoppingListScreen() {
                     flexShrink: 0,
                   }}>
                     {item.checked && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dark)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}
@@ -255,7 +256,7 @@ export function ShoppingListScreen() {
                     textDecoration: item.checked ? 'line-through' : 'none',
                     transition: 'all 0.2s',
                   }}>
-                    {FOOD_EMOJI[item.category]} {item.name}
+                    <FoodCategoryIcon category={item.category} size={15} /> {item.name}
                   </span>
                   <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
                     {item.quantity} {item.unit}
@@ -281,7 +282,7 @@ export function ShoppingListScreen() {
                     borderRadius: '8px',
                     padding: '8px 12px',
                     color: 'var(--text-primary)',
-                    fontFamily: 'Syne, sans-serif',
+                    fontFamily: "'Cormorant Garamond', serif",
                     fontSize: '13px',
                     outline: 'none',
                     boxSizing: 'border-box',
@@ -295,8 +296,8 @@ export function ShoppingListScreen() {
                     background: 'var(--accent)',
                     border: 'none',
                     borderRadius: '8px',
-                    color: 'var(--accent-dark)',
-                    fontFamily: 'Syne, sans-serif',
+                    color: '#fff',
+                    fontFamily: "'Cormorant Garamond', serif",
                     fontSize: '12px',
                     fontWeight: 700,
                     cursor: 'pointer',
@@ -318,7 +319,7 @@ export function ShoppingListScreen() {
                   color: 'var(--text-muted)',
                   fontSize: '12px',
                   fontWeight: 600,
-                  fontFamily: 'Syne, sans-serif',
+                  fontFamily: "'Cormorant Garamond', serif",
                   width: '100%',
                 }}
               >
@@ -344,8 +345,8 @@ export function ShoppingListScreen() {
               background: 'var(--accent)',
               border: 'none',
               borderRadius: '12px',
-              color: 'var(--accent-dark)',
-              fontFamily: 'Syne, sans-serif',
+              color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif",
               fontSize: '14px',
               fontWeight: 700,
               cursor: 'pointer',

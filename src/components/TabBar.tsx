@@ -20,12 +20,18 @@ function AddIcon() {
   );
 }
 
-function CookIcon() {
+function AvoIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2C8 2 4 6 4 10c0 3 2 5 4 6v2h8v-2c2-1 4-3 4-6 0-4-4-8-8-8z" />
-      <path d="M8 20h8" />
-      <path d="M9 22h6" />
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      {/* Body — oval/egg */}
+      <ellipse cx="12" cy="13" rx="7.5" ry="10" />
+      {/* Pit — small */}
+      <circle cx="12" cy="17" r="2" />
+      {/* Eyes */}
+      <circle cx="9.8" cy="10" r="1" fill="currentColor" stroke="none" />
+      <circle cx="14.2" cy="10" r="1" fill="currentColor" stroke="none" />
+      {/* Smile */}
+      <path d="M10.5 12.5C11.5 13.5 12.5 13.5 13.5 12.5" />
     </svg>
   );
 }
@@ -40,13 +46,14 @@ function ImpactIcon() {
   );
 }
 
-function ListIcon() {
+function PlanIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
-      <rect x="9" y="3" width="6" height="4" rx="1" />
-      <path d="M9 12h6" />
-      <path d="M9 16h6" />
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+      <rect x="7" y="14" width="3" height="3" rx="0.5" />
     </svg>
   );
 }
@@ -54,9 +61,9 @@ function ListIcon() {
 const tabs: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: 'pantry', label: 'Pantry', Icon: PantryIcon },
   { id: 'add', label: 'Add', Icon: AddIcon },
-  { id: 'cook', label: 'Cook', Icon: CookIcon },
+  { id: 'cook', label: 'Chat', Icon: AvoIcon },
   { id: 'impact', label: 'Impact', Icon: ImpactIcon },
-  { id: 'lists', label: 'Lists', Icon: ListIcon },
+  { id: 'plan', label: 'Plan', Icon: PlanIcon },
 ];
 
 export function TabBar() {
@@ -102,7 +109,7 @@ export function TabBar() {
               fontWeight: 600,
               letterSpacing: '0.04em',
               textTransform: 'uppercase',
-              fontFamily: 'Syne, sans-serif',
+              fontFamily: "'Cormorant Garamond', serif",
             }}>{label}</span>
             <span
               key={`${id}-${isActive}`}

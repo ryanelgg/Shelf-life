@@ -44,7 +44,7 @@ export function SettingsScreen() {
         <button onClick={close} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: 'var(--accent)', fontSize: '14px', fontWeight: 600,
-          fontFamily: 'Syne, sans-serif',
+          fontFamily: "'Cormorant Garamond', serif",
         }}>
           Done
         </button>
@@ -77,7 +77,7 @@ export function SettingsScreen() {
                   borderRadius: '10px',
                   padding: '10px 14px',
                   color: 'var(--text-primary)',
-                  fontFamily: 'Syne, sans-serif',
+                  fontFamily: "'Cormorant Garamond', serif",
                   fontSize: '14px',
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -165,7 +165,7 @@ export function SettingsScreen() {
             border: '1px solid var(--expired)',
             borderRadius: '14px',
             color: 'var(--expired)',
-            fontFamily: 'Syne, sans-serif',
+            fontFamily: "'Cormorant Garamond', serif",
             fontSize: '14px',
             fontWeight: 600,
             cursor: 'pointer',

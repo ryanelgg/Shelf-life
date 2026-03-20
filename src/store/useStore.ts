@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode } from '../types';
+import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay } from '../types';
+import { BROWSE_RECIPES } from '../data/recipes';
 
 interface ShelfLifeStore {
   // State
@@ -8,7 +9,9 @@ interface ShelfLifeStore {
   pantryItems: PantryItem[];
   wasteLogs: WasteLog[];
   recipes: Recipe[];
+  browseRecipes: Recipe[];
   shoppingLists: ShoppingList[];
+  mealPlan: MealPlanDay[];
   activeTab: Tab;
   theme: ThemeMode;
   showSettings: boolean;
@@ -36,6 +39,9 @@ interface ShelfLifeStore {
   updateShoppingList: (id: string, updates: Partial<ShoppingList>) => void;
   removeShoppingList: (id: string) => void;
   toggleShoppingItem: (listId: string, itemId: string) => void;
+
+  // Meal Plan
+  setMealPlan: (plan: MealPlanDay[]) => void;
 
   // UI
   setActiveTab: (tab: Tab) => void;
@@ -180,7 +186,7 @@ const SAMPLE_RECIPES: Recipe[] = [
     ],
     steps: [
       'Cook rice according to package directions.',
-      'Slice bell peppers, toss with oil, roast at 400°F for 15 minutes.',
+      'Slice bell peppers, toss with oil, roast at 400\u00b0F for 15 minutes.',
       'Season salmon with salt & pepper. Pan-sear skin-side down 4 min, flip, cook 3 more.',
       'Drizzle soy sauce and sesame oil over rice.',
       'Assemble bowls: rice, roasted peppers, flaked salmon.',
@@ -270,7 +276,7 @@ const SAMPLE_WASTE: WasteLog[] = [
   { id: 'w4', itemName: 'Bread', category: 'Bakery', action: 'eaten', date: daysAgo(4), estimatedValue: 4.49, quantity: 1 },
   { id: 'w5', itemName: 'Strawberries', category: 'Produce', action: 'tossed', date: daysAgo(5), estimatedValue: 4.99, quantity: 1 },
   { id: 'w6', itemName: 'Apples', category: 'Produce', action: 'eaten', date: daysAgo(2), estimatedValue: 3.99, quantity: 3 },
-  { id: 'w7', itemName: 'Celery', category: 'Produce', action: 'donated', date: daysAgo(6), estimatedValue: 1.99, quantity: 1 },
+  { id: 'w7', itemName: 'Celery', category: 'Produce', action: 'composted', date: daysAgo(6), estimatedValue: 1.99, quantity: 1 },
   { id: 'w8', itemName: 'Pasta Sauce', category: 'Canned', action: 'eaten', date: daysAgo(3), estimatedValue: 3.49, quantity: 1 },
 ];
 
@@ -287,6 +293,14 @@ const SAMPLE_SHOPPING: ShoppingList[] = [
       { id: 'si5', name: 'Granola', category: 'Grains', quantity: 1, unit: 'bag', checked: true },
     ],
   },
+];
+
+const SAMPLE_MEAL_PLAN: MealPlanDay[] = [
+  { day: 'Mon', meal: 'Avocado Toast with Egg', pantryItems: 3, toBuy: 0, recipeId: 'r1' },
+  { day: 'Tue', meal: 'Chicken & Spinach Pasta', pantryItems: 3, toBuy: 2, recipeId: 'r2' },
+  { day: 'Wed', meal: 'Banana Berry Smoothie', pantryItems: 3, toBuy: 1, recipeId: 'r4' },
+  { day: 'Thu', meal: 'Salmon & Bell Pepper Bowl', pantryItems: 3, toBuy: 2, recipeId: 'r3' },
+  { day: 'Fri', meal: 'Leftover Night', pantryItems: 6, toBuy: 0 },
 ];
 
 function daysAgo(n: number): string {
@@ -308,9 +322,11 @@ export const useStore = create<ShelfLifeStore>()(
       pantryItems: SAMPLE_PANTRY,
       wasteLogs: SAMPLE_WASTE,
       recipes: SAMPLE_RECIPES,
+      browseRecipes: BROWSE_RECIPES,
       shoppingLists: SAMPLE_SHOPPING,
+      mealPlan: SAMPLE_MEAL_PLAN,
       activeTab: 'pantry',
-      theme: 'dark',
+      theme: 'light',
       showSettings: false,
       avocadoTipIndex: 0,
 
@@ -348,19 +364,22 @@ export const useStore = create<ShelfLifeStore>()(
         ),
       })),
 
+      setMealPlan: (plan) => set({ mealPlan: plan }),
+
       setActiveTab: (tab) => set({ activeTab: tab }),
       setTheme: (theme) => set({ theme }),
       setShowSettings: (show) => set({ showSettings: show }),
       nextAvocadoTip: () => set((s) => ({ avocadoTipIndex: s.avocadoTipIndex + 1 })),
     }),
     {
-      name: 'shelf-life-storage-v1',
+      name: 'shelf-life-storage-v2',
       partialize: (state) => ({
         user: state.user,
         pantryItems: state.pantryItems,
         wasteLogs: state.wasteLogs,
         recipes: state.recipes,
         shoppingLists: state.shoppingLists,
+        mealPlan: state.mealPlan,
         theme: state.theme,
         avocadoTipIndex: state.avocadoTipIndex,
       }),

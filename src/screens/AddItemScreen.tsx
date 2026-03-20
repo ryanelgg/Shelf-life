@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { FOOD_EMOJI, DEFAULT_SHELF_LIFE } from '../types';
+import { DEFAULT_SHELF_LIFE } from '../types';
+import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
+import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { FoodCategory, StorageLocation } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt';
@@ -12,11 +14,11 @@ const CATEGORIES: FoodCategory[] = [
   'Canned', 'Snacks', 'Beverages', 'Condiments', 'Bakery', 'Deli', 'Other',
 ];
 
-const LOCATIONS: { id: StorageLocation; label: string; emoji: string }[] = [
-  { id: 'fridge', label: 'Fridge', emoji: '❄️' },
-  { id: 'freezer', label: 'Freezer', emoji: '🧊' },
-  { id: 'pantry', label: 'Pantry', emoji: '🏠' },
-  { id: 'counter', label: 'Counter', emoji: '🍎' },
+const LOCATIONS: { id: StorageLocation; label: string }[] = [
+  { id: 'fridge', label: 'Fridge' },
+  { id: 'freezer', label: 'Freezer' },
+  { id: 'pantry', label: 'Pantry' },
+  { id: 'counter', label: 'Counter' },
 ];
 
 const QUICK_ITEMS = [
@@ -120,9 +122,33 @@ export function AddItemScreen() {
       {/* Mode selector */}
       <div className="card-enter stagger-1" style={{ display: 'flex', gap: '8px' }}>
         {([
-          { id: 'manual' as AddMode, label: 'Manual', icon: '✏️' },
-          { id: 'scan' as AddMode, label: 'Scan', icon: '📷' },
-          { id: 'receipt' as AddMode, label: 'Receipt', icon: '🧾' },
+          {
+            id: 'manual' as AddMode, label: 'Manual',
+            icon: (c: string) => (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 3L21 7L7 21H3V17L17 3Z" /><line x1="15" y1="5" x2="19" y2="9" />
+              </svg>
+            ),
+          },
+          {
+            id: 'scan' as AddMode, label: 'Scan',
+            icon: (c: string) => (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 5V2h3M20 2h3v3M1 19v3h3M20 22h3v-3" />
+                <line x1="7" y1="7" x2="7" y2="17" /><line x1="10" y1="7" x2="10" y2="17" />
+                <line x1="13" y1="7" x2="14.5" y2="17" /><line x1="17" y1="7" x2="17" y2="17" />
+              </svg>
+            ),
+          },
+          {
+            id: 'receipt' as AddMode, label: 'Receipt',
+            icon: (c: string) => (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 2V22L7 20L10 22L12 20L14 22L17 20L20 22V2H4Z" />
+                <line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="14" x2="13" y2="14" />
+              </svg>
+            ),
+          },
         ]).map(m => (
           <button
             key={m.id}
@@ -137,7 +163,7 @@ export function AddItemScreen() {
               color: mode === m.id ? 'var(--accent)' : 'var(--text-muted)',
               fontSize: '13px',
               fontWeight: 600,
-              fontFamily: 'Syne, sans-serif',
+              fontFamily: "'Cormorant Garamond', serif",
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -145,7 +171,7 @@ export function AddItemScreen() {
               gap: '4px',
             }}
           >
-            <span style={{ fontSize: '18px' }}>{m.icon}</span>
+            {m.icon(mode === m.id ? 'var(--accent)' : 'var(--text-muted)')}
             {m.label}
           </button>
         ))}
@@ -168,14 +194,14 @@ export function AddItemScreen() {
                 color: 'var(--text-primary)',
                 fontSize: '12px',
                 fontWeight: 600,
-                fontFamily: 'Syne, sans-serif',
+                fontFamily: "'Cormorant Garamond', serif",
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
               }}
             >
-              {FOOD_EMOJI[item.category]} {item.name}
+              <FoodCategoryIcon category={item.category} size={14} /> {item.name}
             </button>
           ))}
         </div>
@@ -201,7 +227,7 @@ export function AddItemScreen() {
                 borderRadius: '10px',
                 padding: '12px 14px',
                 color: 'var(--text-primary)',
-                fontFamily: 'Syne, sans-serif',
+                fontFamily: "'Cormorant Garamond', serif",
                 fontSize: '14px',
                 outline: 'none',
                 boxSizing: 'border-box',
@@ -228,14 +254,14 @@ export function AddItemScreen() {
                     color: category === cat ? 'var(--accent)' : 'var(--text-muted)',
                     fontSize: '11px',
                     fontWeight: 600,
-                    fontFamily: 'Syne, sans-serif',
+                    fontFamily: "'Cormorant Garamond', serif",
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '3px',
                   }}
                 >
-                  {FOOD_EMOJI[cat]} {cat}
+                  <FoodCategoryIcon category={cat} size={14} /> {cat}
                 </button>
               ))}
             </div>
@@ -260,12 +286,14 @@ export function AddItemScreen() {
                     color: location === loc.id ? 'var(--accent)' : 'var(--text-muted)',
                     fontSize: '13px',
                     fontWeight: 600,
-                    fontFamily: 'Syne, sans-serif',
+                    fontFamily: "'Cormorant Garamond', serif",
                     cursor: 'pointer',
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: '20px', marginBottom: '2px' }}>{loc.emoji}</div>
+                  <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}>
+                    <StorageLocationIcon location={loc.id} size={22} color={location === loc.id ? 'var(--accent)' : 'var(--text-muted)'} />
+                  </div>
                   {loc.label}
                 </button>
               ))}
@@ -299,7 +327,7 @@ export function AddItemScreen() {
                 style={{
                   width: '100%', background: 'var(--input-bg)', border: '1px solid var(--input-border)',
                   borderRadius: '10px', padding: '10px 12px', color: 'var(--text-primary)',
-                  fontFamily: 'Syne, sans-serif', fontSize: '13px', outline: 'none', boxSizing: 'border-box',
+                  fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', outline: 'none', boxSizing: 'border-box',
                   cursor: 'pointer',
                 }}
               >
@@ -356,8 +384,8 @@ export function AddItemScreen() {
               background: name.trim() ? 'var(--accent)' : 'var(--accent-dim)',
               border: 'none',
               borderRadius: '14px',
-              color: name.trim() ? 'var(--accent-dark)' : 'var(--text-muted)',
-              fontFamily: 'Syne, sans-serif',
+              color: name.trim() ? '#fff' : 'var(--text-muted)',
+              fontFamily: "'Cormorant Garamond', serif",
               fontSize: '15px',
               fontWeight: 700,
               cursor: name.trim() ? 'pointer' : 'not-allowed',
@@ -370,7 +398,13 @@ export function AddItemScreen() {
 
       {mode === 'scan' && (
         <Card className="card-enter stagger-3" style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📷</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--stone)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 5V2h3M20 2h3v3M1 19v3h3M20 22h3v-3" />
+              <line x1="7" y1="7" x2="7" y2="17" /><line x1="10" y1="7" x2="10" y2="17" />
+              <line x1="13" y1="7" x2="14.5" y2="17" /><line x1="17" y1="7" x2="17" y2="17" />
+            </svg>
+          </div>
           <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Barcode Scanner</div>
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
             Point your camera at any barcode for instant product recognition and auto-populated shelf life data.
@@ -402,7 +436,12 @@ export function AddItemScreen() {
 
       {mode === 'receipt' && (
         <Card className="card-enter stagger-3" style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🧾</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--stone)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 2V22L7 20L10 22L12 20L14 22L17 20L20 22V2H4Z" />
+              <line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="14" x2="13" y2="14" />
+            </svg>
+          </div>
           <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Receipt Scanner</div>
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
             Take a photo of your grocery receipt and we'll automatically add all items to your pantry with prices.
@@ -414,8 +453,8 @@ export function AddItemScreen() {
               background: 'var(--accent)',
               border: 'none',
               borderRadius: '14px',
-              color: 'var(--accent-dark)',
-              fontFamily: 'Syne, sans-serif',
+              color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif",
               fontSize: '14px',
               fontWeight: 700,
               cursor: 'pointer',

@@ -235,7 +235,7 @@ export function AvocadoBuddy() {
               style={{
                 width: '3px',
                 height: `${patch.height + (i % 2) * 4}px`,
-                background: `linear-gradient(to top, #33691E, #8BC34A)`,
+                background: `linear-gradient(to top, #33691E, #7a8a2e)`,
                 borderRadius: '2px 2px 1px 1px',
                 transformOrigin: 'bottom',
                 animation: `grassSway ${2 + i * 0.3}s ease-in-out infinite`,

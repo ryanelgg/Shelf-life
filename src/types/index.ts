@@ -91,7 +91,15 @@ export interface ShoppingList {
   createdDate: string;
 }
 
-export type Tab = 'pantry' | 'add' | 'cook' | 'impact' | 'lists';
+export type Tab = 'pantry' | 'add' | 'cook' | 'impact' | 'plan';
+
+export interface MealPlanDay {
+  day: string;
+  meal: string;
+  pantryItems: number;
+  toBuy: number;
+  recipeId?: string;
+}
 
 export const FOOD_EMOJI: Record<FoodCategory, string> = {
   Produce: '🥬',

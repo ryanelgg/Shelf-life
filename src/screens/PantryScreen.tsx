@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
-import { AvocadoBuddy } from '../components/AvocadoBuddy';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, FOOD_EMOJI, LOCATION_EMOJI } from '../types';
+import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration } from '../types';
+import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
+import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { StorageLocation, PantryItem, WasteAction } from '../types';
 
 const LOCATIONS: StorageLocation[] = ['fridge', 'freezer', 'pantry', 'counter'];
@@ -19,10 +20,16 @@ export function PantryScreen() {
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
+  const [alertDismissed, setAlertDismissed] = useState(false);
+  const [alertDismissing, setAlertDismissing] = useState(false);
+  const [listAnimKey, setListAnimKey] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterBubbleKey, setFilterBubbleKey] = useState(0);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [sortBubbleKey, setSortBubbleKey] = useState(0);
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
-
     return [...items].sort((a, b) => {
       if (sortBy === 'expiration') return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
       if (sortBy === 'name') return a.name.localeCompare(b.name);
@@ -51,6 +58,32 @@ export function PantryScreen() {
     setSwipingItem(null);
   };
 
+  const handleDismissAlert = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setAlertDismissing(true);
+    setTimeout(() => setAlertDismissed(true), 290);
+  };
+
+  const handleLocationChange = (loc: StorageLocation | 'all') => {
+    setActiveLocation(loc);
+    setListAnimKey(k => k + 1);
+  };
+
+  const handleSortChange = (sort: 'expiration' | 'name' | 'category') => {
+    setSortBy(sort);
+    setListAnimKey(k => k + 1);
+  };
+
+  const toggleFilters = () => {
+    if (!filtersOpen) setFilterBubbleKey(k => k + 1);
+    setFiltersOpen(f => !f);
+  };
+
+  const toggleSort = () => {
+    if (!sortOpen) setSortBubbleKey(k => k + 1);
+    setSortOpen(s => !s);
+  };
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     const name = user?.name || 'there';
@@ -58,6 +91,11 @@ export function PantryScreen() {
     if (hour < 17) return `Good afternoon, ${name}`;
     return `Good evening, ${name}`;
   };
+
+  const activeLocationLabel =
+    activeLocation === 'all'
+      ? `All (${pantryItems.length})`
+      : LOCATION_LABELS[activeLocation];
 
   return (
     <div className="screen-enter" style={{
@@ -117,88 +155,145 @@ export function PantryScreen() {
         </Card>
       </div>
 
-      {/* Location filter */}
-      <div className="card-enter stagger-2" style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
-        <button
-          className="btn-pill"
-          onClick={() => setActiveLocation('all')}
-          style={{
-            padding: '8px 14px',
-            borderRadius: '20px',
-            border: activeLocation === 'all' ? '1.5px solid var(--accent)' : '1px solid var(--tab-border)',
-            background: activeLocation === 'all' ? 'var(--accent-dim)' : 'transparent',
-            color: activeLocation === 'all' ? 'var(--accent)' : 'var(--text-muted)',
-            fontSize: '12px',
-            fontWeight: 600,
-            fontFamily: 'Syne, sans-serif',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          All ({pantryItems.length})
-        </button>
-        {LOCATIONS.map(loc => {
-          const count = pantryItems.filter(i => i.location === loc).length;
-          const isActive = activeLocation === loc;
-          return (
-            <button
-              key={loc}
-              className="btn-pill"
-              onClick={() => setActiveLocation(loc)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '20px',
-                border: isActive ? '1.5px solid var(--accent)' : '1px solid var(--tab-border)',
-                background: isActive ? 'var(--accent-dim)' : 'transparent',
-                color: isActive ? 'var(--accent)' : 'var(--text-muted)',
-                fontSize: '12px',
-                fontWeight: 600,
-                fontFamily: 'Syne, sans-serif',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {LOCATION_EMOJI[loc]} {LOCATION_LABELS[loc]} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Sort toggle */}
-      <div className="card-enter stagger-2" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort:</span>
-        {(['expiration', 'name', 'category'] as const).map(s => (
+      {/* Filter + Sort row — pills fly out as bubbles when tapped */}
+      <div className="card-enter stagger-2" style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {/* Location filter trigger */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button
-            key={s}
-            onClick={() => setSortBy(s)}
+            onClick={toggleFilters}
             style={{
-              padding: '4px 10px',
-              borderRadius: '12px',
-              border: 'none',
-              background: sortBy === s ? 'var(--accent-dim)' : 'transparent',
-              color: sortBy === s ? 'var(--accent)' : 'var(--text-muted)',
-              fontSize: '11px',
-              fontWeight: 600,
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '20px',
+              border: '1.5px solid var(--accent)',
+              background: 'var(--accent-dim)',
+              color: 'var(--accent)',
+              fontSize: '12px', fontWeight: 700,
+              fontFamily: "'Cormorant Garamond', serif",
               cursor: 'pointer',
-              fontFamily: 'Syne, sans-serif',
-              textTransform: 'capitalize',
+              whiteSpace: 'nowrap',
             }}
           >
-            {s}
+            {activeLocation !== 'all' && (
+              <StorageLocationIcon location={activeLocation} size={14} color="var(--accent)" />
+            )}
+            {activeLocationLabel}
+            <span style={{
+              fontSize: '9px',
+              transition: 'transform 0.2s ease',
+              transform: filtersOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              display: 'inline-block',
+            }}>▼</span>
           </button>
-        ))}
+
+          {/* Bubble pills */}
+          {filtersOpen && (
+            <div key={filterBubbleKey} style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
+              {(['all', ...LOCATIONS] as (StorageLocation | 'all')[]).map((loc, idx) => {
+                const count = loc === 'all' ? pantryItems.length : pantryItems.filter(i => i.location === loc).length;
+                const isActive = activeLocation === loc;
+                return (
+                  <button
+                    key={loc}
+                    className={`slip-out-pill slip-out-pill-${idx + 1}`}
+                    onClick={() => handleLocationChange(loc)}
+                    style={{
+                      padding: '7px 13px',
+                      borderRadius: '20px',
+                      border: isActive ? '1.5px solid var(--accent)' : '1px solid var(--tab-border)',
+                      background: isActive ? 'var(--accent)' : 'var(--bg-card)',
+                      color: isActive ? '#fff' : 'var(--text-muted)',
+                      fontSize: '12px', fontWeight: 600,
+                      fontFamily: "'Cormorant Garamond', serif",
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      boxShadow: '0 2px 8px rgba(74,124,89,0.12)',
+                    }}
+                  >
+                    {loc === 'all' ? (
+                      `All (${count})`
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <StorageLocationIcon location={loc} size={13} color={isActive ? '#fff' : 'var(--text-muted)'} />
+                        {LOCATION_LABELS[loc]} ({count})
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Sort trigger */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button
+            onClick={toggleSort}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              padding: '8px 14px',
+              borderRadius: '20px',
+              border: '1px solid var(--tab-border)',
+              background: 'transparent',
+              color: 'var(--text-muted)',
+              fontSize: '12px', fontWeight: 600,
+              fontFamily: "'Cormorant Garamond', serif",
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ fontSize: '12px' }}>↕</span>
+            Sort: <span style={{ color: 'var(--accent)', textTransform: 'capitalize' }}>{sortBy}</span>
+            <span style={{
+              fontSize: '9px',
+              transition: 'transform 0.2s ease',
+              transform: sortOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              display: 'inline-block',
+            }}>▼</span>
+          </button>
+
+          {/* Sort bubble pills */}
+          {sortOpen && (
+            <div key={sortBubbleKey} style={{ display: 'flex', gap: '7px' }}>
+              {(['expiration', 'name', 'category'] as const).map((s, idx) => (
+                <button
+                  key={s}
+                  className={`slip-out-pill slip-out-pill-${idx + 1}`}
+                  onClick={() => handleSortChange(s)}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: '20px',
+                    border: sortBy === s ? '1.5px solid var(--accent)' : '1px solid var(--tab-border)',
+                    background: sortBy === s ? 'var(--accent)' : 'var(--bg-card)',
+                    color: sortBy === s ? '#fff' : 'var(--text-muted)',
+                    fontSize: '11px', fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    textTransform: 'capitalize',
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 8px rgba(74,124,89,0.1)',
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Expiring soon alert */}
-      {expiringCount > 0 && (
-        <Card className="card-enter stagger-3" style={{
-          padding: '12px 16px',
-          border: '1px solid rgba(255, 152, 0, 0.3)',
-          background: 'rgba(255, 152, 0, 0.06)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {/* Expiring soon alert — slides up cleanly when dismissed */}
+      {expiringCount > 0 && !alertDismissed && (
+        <Card
+          className={alertDismissing ? 'slide-up-fade' : 'card-enter stagger-3'}
+          style={{
+            padding: '12px 16px',
+            border: '1px solid rgba(212, 134, 11, 0.25)',
+            background: 'rgba(212, 134, 11, 0.04)',
+            position: 'relative',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '24px' }}>
             <span style={{ fontSize: '18px' }}>⚠️</span>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expiring-soon)' }}>
@@ -209,11 +304,22 @@ export function PantryScreen() {
               </div>
             </div>
           </div>
+          <button
+            onClick={handleDismissAlert}
+            style={{
+              position: 'absolute', top: 8, right: 10,
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: '16px', padding: '4px',
+              lineHeight: 1,
+            }}
+          >
+            ✕
+          </button>
         </Card>
       )}
 
-      {/* Item grid */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {/* Item grid — re-mounts when sort/filter changes so items animate upward */}
+      <div key={listAnimKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {filteredItems.map((item, i) => {
           const status = getFreshnessStatus(item.expirationDate);
           const color = getFreshnessColor(status);
@@ -223,10 +329,9 @@ export function PantryScreen() {
           return (
             <div
               key={item.id}
-              className={`card-enter stagger-${Math.min(i + 3, 6)}`}
+              className={`card-enter stagger-${Math.min(i + 1, 6)}`}
               style={{ position: 'relative', overflow: 'hidden', borderRadius: '14px' }}
             >
-              {/* Swipe actions */}
               {isSwipe && (
                 <div className="card-enter" style={{
                   position: 'absolute', inset: 0, display: 'flex', gap: '6px',
@@ -235,10 +340,10 @@ export function PantryScreen() {
                   alignItems: 'center', justifyContent: 'center',
                 }}>
                   {([
-                    { action: 'eaten' as WasteAction, label: 'Eaten', emoji: '✅', color: 'var(--fresh)' },
-                    { action: 'tossed' as WasteAction, label: 'Tossed', emoji: '🗑️', color: 'var(--expired)' },
-                    { action: 'composted' as WasteAction, label: 'Compost', emoji: '🌱', color: 'var(--good)' },
-                    { action: 'shared' as WasteAction, label: 'Shared', emoji: '🤝', color: 'var(--accent)' },
+                    { action: 'eaten' as WasteAction, label: 'Eaten', color: 'var(--fresh)', svgPath: <><circle cx="12" cy="12" r="8"/><path d="M8.5 12L11 14.5L15.5 9.5"/></> },
+                    { action: 'tossed' as WasteAction, label: 'Tossed', color: 'var(--expired)', svgPath: <><path d="M3 6H21M8 6L9 3H15L16 6"/><path d="M5 6L6 21H18L19 6"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/></> },
+                    { action: 'composted' as WasteAction, label: 'Compost', color: 'var(--good)', svgPath: <><path d="M12 20V12"/><path d="M12 16C10 13.5 6.5 13 5.5 10.5C7.5 8 11 9.5 12 12"/><path d="M12 13C14 10.5 17.5 10 18.5 8C16.5 5 13 7 12 11"/><path d="M9 20Q12 18 15 20"/></> },
+                    { action: 'shared' as WasteAction, label: 'Shared', color: 'var(--accent)', svgPath: <><circle cx="9" cy="7" r="3"/><circle cx="15" cy="7" r="3"/><path d="M3 19C3 16.2 5.7 14 9 14"/><path d="M21 19C21 16.2 18.3 14 15 14"/><path d="M9 14C9 14 12 16 15 14"/></> },
                   ]).map(a => (
                     <button
                       key={a.action}
@@ -251,8 +356,8 @@ export function PantryScreen() {
                         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                       }}
                     >
-                      <span style={{ fontSize: '16px' }}>{a.emoji}</span>
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: a.color, fontFamily: 'Syne, sans-serif' }}>{a.label}</span>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={a.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{a.svgPath}</svg>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: a.color, fontFamily: "'Cormorant Garamond', serif" }}>{a.label}</span>
                     </button>
                   ))}
                   <button
@@ -268,7 +373,6 @@ export function PantryScreen() {
                 </div>
               )}
 
-              {/* Item card */}
               <Card
                 onClick={() => setSwipingItem(isSwipe ? null : item.id)}
                 style={{
@@ -285,9 +389,9 @@ export function PantryScreen() {
                   width: 40, height: 40, borderRadius: '12px',
                   background: 'var(--accent-dim)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '20px', flexShrink: 0,
+                  flexShrink: 0,
                 }}>
-                  {FOOD_EMOJI[item.category]}
+                  <FoodCategoryIcon category={item.category} size={22} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -300,30 +404,19 @@ export function PantryScreen() {
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       {item.quantity} {item.unit}
                     </span>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                      {LOCATION_EMOJI[item.location]} {item.location}
-                    </span>
+                    <StorageLocationIcon location={item.location} size={13} color="var(--text-muted)" />
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div className="mono" style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color,
-                    lineHeight: 1.2,
-                  }}>
+                  <div className="mono" style={{ fontSize: '13px', fontWeight: 600, color, lineHeight: 1.2 }}>
                     {days < 0 ? `${Math.abs(days)}d ago` :
                      days === 0 ? 'Today!' :
                      days === 1 ? '1 day' :
                      `${days} days`}
                   </div>
                   <div style={{
-                    fontSize: '9px',
-                    textTransform: 'uppercase',
-                    fontWeight: 700,
-                    letterSpacing: '0.05em',
-                    color,
-                    marginTop: '2px',
+                    fontSize: '9px', textTransform: 'uppercase',
+                    fontWeight: 700, letterSpacing: '0.05em', color, marginTop: '2px',
                   }}>
                     {status.replace('-', ' ')}
                   </div>
@@ -342,8 +435,7 @@ export function PantryScreen() {
         </Card>
       )}
 
-      {/* Avocado buddy wandering at bottom */}
-      <AvocadoBuddy />
+      <div style={{ height: '20px' }} />
     </div>
   );
 }
