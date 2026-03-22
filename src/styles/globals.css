@@ -45,6 +45,23 @@
   --expired: #8a4040;
 }
 
+/* ===== DARK THEME ===== */
+[data-theme="dark"] {
+  --bg-primary: #1a1612;
+  --bg-card: #242018;
+  --bg-card-hover: #2c2820;
+  --text-primary: #e8ddd0;
+  --text-muted: #7a6e60;
+  --card-border: 1px solid rgba(74, 124, 89, 0.14);
+  --tab-bg: #1e1b17;
+  --tab-border: rgba(74, 124, 89, 0.14);
+  --input-bg: rgba(74, 124, 89, 0.07);
+  --input-border: rgba(74, 124, 89, 0.22);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --tooltip-bg: #2c2820;
+  --accent-dim: rgba(74, 124, 89, 0.14);
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;

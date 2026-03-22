@@ -15,9 +15,7 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) {
-      meta.setAttribute('content', '#faf7f2');
-    }
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#1a1612' : '#faf7f2');
   }, [theme]);
 
   if (!user?.onboardingComplete) {

@@ -37,7 +37,7 @@ const QUICK_ITEMS = [
 ];
 
 export function AddItemScreen() {
-  const { addPantryItem, setActiveTab } = useStore();
+  const { addPantryItem, setActiveTab, pantryItems, updatePantryItem } = useStore();
   const [mode, setMode] = useState<AddMode>('manual');
 
   // Manual form state
@@ -181,29 +181,50 @@ export function AddItemScreen() {
       <Card className="card-enter stagger-2">
         <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>Quick Add</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {QUICK_ITEMS.map(item => (
-            <button
-              key={item.name}
-              className="btn-pill"
-              onClick={() => handleAddItem(item.name, item.category, item.location, item.value, item.unit)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '20px',
-                border: '1px solid var(--tab-border)',
-                background: 'transparent',
-                color: 'var(--text-primary)',
-                fontSize: '12px',
-                fontWeight: 600,
-                fontFamily: "'Cormorant Garamond', serif",
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <FoodCategoryIcon category={item.category} size={14} /> {item.name}
-            </button>
-          ))}
+          {QUICK_ITEMS.map(item => {
+            const existing = pantryItems.find(p => p.name.toLowerCase() === item.name.toLowerCase());
+            return (
+              <button
+                key={item.name}
+                className="btn-pill"
+                onClick={() => {
+                  if (existing) {
+                    // Increment existing item quantity
+                    updatePantryItem(existing.id, { quantity: existing.quantity + 1 });
+                    setSuccessName(`+1 ${item.name}`);
+                    setShowSuccess(true);
+                    setTimeout(() => setShowSuccess(false), 2000);
+                  } else {
+                    // Prefill the form so user can review before adding
+                    setMode('manual');
+                    setName(item.name);
+                    setCategory(item.category);
+                    setLocation(item.location);
+                    setValue(String(item.value));
+                    setUnit(item.unit);
+                  }
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '20px',
+                  border: existing ? '1px solid var(--accent)' : '1px solid var(--tab-border)',
+                  background: existing ? 'var(--accent-dim)' : 'transparent',
+                  color: existing ? 'var(--accent)' : 'var(--text-primary)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  fontFamily: "'Cormorant Garamond', serif",
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FoodCategoryIcon category={item.category} size={14} />
+                {item.name}
+                {existing && <span style={{ fontSize: '10px', opacity: 0.8 }}>×{existing.quantity}</span>}
+              </button>
+            );
+          })}
         </div>
       </Card>
 
