@@ -4,10 +4,11 @@ import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
+import { formatLocalDate } from '../types';
 import type { FoodCategory, ShoppingItem } from '../types';
 
 export function ShoppingListScreen() {
-  const { shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, recipes, pantryItems } = useStore();
+  const { shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, recipes } = useStore();
   const [showNewForm, setShowNewForm] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [newItemName, setNewItemName] = useState('');
@@ -19,7 +20,7 @@ export function ShoppingListScreen() {
       id: `sl-${Date.now()}`,
       name: newListName.trim(),
       items: [],
-      createdDate: new Date().toISOString().split('T')[0],
+      createdDate: formatLocalDate(new Date()),
     });
     setNewListName('');
     setShowNewForm(false);

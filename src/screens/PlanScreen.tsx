@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
+import type { JSX } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus } from '../types';
+import { formatLocalDate, getFreshnessStatus } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref } from '../types';
 
@@ -308,6 +309,60 @@ type IngredientStatus =
   | { status: 'have'; pantryQty: number; pantryUnit: string }
   | { status: 'low'; pantryQty: number; pantryUnit: string; neededQty: number };
 
+const UNIT_ALIASES: Record<string, string> = {
+  lb: 'lb',
+  lbs: 'lb',
+  pound: 'lb',
+  pounds: 'lb',
+  oz: 'oz',
+  ounce: 'oz',
+  ounces: 'oz',
+  kg: 'kg',
+  g: 'g',
+  gallon: 'gal',
+  gallons: 'gal',
+  gal: 'gal',
+  liter: 'l',
+  liters: 'l',
+  l: 'l',
+  cup: 'cup',
+  cups: 'cup',
+  pc: 'pcs',
+  pcs: 'pcs',
+  piece: 'pcs',
+  pieces: 'pcs',
+  loaf: 'loaf',
+  loaves: 'loaf',
+  bunch: 'bunch',
+  bunches: 'bunch',
+  head: 'head',
+  heads: 'head',
+  dozen: 'dozen',
+  tub: 'tub',
+  block: 'block',
+  pack: 'pack',
+  bag: 'bag',
+  box: 'box',
+  can: 'can',
+  bottle: 'bottle',
+};
+
+function normalizeUnit(unit?: string): string | null {
+  if (!unit) return null;
+  const normalized = unit.toLowerCase().replace(/[^a-z]/g, '');
+  return UNIT_ALIASES[normalized] ?? (normalized || null);
+}
+
+function parseAmountUnit(amount: string): string | null {
+  const tokens = amount.toLowerCase().match(/[a-z]+(?:-[a-z]+)?/g);
+  if (!tokens) return null;
+  for (const token of tokens) {
+    const normalized = normalizeUnit(token);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function getIngredientStatus(
   ingredientName: string,
   ingredientAmount: string,
@@ -320,9 +375,20 @@ function getIngredientStatus(
   });
   if (!match) return { status: 'missing' };
 
-  // Try simple numeric comparison for obvious cases
+  // Try numeric comparison only when units are compatible.
+  // When neededUnit is null (unrecognised unit like "cloves"), only compare
+  // raw quantities if the pantry item is also stored as a plain count (pcs /
+  // dozen / no unit).  Container units like "head", "bunch", "gal" cannot be
+  // meaningfully compared to a raw number without conversion tables.
   const neededNum = parseFloat(ingredientAmount.match(/[\d.]+/)?.[0] ?? '0');
-  if (neededNum > 0 && match.quantity < neededNum) {
+  const neededUnit = parseAmountUnit(ingredientAmount);
+  const pantryUnit = normalizeUnit(match.unit);
+  const COUNTABLE: Set<string | null> = new Set([null, 'pcs', 'dozen']);
+  const canCompareQuantity = neededNum > 0 && (
+    (neededUnit !== null && neededUnit === pantryUnit) ||
+    (neededUnit === null && COUNTABLE.has(pantryUnit))
+  );
+  if (canCompareQuantity && match.quantity < neededNum) {
     return { status: 'low', pantryQty: match.quantity, pantryUnit: match.unit, neededQty: neededNum };
   }
   return { status: 'have', pantryQty: match.quantity, pantryUnit: match.unit };
@@ -351,9 +417,10 @@ export function PlanScreen() {
       return s === 'expiring' || s === 'expiring-soon';
     });
 
-  const totalSavings = (browseRecipes || []).reduce((s, r) => s + r.savingsEstimate, 0);
-
-  const activeDiets = (user?.dietaryPreferences ?? []).filter(d => d !== 'none') as DietaryPref[];
+  const activeDiets = useMemo(
+    () => (user?.dietaryPreferences ?? []).filter((d): d is DietaryPref => d !== 'none'),
+    [user?.dietaryPreferences]
+  );
 
   const filteredRecipes = useMemo(() => {
     let result = browseRecipes || [];
@@ -375,9 +442,10 @@ export function PlanScreen() {
       );
     }
     return result;
-  }, [browseRecipes, recipeFilter, recipeSearchQuery, activeDiets.join(',')]);
+  }, [browseRecipes, recipeFilter, recipeSearchQuery, activeDiets]);
 
   const displayedRecipes = showAllRecipes ? filteredRecipes : filteredRecipes.slice(0, 6);
+  const totalSavings = filteredRecipes.reduce((sum, recipe) => sum + recipe.savingsEstimate, 0);
 
   const handleCreateList = () => {
     if (!newListName.trim()) return;
@@ -385,7 +453,7 @@ export function PlanScreen() {
       id: `sl-${Date.now()}`,
       name: newListName.trim(),
       items: [],
-      createdDate: new Date().toISOString().split('T')[0],
+      createdDate: formatLocalDate(new Date()),
     });
     setNewListName('');
     setShowNewForm(false);
@@ -413,7 +481,15 @@ export function PlanScreen() {
   };
 
   // Smart suggestions from missing ingredients
-  const suggestions = recipes.flatMap(r =>
+  // Search both pantry-matched recipes and browse recipes, since meal plan
+  // days can reference recipes from either collection.
+  const plannedRecipes = mealPlan
+    .map(day => day.recipeId
+      ? ([...recipes, ...browseRecipes]).find(r => r.id === day.recipeId)
+      : null)
+    .filter((recipe): recipe is Recipe => Boolean(recipe));
+
+  const suggestions = plannedRecipes.flatMap(r =>
     r.missingIngredients.map(ing => ({
       name: ing,
       fromRecipe: r.name,

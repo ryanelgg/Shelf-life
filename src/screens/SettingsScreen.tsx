@@ -156,7 +156,8 @@ export function SettingsScreen() {
           onClick={() => {
             if (confirm('Reset all data? This will clear your pantry, logs, and preferences.')) {
               resetOnboarding();
-              setShowSettings(false);
+              // Wipe persisted storage so nothing survives a page reload
+              localStorage.removeItem('shelf-life-storage-v2');
             }
           }}
           style={{

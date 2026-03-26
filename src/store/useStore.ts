@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
+import { formatLocalDate } from '../types';
 
 interface ShelfLifeStore {
   // State
@@ -306,13 +307,13 @@ const SAMPLE_MEAL_PLAN: MealPlanDay[] = [
 function daysAgo(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().split('T')[0];
+  return formatLocalDate(d);
 }
 
 function daysFromNow(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() + n);
-  return d.toISOString().split('T')[0];
+  return formatLocalDate(d);
 }
 
 export const useStore = create<ShelfLifeStore>()(
@@ -334,7 +335,18 @@ export const useStore = create<ShelfLifeStore>()(
       updateUser: (updates) => set((s) => ({
         user: s.user ? { ...s.user, ...updates } : null,
       })),
-      resetOnboarding: () => set({ user: null }),
+      resetOnboarding: () => set({
+        user: null,
+        pantryItems: [],
+        wasteLogs: [],
+        recipes: [],
+        shoppingLists: [],
+        mealPlan: [],
+        activeTab: 'pantry',
+        theme: 'light',
+        showSettings: false,
+        avocadoTipIndex: 0,
+      }),
 
       addPantryItem: (item) => set((s) => ({ pantryItems: [...s.pantryItems, item] })),
       updatePantryItem: (id, updates) => set((s) => ({
