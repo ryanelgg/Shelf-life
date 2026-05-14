@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import Anthropic from '@anthropic-ai/sdk';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { useStore } from '../store/useStore';
 
@@ -10,6 +9,11 @@ interface Message {
   streaming?: boolean;
 }
 
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 const SUGGESTIONS = [
   "What foods are high in protein?",
   "Best foods for energy?",
@@ -18,34 +22,6 @@ const SUGGESTIONS = [
   "How do I eat for better sleep?",
 ];
 
-const SYSTEM_PROMPT = `You are Avo, a friendly and knowledgeable nutrition guide built into a food tracking app called Shelf Life. You're an avocado mascot who gives practical, science-based nutrition advice.
-
-Your personality:
-- Warm, encouraging, and conversational — never preachy
-- You make nutrition feel approachable and interesting, not overwhelming
-- You occasionally reference being an avocado for charm (but don't overdo it)
-- You give actionable advice, not vague platitudes
-
-Your expertise covers:
-- Macronutrients (protein, carbs, fats) and their roles
-- Micronutrients (vitamins, minerals)
-- Specific foods and their benefits
-- Eating for health goals (energy, sleep, weight, heart health, immunity, etc.)
-- Gut health and digestion
-- Anti-inflammatory eating
-- Meal timing and habits
-
-Guidelines:
-- Keep responses concise and scannable — 2-4 short paragraphs max
-- Lead with the most useful information first
-- Use specific numbers and examples when helpful (e.g. "eggs have ~6g protein each")
-- When users ask vague questions, give a useful answer AND invite them to go deeper
-- When users mention specific foods from their pantry, tie your advice to those foods`;
-
-const client = new Anthropic({
-  apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-  dangerouslyAllowBrowser: true,
-});
 
 
 export function CookScreen() {
@@ -61,8 +37,7 @@ export function CookScreen() {
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Store full conversation history for Claude (alternating user/assistant)
-  const historyRef = useRef<Anthropic.MessageParam[]>([]);
+  const historyRef = useRef<ConversationMessage[]>([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -97,34 +72,50 @@ export function CookScreen() {
     let fullText = '';
 
     try {
-      const stream = client.messages.stream({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: historyRef.current,
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: historyRef.current }),
       });
 
-      for await (const event of stream) {
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'text_delta'
-        ) {
-          fullText += event.delta.text;
-          setMessages(prev =>
-            prev.map(m => m.id === avoMsgId ? { ...m, text: fullText } : m)
-          );
+      if (!response.ok || !response.body) {
+        throw new Error(`${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') break outer;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.error) throw new Error('api_error');
+            if (parsed.text) {
+              fullText += parsed.text;
+              setMessages(prev =>
+                prev.map(m => m.id === avoMsgId ? { ...m, text: fullText } : m)
+              );
+            }
+          } catch (e) {
+            if ((e as Error).message === 'api_error') throw e;
+          }
         }
       }
 
-      // Append assistant response to history
       historyRef.current = [
         ...historyRef.current,
         { role: 'assistant', content: fullText },
       ];
     } catch (err) {
-      const errorMsg = err instanceof Anthropic.AuthenticationError
-        ? "Looks like the API key isn't set up yet. Add your VITE_ANTHROPIC_API_KEY to the .env file!"
-        : err instanceof Anthropic.RateLimitError
+      const status = (err as Error).message;
+      const errorMsg = status === '429'
         ? "I'm getting a lot of questions right now — try again in a moment!"
         : "Something went wrong connecting to my brain. Try again?";
 
