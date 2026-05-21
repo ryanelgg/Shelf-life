@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="#2d2418"/>
+
+  <!-- Shelf plank -->
+  <rect x="130" y="622" width="764" height="46" rx="10" fill="#a38958"/>
+  <rect x="130" y="656" width="764" height="14" rx="0" fill="#7a6030" opacity="0.5"/>
+
+  <!-- Left shelf bracket -->
+  <path d="M210 668 L210 740 Q210 750 220 750 L248 750 Q238 740 238 728 L238 668Z" fill="#8a7040" opacity="0.55"/>
+  <!-- Right shelf bracket -->
+  <path d="M814 668 L814 740 Q814 750 804 750 L776 750 Q786 740 786 728 L786 668Z" fill="#8a7040" opacity="0.55"/>
+
+  <!-- APPLE -->
+  <circle cx="296" cy="522" r="100" fill="#ede4d4"/>
+  <!-- Apple indent at top -->
+  <ellipse cx="296" cy="428" rx="28" ry="18" fill="#2d2418"/>
+  <!-- Apple stem -->
+  <path d="M296 426 Q305 400 320 388" stroke="#8a7040" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <!-- Apple leaf -->
+  <path d="M320 388 Q348 372 352 390 Q336 408 320 388Z" fill="#4a7c59"/>
+  <!-- Apple shine -->
+  <ellipse cx="268" cy="496" rx="20" ry="28" fill="white" opacity="0.14" transform="rotate(-20 268 496)"/>
+
+  <!-- BOTTLE -->
+  <!-- Bottle body -->
+  <rect x="472" y="432" width="80" height="192" rx="12" fill="#ede4d4"/>
+  <!-- Bottle shoulder -->
+  <path d="M472 432 Q472 400 494 390 L530 390 Q552 400 552 432Z" fill="#ddd0ba"/>
+  <!-- Bottle neck -->
+  <rect x="500" y="338" width="24" height="58" rx="7" fill="#ddd0ba"/>
+  <!-- Bottle cap -->
+  <rect x="494" y="322" width="36" height="22" rx="6" fill="#4a7c59"/>
+  <!-- Label area -->
+  <rect x="480" y="468" width="64" height="88" rx="5" fill="#d4c8b0" opacity="0.55"/>
+  <line x1="490" y1="494" x2="534" y2="494" stroke="#a38958" stroke-width="3" opacity="0.5"/>
+  <line x1="494" y1="508" x2="530" y2="508" stroke="#a38958" stroke-width="3" opacity="0.4"/>
+  <!-- Bottle shine -->
+  <rect x="480" y="448" width="9" height="155" rx="5" fill="white" opacity="0.2"/>
+
+  <!-- HERB BUNCH -->
+  <!-- Main stems -->
+  <path d="M728 622 L728 508" stroke="#7a9048" stroke-width="9" stroke-linecap="round"/>
+  <path d="M712 622 L698 498" stroke="#7a9048" stroke-width="8" stroke-linecap="round"/>
+  <path d="M744 622 L760 496" stroke="#7a9048" stroke-width="8" stroke-linecap="round"/>
+  <!-- Side branches -->
+  <path d="M720 560 L694 536" stroke="#7a9048" stroke-width="6" stroke-linecap="round"/>
+  <path d="M736 554 L762 530" stroke="#7a9048" stroke-width="6" stroke-linecap="round"/>
+  <!-- Leaves -->
+  <path d="M728 508 Q712 476 696 480 Q704 510 728 508Z" fill="#5a8840"/>
+  <path d="M698 498 Q678 470 668 484 Q680 512 698 498Z" fill="#4a7c38"/>
+  <path d="M760 496 Q780 468 792 480 Q780 510 760 496Z" fill="#4a7c38"/>
+  <path d="M694 536 Q672 518 668 530 Q678 550 694 536Z" fill="#5a8840"/>
+  <path d="M762 530 Q784 512 788 524 Q778 544 762 530Z" fill="#5a8840"/>
+</svg>

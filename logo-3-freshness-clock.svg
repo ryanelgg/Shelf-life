@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="#faf7f2"/>
+
+  <!-- Outer ring -->
+  <circle cx="512" cy="512" r="352" fill="none" stroke="#4a7c59" stroke-width="72"/>
+
+  <!-- Hour markers -->
+  <rect x="504" y="192" width="16" height="48" rx="8" fill="#4a7c59"/>
+  <rect x="504" y="784" width="16" height="48" rx="8" fill="#4a7c59"/>
+  <rect x="192" y="504" width="48" height="16" rx="8" fill="#4a7c59"/>
+  <rect x="784" y="504" width="48" height="16" rx="8" fill="#4a7c59"/>
+
+  <!-- Hour hand (leaf shape pointing to ~10) -->
+  <path d="M512 512 L390 338" stroke="#2d5a3a" stroke-width="22" stroke-linecap="round"/>
+  <!-- Leaf tip on hour hand -->
+  <path d="M390 338 Q364 308 356 284 Q392 282 390 338Z" fill="#4a7c59"/>
+  <path d="M390 338 Q420 310 430 286 Q394 288 390 338Z" fill="#3a6e4a"/>
+
+  <!-- Minute hand (carrot shape pointing to ~2) -->
+  <path d="M512 512 L648 320" stroke="#2d5a3a" stroke-width="18" stroke-linecap="round"/>
+  <!-- Carrot tip -->
+  <path d="M648 320 L670 278" stroke="#c47a30" stroke-width="14" stroke-linecap="round"/>
+  <path d="M648 320 Q658 296 670 278 Q638 272 648 320Z" fill="#d4863a"/>
+  <!-- Carrot top greens -->
+  <path d="M648 320 Q636 298 624 290" stroke="#4a8c30" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M648 320 Q644 294 638 282" stroke="#4a8c30" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M648 320 Q658 295 670 288" stroke="#4a8c30" stroke-width="6" fill="none" stroke-linecap="round"/>
+
+  <!-- Center pivot -->
+  <circle cx="512" cy="512" r="22" fill="#2d5a3a"/>
+  <circle cx="512" cy="512" r="10" fill="#faf7f2"/>
+
+  <!-- Small leaf accent at 6 position -->
+  <path d="M512 844 Q496 818 500 800 Q524 808 512 844Z" fill="#4a7c59"/>
+  <path d="M512 844 Q528 818 524 800 Q500 808 512 844Z" fill="#3d6e4a"/>
+</svg>

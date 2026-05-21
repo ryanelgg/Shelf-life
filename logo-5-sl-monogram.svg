@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="#4a7c59"/>
+
+  <!-- Decorative leaf above letters -->
+  <path d="M512 184 Q482 138 488 108 Q524 122 512 184Z" fill="#faf7f2" opacity="0.75"/>
+  <path d="M512 184 Q542 138 536 108 Q500 122 512 184Z" fill="#e8ddd0" opacity="0.65"/>
+  <!-- Leaf stem -->
+  <line x1="512" y1="184" x2="512" y2="218" stroke="#faf7f2" stroke-width="9" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- SL lettermark -->
+  <text
+    x="512"
+    y="720"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="430"
+    font-weight="400"
+    text-anchor="middle"
+    letter-spacing="-8"
+    fill="#faf7f2">SL</text>
+
+  <!-- Thin underline accent -->
+  <rect x="280" y="756" width="464" height="3" rx="2" fill="#faf7f2" opacity="0.3"/>
+</svg>

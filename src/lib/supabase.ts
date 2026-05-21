@@ -1,0 +1,49 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// ── Typed row shapes (mirrors the SQL tables) ─────────────────────────────────
+
+export interface ProfileRow {
+  id: string;
+  name: string | null;
+  dietary_preferences: string[];
+  subscription_tier: string;
+  streak_days: number;
+  last_active_date: string | null;
+  avo_chat_count: number;
+  avo_chat_reset_date: string | null;
+  onboarding_complete: boolean;
+  auth_provider: string;
+  email: string | null;
+  created_at: string;
+}
+
+export interface PantryItemRow {
+  id: string;
+  user_id: string;
+  name: string;
+  category: string;
+  location: string;
+  quantity: number;
+  unit: string;
+  added_date: string;
+  expiration_date: string;
+  estimated_value: number;
+  notes: string | null;
+  frozen: boolean;
+}
+
+export interface WasteLogRow {
+  id: string;
+  user_id: string;
+  item_name: string;
+  category: string;
+  action: string;
+  date: string;
+  estimated_value: number;
+  quantity: number;
+}

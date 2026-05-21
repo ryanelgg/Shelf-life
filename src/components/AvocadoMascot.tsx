@@ -1,14 +1,11 @@
 import { useState, useRef, useCallback } from 'react';
-import { AVOCADO_TIPS } from '../types';
-import { useStore } from '../store/useStore';
 
-type Expression = 'happy' | 'excited' | 'sleepy' | 'surprised' | 'wink' | 'love' | 'thinking' | 'normal';
+type Expression = 'happy' | 'excited' | 'sleepy' | 'surprised' | 'wink' | 'love' | 'thinking' | 'normal' | 'sick';
 
 interface AvocadoMascotProps {
   size?: number;
   isStatic?: boolean;
   className?: string;
-  onTipShow?: (tip: string) => void;
 }
 
 // Earthy hand-drawn palette
@@ -22,14 +19,12 @@ const LEAF      = '#3e6a2e';
 const LEAF_LINE = '#264a1c';
 const FACE      = '#3a2010';
 
-export function AvocadoMascot({ size = 56, isStatic = false, className = '', onTipShow }: AvocadoMascotProps) {
-  const { avocadoTipIndex, nextAvocadoTip } = useStore();
+export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: AvocadoMascotProps) {
   const [expression, setExpression] = useState<Expression>('happy');
   const [animClass, setAnimClass] = useState('');
-  const [showTip, setShowTip] = useState(false);
+  const [splatted, setSplatted] = useState(false);
   const tapTimesRef = useRef<number[]>([]);
-  const animTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const tipTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const s = size;
 
@@ -44,23 +39,30 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
   }, []);
 
   const handleTap = useCallback(() => {
-    if (isStatic) return;
+    if (isStatic || splatted) return;
     const now = Date.now();
     tapTimesRef.current.push(now);
-    tapTimesRef.current = tapTimesRef.current.filter(t => now - t < 500);
+    tapTimesRef.current = tapTimesRef.current.filter(t => now - t < 600);
 
-    const tip = AVOCADO_TIPS[avocadoTipIndex % AVOCADO_TIPS.length];
-    setShowTip(true);
-    onTipShow?.(tip);
-    nextAvocadoTip();
-
-    if (tipTimeoutRef.current) clearTimeout(tipTimeoutRef.current);
-    tipTimeoutRef.current = setTimeout(() => setShowTip(false), 4000);
-
-    if (tapTimesRef.current.length >= 3) {
+    if (tapTimesRef.current.length >= 4) {
       tapTimesRef.current = [];
-      const exprs: Expression[] = ['excited', 'love', 'surprised'];
-      triggerReaction(exprs[Math.floor(Math.random() * exprs.length)], 'avo-spin-react', 1200);
+      if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+      // Sick face + shake, then SMASH flat into guac
+      setExpression('sick');
+      setAnimClass('avo-shake');
+      setTimeout(() => {
+        setAnimClass('avo-smash');
+        // Splat appears at the exact moment avo is fully squished
+        setTimeout(() => setSplatted(true), 250);
+      }, 500);
+      animTimeoutRef.current = setTimeout(() => {
+        setSplatted(false);
+        setExpression('happy');
+        setAnimClass('');
+      }, 3500);
+    } else if (tapTimesRef.current.length >= 3) {
+      // Getting queasy — warning before the splat
+      triggerReaction('sick', 'avo-wiggle-react', 1200);
     } else if (tapTimesRef.current.length === 2) {
       const exprs: Expression[] = ['wink', 'excited', 'thinking'];
       triggerReaction(exprs[Math.floor(Math.random() * exprs.length)], 'avo-wiggle-react', 800);
@@ -68,7 +70,7 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
       const exprs: Expression[] = ['happy', 'wink', 'excited'];
       triggerReaction(exprs[Math.floor(Math.random() * exprs.length)], 'avo-bounce-react', 600);
     }
-  }, [isStatic, avocadoTipIndex, nextAvocadoTip, triggerReaction, onTipShow]);
+  }, [isStatic, splatted, triggerReaction]);
 
   const renderEyes = () => {
     const eye: React.CSSProperties = {
@@ -128,6 +130,18 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
             </div>
           </div>
         );
+      case 'sick':
+        return (
+          <div style={{ display: 'flex', gap: s * 0.12, alignItems: 'center' }}>
+            {/* Spiral/dizzy eyes */}
+            <svg width={s * 0.14} height={s * 0.14} viewBox="0 0 14 14" fill="none">
+              <path d="M7 2 C10 2, 12 5, 10 7 C8 9, 5 8, 5 6 C5 4, 7 4, 7 5.5" stroke={FACE} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            </svg>
+            <svg width={s * 0.14} height={s * 0.14} viewBox="0 0 14 14" fill="none">
+              <path d="M7 2 C10 2, 12 5, 10 7 C8 9, 5 8, 5 6 C5 4, 7 4, 7 5.5" stroke={FACE} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            </svg>
+          </div>
+        );
       default:
         return (
           <div style={{ display: 'flex', gap: s * 0.15 }}>
@@ -164,6 +178,13 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
             <path d="M3 5 C5 3, 9 3, 11 5" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
           </svg>
         );
+      case 'sick':
+        return (
+          <svg width={s * 0.28} height={s * 0.14} viewBox="0 0 20 10" fill="none">
+            {/* Wavy queasy mouth */}
+            <path d="M3 5 C5 2, 7 8, 10 5 C13 2, 15 8, 17 5" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        );
       case 'wink':
         return (
           <svg width={s * 0.24} height={s * 0.14} viewBox="0 0 18 10" fill="none">
@@ -182,6 +203,134 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
   const blushSize = s * 0.07;
   const showBlush = ['happy', 'excited', 'love', 'wink'].includes(expression);
 
+  if (splatted) {
+    // Drops that fly away from the squish point
+    const drops: { dx: string; dy: string; r: number; fill: string; delay: string; dur: string }[] = [
+      { dx: '0px',   dy: '-68px', r: 8,   fill: FLESH,     delay: '0.07s', dur: '0.55s' },
+      { dx: '54px',  dy: '-54px', r: 5.5, fill: FLESH,     delay: '0.10s', dur: '0.50s' },
+      { dx: '72px',  dy: '-6px',  r: 7,   fill: FLESH,     delay: '0.06s', dur: '0.58s' },
+      { dx: '56px',  dy: '44px',  r: 5,   fill: FLESH_SHD, delay: '0.12s', dur: '0.52s' },
+      { dx: '0px',   dy: '64px',  r: 7.5, fill: FLESH,     delay: '0.08s', dur: '0.56s' },
+      { dx: '-54px', dy: '48px',  r: 5,   fill: SKIN,      delay: '0.11s', dur: '0.50s' },
+      { dx: '-72px', dy: '-8px',  r: 6.5, fill: FLESH,     delay: '0.07s', dur: '0.54s' },
+      { dx: '-50px', dy: '-56px', r: 5,   fill: FLESH_SHD, delay: '0.13s', dur: '0.48s' },
+      { dx: '26px',  dy: '-76px', r: 3.5, fill: FLESH,     delay: '0.15s', dur: '0.45s' },
+      { dx: '-22px', dy: '74px',  r: 3,   fill: SKIN,      delay: '0.14s', dur: '0.46s' },
+      { dx: '82px',  dy: '28px',  r: 3.5, fill: FLESH,     delay: '0.16s', dur: '0.43s' },
+      { dx: '-82px', dy: '22px',  r: 3,   fill: FLESH_SHD, delay: '0.17s', dur: '0.44s' },
+    ];
+
+    return (
+      <div
+        onClick={handleTap}
+        style={{
+          position: 'relative',
+          width: s * 1.3,
+          height: s * 1.3,
+          flexShrink: 0,
+          cursor: 'pointer',
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        {/* Flat squished body — lands from above with a squish bounce */}
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          animation: 'avoSquishLand 0.38s cubic-bezier(0.22, 1, 0.36, 1) both',
+          pointerEvents: 'none',
+        }}>
+          <svg
+            width={s * 1.4}
+            height={s * 0.82}
+            viewBox="0 0 112 66"
+            fill="none"
+          >
+            {/* Skin outer */}
+            <path d="M7 33 C7 15,22 5,56 5 C90 5,105 15,105 33 C105 51,90 61,56 61 C22 61,7 51,7 33 Z"
+              fill={SKIN} stroke={SKIN_LINE} strokeWidth="1.8" strokeLinejoin="round"/>
+            {/* Flesh inner */}
+            <path d="M17 33 C17 19,28 13,56 13 C84 13,95 19,95 33 C95 47,84 53,56 53 C28 53,17 47,17 33 Z"
+              fill={FLESH}/>
+            {/* Flesh texture streaks */}
+            <path d="M30 17 C28 25,28 41,30 49" stroke={FLESH_SHD} strokeWidth="1" opacity="0.4" fill="none" strokeLinecap="round"/>
+            <path d="M82 17 C84 25,84 41,82 49" stroke={FLESH_SHD} strokeWidth="1" opacity="0.3" fill="none" strokeLinecap="round"/>
+            {/* Pit — centered, proportional */}
+            <ellipse cx="56" cy="38" rx="18" ry="11" fill={PIT} stroke={PIT_LINE} strokeWidth="1.2"/>
+            <path d="M50 35 C53 33,59 33,62 35" stroke="#9a6840" strokeWidth="0.9" opacity="0.5" fill="none" strokeLinecap="round"/>
+            {/* X eyes — clearly above the pit */}
+            <g transform="translate(36,22)">
+              <line x1="-4" y1="-4" x2="4" y2="4" stroke={FACE} strokeWidth="2.2" strokeLinecap="round"/>
+              <line x1="4" y1="-4" x2="-4" y2="4" stroke={FACE} strokeWidth="2.2" strokeLinecap="round"/>
+            </g>
+            <g transform="translate(76,22)">
+              <line x1="-4" y1="-4" x2="4" y2="4" stroke={FACE} strokeWidth="2.2" strokeLinecap="round"/>
+              <line x1="4" y1="-4" x2="-4" y2="4" stroke={FACE} strokeWidth="2.2" strokeLinecap="round"/>
+            </g>
+            {/* Dazed wavy mouth — below the pit */}
+            <path d="M43 51 C47 48,51 53,56 50 C61 47,65 52,69 50"
+              stroke={FACE} strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+        </div>
+
+        {/* Impact wave ring — expands outward on hit */}
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: '52%',
+          width: s * 1.8,
+          height: s * 0.44,
+          marginLeft: -(s * 0.9),
+          marginTop: -(s * 0.22),
+          borderRadius: '50%',
+          border: `1.5px solid ${FLESH}`,
+          animation: 'avoImpactRing 0.42s ease-out both',
+          pointerEvents: 'none',
+        }}/>
+
+        {/* Drops flying outward */}
+        {drops.map((d, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '52%',
+              width: d.r * 2,
+              height: d.r * 2,
+              marginLeft: -d.r,
+              marginTop: -d.r,
+              borderRadius: '50%',
+              background: d.fill,
+              ...({ '--dx': d.dx, '--dy': d.dy } as React.CSSProperties),
+              animation: `avoSquishDrop ${d.dur} ease-out ${d.delay} both`,
+              pointerEvents: 'none',
+            }}
+          />
+        ))}
+
+        <style>{`
+          @keyframes avoSquishLand {
+            0%   { transform: translate(-50%, -120%) scaleX(0.82) scaleY(1.5); opacity: 0.85; }
+            42%  { transform: translate(-50%, -50%) scaleX(1.18) scaleY(0.72); }
+            62%  { transform: translate(-50%, -50%) scaleX(0.94) scaleY(1.08); }
+            80%  { transform: translate(-50%, -50%) scaleX(1.04) scaleY(0.96); }
+            100% { transform: translate(-50%, -50%) scaleX(1) scaleY(1); }
+          }
+          @keyframes avoSquishDrop {
+            0%   { transform: translate(0, 0) scale(1.4); opacity: 1; }
+            55%  { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0.9; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(0.7); opacity: 0; }
+          }
+          @keyframes avoImpactRing {
+            0%   { transform: scaleX(0.3) scaleY(0.3); opacity: 0.9; }
+            100% { transform: scaleX(1) scaleY(1); opacity: 0; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`${isStatic ? '' : 'avo-drift'} ${animClass} ${className}`.trim()}
@@ -198,43 +347,6 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '', onT
         WebkitTapHighlightColor: 'transparent',
       }}
     >
-      {/* Tip bubble */}
-      {showTip && !isStatic && (
-        <div className="avo-tip-bubble" style={{
-          position: 'absolute',
-          bottom: '105%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'var(--bg-card)',
-          border: 'var(--card-border)',
-          borderRadius: '12px',
-          padding: '8px 12px',
-          fontSize: '11px',
-          color: 'var(--text-primary)',
-          width: 'max(200px, 60vw)',
-          maxWidth: '280px',
-          boxShadow: '0 4px 20px var(--overlay-bg)',
-          zIndex: 100,
-          lineHeight: 1.4,
-          textAlign: 'center',
-          pointerEvents: 'none',
-        }}>
-          <div style={{ fontSize: '14px', marginBottom: '2px' }}>🥑</div>
-          {AVOCADO_TIPS[(avocadoTipIndex - 1 + AVOCADO_TIPS.length) % AVOCADO_TIPS.length]}
-          <div style={{
-            position: 'absolute',
-            bottom: '-6px',
-            left: '50%',
-            transform: 'translateX(-50%) rotate(45deg)',
-            width: '12px',
-            height: '12px',
-            background: 'var(--bg-card)',
-            borderRight: 'var(--card-border)',
-            borderBottom: 'var(--card-border)',
-          }} />
-        </div>
-      )}
-
       {/* Leaf — botanical, hand-drawn */}
       <svg
         style={{ position: 'absolute', top: s * -0.06, left: '50%', transform: 'translateX(-25%)' }}

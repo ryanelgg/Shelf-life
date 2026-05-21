@@ -4,6 +4,7 @@ import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
+import { EmptyState } from '../components/EmptyState';
 
 function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string; size?: number; color?: string }) {
   const s = { width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 as const };
@@ -37,10 +38,11 @@ function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string;
       <path d="M12 15C12 15 7.5 16 5.5 13C5.5 10 9.5 9 12 11" />
     </svg></span>
   );
-  if (type === 'water') return (
+  if (type === 'money') return (
     <span style={s}><svg viewBox="0 0 24 24" {...p}>
-      <path d="M12 3C12 3 5.5 11.5 5.5 15.5C5.5 19 8.4 21.5 12 21.5C15.6 21.5 18.5 19 18.5 15.5C18.5 11.5 12 3 12 3Z" />
-      <path d="M9 17C9.5 18.5 11 19.5 12.5 19.5" />
+      <circle cx="12" cy="12" r="9" />
+      <line x1="12" y1="5.5" x2="12" y2="18.5" />
+      <path d="M12 7.5 C15 7.5 15 11.5 12 11.5 C9 11.5 9 15.5 12 15.5" />
     </svg></span>
   );
   if (type === 'trophy') return (
@@ -65,30 +67,50 @@ export function ImpactScreen() {
     const eaten = wasteLogs.filter(w => w.action === 'eaten');
     const tossed = wasteLogs.filter(w => w.action === 'tossed');
     const composted = wasteLogs.filter(w => w.action === 'composted');
+    const shared = wasteLogs.filter(w => w.action === 'shared');
+    const donated = wasteLogs.filter(w => w.action === 'donated');
 
     const totalItems = wasteLogs.length;
     const wasteRate = totalItems > 0 ? (tossed.length / totalItems) * 100 : 0;
     const saveRate = totalItems > 0 ? ((totalItems - tossed.length) / totalItems) * 100 : 0;
 
-    // Pie chart data (no donated)
     const pieData = [
       { name: 'Eaten', value: eaten.length, color: 'var(--fresh)' },
       { name: 'Tossed', value: tossed.length, color: 'var(--expired)' },
       { name: 'Composted', value: composted.length, color: 'var(--good)' },
+      { name: 'Shared', value: shared.length, color: 'var(--expiring-soon)' },
+      { name: 'Donated', value: donated.length, color: 'var(--accent)' },
     ].filter(d => d.value > 0);
 
     // CO2 saved estimate
     const itemsSaved = totalItems - tossed.length;
     const co2Saved = (itemsSaved * 0.5).toFixed(1);
 
+    // Money saved — sum estimatedValue of everything that wasn't tossed
+    const moneySaved = wasteLogs
+      .filter(w => w.action !== 'tossed')
+      .reduce((sum, w) => sum + (w.estimatedValue * w.quantity), 0);
+
     return {
       totalItems,
       eaten: eaten.length, tossed: tossed.length, composted: composted.length,
-      wasteRate, saveRate, pieData, co2Saved, itemsSaved,
+      shared: shared.length, donated: donated.length,
+      wasteRate, saveRate, pieData, co2Saved, itemsSaved, moneySaved,
     };
   }, [wasteLogs]);
 
-  const streakDays = user?.streakDays || 7;
+  const streakDays = user?.streakDays ?? 0;
+
+  if (wasteLogs.length === 0) {
+    return (
+      <EmptyState
+        title="Your impact starts here"
+        description="Log what you eat, toss, or compost and Avo will show you how much money you've saved and waste you've avoided."
+        ctaLabel="Go to my pantry"
+        ctaTab="pantry"
+      />
+    );
+  }
 
   return (
     <div className="screen-enter" style={{
@@ -108,7 +130,7 @@ export function ImpactScreen() {
         </div>
       </div>
 
-      {/* Save rate hero */}
+      {/* Money saved hero */}
       <Card className="card-enter stagger-2" style={{
         textAlign: 'center',
         padding: '24px 20px',
@@ -116,14 +138,22 @@ export function ImpactScreen() {
         border: '1px solid rgba(74, 124, 89, 0.15)',
       }}>
         <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-          Food Save Rate
+          Money Saved
         </div>
         <div className="mono" style={{ fontSize: '52px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
-          {stats.saveRate.toFixed(0)}%
+          ${stats.moneySaved.toFixed(2)}
         </div>
-        <ProgressBar value={stats.saveRate} color="var(--accent)" height={8} />
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
-          {stats.itemsSaved} out of {stats.totalItems} items saved from waste
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>
+          by not throwing out {stats.itemsSaved} item{stats.itemsSaved !== 1 ? 's' : ''}
+        </div>
+        <div style={{ marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+            Save Rate
+          </div>
+          <ProgressBar value={stats.saveRate} color="var(--accent)" height={6} />
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+            {stats.saveRate.toFixed(0)}% of tracked food used before expiring
+          </div>
         </div>
       </Card>
 
@@ -192,9 +222,9 @@ export function ImpactScreen() {
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>CO2 Prevented</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}><ImpactIcon type="water" size={32} color="var(--accent)" /></div>
-            <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>{(stats.itemsSaved * 50).toLocaleString()} L</div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Water Saved</div>
+            <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}><ImpactIcon type="money" size={32} color="var(--accent)" /></div>
+            <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>${stats.moneySaved.toFixed(0)}</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Money Saved</div>
           </div>
         </div>
       </Card>
@@ -211,12 +241,12 @@ export function ImpactScreen() {
           {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} style={{
               width: 28, height: 28, borderRadius: '8px',
-              background: i < streakDays % 7 ? 'var(--accent)' : 'var(--accent-dim)',
+              background: i < (streakDays % 7 || (streakDays > 0 ? 7 : 0)) ? 'var(--accent)' : 'var(--accent-dim)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '12px',
               transition: 'background 0.3s',
             }}>
-              {i < streakDays % 7 ? <ImpactIcon type="streak" size={14} color="#fff" /> : ''}
+              {i < (streakDays % 7 || (streakDays > 0 ? 7 : 0)) ? <ImpactIcon type="streak" size={14} color="#fff" /> : ''}
             </div>
           ))}
         </div>
@@ -243,6 +273,7 @@ export function ImpactScreen() {
           <span style={{ color: 'var(--accent)' }}>4 days left</span>
         </div>
       </Card>
+
     </div>
   );
 }

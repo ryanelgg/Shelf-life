@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration } from '../types';
+import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { StorageLocation, PantryItem, WasteAction } from '../types';
@@ -14,6 +14,83 @@ const LOCATION_LABELS: Record<StorageLocation, string> = {
   pantry: 'Pantry',
   counter: 'Counter',
 };
+
+function EmptyPantryIllustration() {
+  const wood   = '#C4956A';
+  const woodDk = '#8B6035';
+  const wall   = '#FAF2E4';
+  const web    = '#BFB09A';
+  const dust   = '#D4B88A';
+  return (
+    <svg width="82" height="78" viewBox="0 0 82 78" fill="none">
+      {/* ── back wall ── */}
+      <path
+        d="M13 11 C13 10, 69 10, 69 11 L69 66 C69 67, 13 67, 13 66 Z"
+        fill={wall} stroke={woodDk} strokeWidth="1.8" strokeLinejoin="round"
+      />
+
+      {/* ── top cornice ── */}
+      <path
+        d="M9 7 C12 6.5, 70 6.5, 73 7 L73 13 C70 13.5, 12 13.5, 9 13 Z"
+        fill={wood} stroke={woodDk} strokeWidth="1.8" strokeLinejoin="round"
+      />
+
+      {/* ── left side panel ── */}
+      <path
+        d="M9 7 L15 7 L15 70 L9 70 Z"
+        fill={wood} stroke={woodDk} strokeWidth="1.8" strokeLinejoin="round"
+      />
+
+      {/* ── right side panel ── */}
+      <path
+        d="M67 7 L73 7 L73 70 L67 70 Z"
+        fill={wood} stroke={woodDk} strokeWidth="1.8" strokeLinejoin="round"
+      />
+
+      {/* ── base ── */}
+      <path
+        d="M9 65 C12 64.5, 70 64.5, 73 65 L73 71 C70 71.5, 12 71.5, 9 71 Z"
+        fill={wood} stroke={woodDk} strokeWidth="1.8" strokeLinejoin="round"
+      />
+
+      {/* ── shelf 1 (upper) ── */}
+      <path
+        d="M15 33 C25 32.4, 55 33.6, 67 33 L67 36.5 C55 37, 25 36, 15 36.5 Z"
+        fill={wood} stroke={woodDk} strokeWidth="1.6" strokeLinejoin="round"
+      />
+
+      {/* ── shelf 2 (lower) ── */}
+      <path
+        d="M15 52 C28 51.3, 52 52.7, 67 52 L67 55.5 C52 56, 28 55, 15 55.5 Z"
+        fill={wood} stroke={woodDk} strokeWidth="1.6" strokeLinejoin="round"
+      />
+
+      {/* ── cobweb, top-right corner ── */}
+      <path d="M67 14 L55 26" stroke={web} strokeWidth="0.85" strokeLinecap="round"/>
+      <path d="M67 20 L57 28" stroke={web} strokeWidth="0.85" strokeLinecap="round"/>
+      <path d="M67 26 L59 30" stroke={web} strokeWidth="0.85" strokeLinecap="round"/>
+      <path d="M59.5 17 C61 19, 65 20, 67 20"  stroke={web} strokeWidth="0.8" strokeLinecap="round" fill="none"/>
+      <path d="M56.5 22 C59 24, 63 25, 67 26"  stroke={web} strokeWidth="0.8" strokeLinecap="round" fill="none"/>
+      {/* tiny spider */}
+      <circle cx="56" cy="25" r="1.3" fill={web} />
+      <line x1="54" y1="25"   x2="52.5" y2="23.5" stroke={web} strokeWidth="0.7"/>
+      <line x1="54" y1="25.5" x2="52.5" y2="26.5" stroke={web} strokeWidth="0.7"/>
+      <line x1="58" y1="25"   x2="59.5" y2="23.5" stroke={web} strokeWidth="0.7"/>
+      <line x1="58" y1="25.5" x2="59.5" y2="26.5" stroke={web} strokeWidth="0.7"/>
+
+      {/* ── dust specks on shelves ── */}
+      <circle cx="28" cy="31.5" r="1"   fill={dust} opacity="0.6"/>
+      <circle cx="38" cy="32"   r="0.7" fill={dust} opacity="0.45"/>
+      <circle cx="48" cy="31"   r="1.2" fill={dust} opacity="0.5"/>
+      <circle cx="30" cy="50.5" r="0.9" fill={dust} opacity="0.5"/>
+      <circle cx="44" cy="51"   r="0.7" fill={dust} opacity="0.4"/>
+    </svg>
+  );
+}
+
+function createWasteLogId() {
+  return `w-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function PantryScreen() {
   const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem } = useStore();
@@ -39,7 +116,7 @@ export function PantryScreen() {
       items = items.filter(i => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
     }
     return [...items].sort((a, b) => {
-      if (sortBy === 'expiration') return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
+      if (sortBy === 'expiration') return parseLocalDate(a.expirationDate).getTime() - parseLocalDate(b.expirationDate).getTime();
       if (sortBy === 'name') return a.name.localeCompare(b.name);
       return a.category.localeCompare(b.category);
     });
@@ -54,11 +131,11 @@ export function PantryScreen() {
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
     addWasteLog({
-      id: `w-${Date.now()}`,
+      id: createWasteLogId(),
       itemName: item.name,
       category: item.category,
       action,
-      date: new Date().toISOString().split('T')[0],
+      date: formatLocalDate(new Date()),
       estimatedValue: item.estimatedValue,
       quantity: item.quantity,
     });
@@ -94,7 +171,8 @@ export function PantryScreen() {
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    const name = user?.name || 'there';
+    const raw = (user?.name || 'there').split(' ')[0];
+    const name = raw.charAt(0).toUpperCase() + raw.slice(1);
     if (hour < 12) return `Good morning, ${name}`;
     if (hour < 17) return `Good afternoon, ${name}`;
     return `Good evening, ${name}`;
@@ -344,6 +422,7 @@ export function PantryScreen() {
       )}
 
       {/* Item grid — re-mounts when sort/filter changes so items animate upward */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div key={listAnimKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {filteredItems.map((item, i) => {
           const status = getFreshnessStatus(item.expirationDate);
@@ -369,6 +448,7 @@ export function PantryScreen() {
                     { action: 'tossed' as WasteAction, label: 'Tossed', color: 'var(--expired)', svgPath: <><path d="M3 6H21M8 6L9 3H15L16 6"/><path d="M5 6L6 21H18L19 6"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/></> },
                     { action: 'composted' as WasteAction, label: 'Compost', color: 'var(--good)', svgPath: <><path d="M12 20V12"/><path d="M12 16C10 13.5 6.5 13 5.5 10.5C7.5 8 11 9.5 12 12"/><path d="M12 13C14 10.5 17.5 10 18.5 8C16.5 5 13 7 12 11"/><path d="M9 20Q12 18 15 20"/></> },
                     { action: 'shared' as WasteAction, label: 'Shared', color: 'var(--accent)', svgPath: <><circle cx="9" cy="7" r="3"/><circle cx="15" cy="7" r="3"/><path d="M3 19C3 16.2 5.7 14 9 14"/><path d="M21 19C21 16.2 18.3 14 15 14"/><path d="M9 14C9 14 12 16 15 14"/></> },
+                    { action: 'donated' as WasteAction, label: 'Donate', color: '#9B7FD4', svgPath: <><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></> },
                   ] as { action: WasteAction; label: string; color: string; svgPath: React.ReactNode }[]).map(a => (
                     <button
                       key={a.action}
@@ -468,13 +548,24 @@ export function PantryScreen() {
       </div>
 
       {filteredItems.length === 0 && (
-        <Card className="card-enter stagger-3" style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🥑</div>
+        <Card className="card-enter stagger-3" style={{
+          textAlign: 'center',
+          padding: '36px 20px',
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
+            <EmptyPantryIllustration />
+          </div>
           <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Your {activeLocation === 'all' ? 'pantry' : activeLocation} is empty</div>
           <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Tap the + tab to add items!</div>
         </Card>
       )}
 
+      </div>
       <div style={{ height: '20px' }} />
 
       {/* Edit modal */}

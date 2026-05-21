@@ -1,12 +1,26 @@
+export type SubscriptionTier = 'free' | 'pro';
+
+export const FREE_LIMITS = {
+  pantryItems: 20,
+  avoChatTotal: 5,     // free users: 5 chats forever
+  proChatPerDay: 20,   // pro users: 20 chats per day
+} as const;
+
+export type AuthProvider = 'apple' | 'google' | 'email' | 'guest';
+
 export interface User {
   id: string;
   name: string;
-  householdSize: number;
+  email?: string;
+  authProvider: AuthProvider;
   dietaryPreferences: DietaryPref[];
   createdAt: string;
   onboardingComplete: boolean;
   streakDays: number;
   lastActiveDate: string;
+  subscriptionTier: SubscriptionTier;
+  avoChatCount: number;
+  avoChatResetDate: string;
 }
 
 export type ThemeMode = 'dark' | 'light';
@@ -157,10 +171,23 @@ export const AVOCADO_TIPS: string[] = [
   "Freeze overripe fruit for smoothies — tastes even better frozen!",
 ];
 
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function parseLocalDate(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
 export function getFreshnessStatus(expirationDate: string): FreshnessStatus {
-  const now = new Date();
-  const exp = new Date(expirationDate);
-  const daysLeft = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const today = new Date();
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const exp = parseLocalDate(expirationDate);
+  const daysLeft = Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
   if (daysLeft < 0) return 'expired';
   if (daysLeft <= 1) return 'expiring';
@@ -180,9 +207,10 @@ export function getFreshnessColor(status: FreshnessStatus): string {
 }
 
 export function getDaysUntilExpiration(expirationDate: string): number {
-  const now = new Date();
-  const exp = new Date(expirationDate);
-  return Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const today = new Date();
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const exp = parseLocalDate(expirationDate);
+  return Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 export const DEFAULT_SHELF_LIFE: Record<FoodCategory, number> = {

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Shelf Life</string>
+    <string name="title_activity_main">Shelf Life</string>
+    <string name="package_name">com.shelflife.app</string>
+    <string name="custom_url_scheme">com.shelflife.app</string>
+</resources>

@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +24,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+scripts/branded.zip
+scripts/branded-slim.json
+scripts/FoodData_Central_branded_food_json_2025-12-18.json
+scripts/FoodData_Central_sr_legacy_food_json_2018-04.json
+scripts/surveyDownload.json
+scripts/foundation-latest.zip
+scripts/sr-legacy.zip
+scripts/survey.zip
+scripts/usda-raw.zip
+.env

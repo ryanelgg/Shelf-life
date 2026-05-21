@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="#1a3522"/>
+
+  <!-- Jar content (herbs visible through glass) -->
+  <rect x="386" y="640" width="252" height="220" rx="0" fill="#3d6e30" opacity="0.3"/>
+
+  <!-- Jar body -->
+  <rect x="376" y="498" width="272" height="366" rx="14" fill="#ede4d4"/>
+
+  <!-- Jar shoulder (trapezoid) -->
+  <path d="M394 460 L376 498 L648 498 L630 460 Z" fill="#e4d9c6"/>
+
+  <!-- Jar neck -->
+  <rect x="410" y="428" width="204" height="38" rx="6" fill="#ddd0ba"/>
+
+  <!-- Lid screw band -->
+  <rect x="396" y="390" width="232" height="44" rx="7" fill="#a38958"/>
+  <line x1="396" y1="404" x2="628" y2="404" stroke="#8a7040" stroke-width="3" opacity="0.4"/>
+  <line x1="396" y1="418" x2="628" y2="418" stroke="#8a7040" stroke-width="3" opacity="0.4"/>
+
+  <!-- Lid cap -->
+  <rect x="412" y="370" width="200" height="26" rx="8" fill="#7a6030"/>
+
+  <!-- Glass reflections -->
+  <rect x="400" y="510" width="14" height="320" rx="7" fill="white" opacity="0.18"/>
+  <rect x="422" y="510" width="7" height="300" rx="4" fill="white" opacity="0.1"/>
+
+  <!-- Jar bottom highlight -->
+  <rect x="376" y="850" width="272" height="14" rx="7" fill="#d8ccb8"/>
+
+  <!-- Sprout stem -->
+  <path d="M512 428 L512 192" stroke="#4a8c38" stroke-width="22" stroke-linecap="round"/>
+
+  <!-- Left leaf -->
+  <path d="M512 308 Q450 254 412 274 Q432 328 512 314Z" fill="#5aaa44"/>
+  <path d="M512 308 Q450 254 412 274" stroke="#3a7828" stroke-width="5" fill="none" stroke-linecap="round"/>
+
+  <!-- Right leaf -->
+  <path d="M512 356 Q578 300 617 318 Q597 372 512 362Z" fill="#48a040"/>
+  <path d="M512 356 Q578 300 617 318" stroke="#3a7828" stroke-width="5" fill="none" stroke-linecap="round"/>
+
+  <!-- Top tip -->
+  <path d="M512 192 Q490 156 496 134 Q526 148 512 192Z" fill="#6abf50"/>
+  <path d="M512 192 Q535 153 528 130 Q500 147 512 192Z" fill="#58b044"/>
+</svg>

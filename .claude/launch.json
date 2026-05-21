@@ -2,10 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "zova-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
+      "name": "shelf-life-mockups",
+      "runtimeExecutable": "/usr/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "5175", "--directory", "/Users/ryan/shelf-life"],
+      "port": 5175
+    },
+    {
+      "name": "shelf-life",
+      "runtimeExecutable": "/Users/ryan/.nvm/versions/node/v24.14.0/bin/node",
+      "runtimeArgs": ["/Users/ryan/shelf-life/node_modules/.bin/vite", "--port", "5174", "--host"],
+      "port": 5174
     }
   ]
 }

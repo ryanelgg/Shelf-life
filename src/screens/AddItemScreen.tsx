@@ -1,13 +1,23 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Camera, CameraSource, CameraResultType } from '@capacitor/camera';
+import { searchFoods, preloadCoreDatabase, preloadFullDatabase } from '../data/foodDatabase';
+import { lookupShelfLife } from '../data/shelfLife';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { DEFAULT_SHELF_LIFE } from '../types';
+import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
+import { UpgradeModal } from '../components/UpgradeModal';
+import * as debug from '../lib/debug';
+import { hapticMedium, hapticLight } from '../lib/haptics';
+import { BarcodeScanner } from '../components/BarcodeScanner';
+import { scanReceipt } from '../lib/receiptApi';
 import type { FoodCategory, StorageLocation } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt';
+type ReceiptListItem = { id: string; name: string; price: number };
 
 const CATEGORIES: FoodCategory[] = [
   'Produce', 'Dairy', 'Meat', 'Seafood', 'Grains', 'Frozen',
@@ -36,9 +46,58 @@ const QUICK_ITEMS = [
   { name: 'Lettuce', category: 'Produce' as FoodCategory, location: 'fridge' as StorageLocation, value: 2.99, unit: 'head' },
 ];
 
+
+function mapCategoryToLocation(category: FoodCategory): string {
+  const map: Record<FoodCategory, string> = {
+    Produce: 'fridge', Dairy: 'fridge', Meat: 'fridge', Seafood: 'fridge',
+    Deli: 'fridge', Condiments: 'fridge',
+    Grains: 'pantry', Canned: 'pantry', Snacks: 'pantry', Beverages: 'pantry', Other: 'pantry',
+    Frozen: 'freezer',
+    Bakery: 'counter',
+  };
+  return map[category] ?? 'pantry';
+}
+
+function resolveReceiptItem(itemName: string): { category: FoodCategory; location: StorageLocation } {
+  const results = searchFoods(itemName, 8);
+  const normalizedName = itemName.trim().toLowerCase();
+  const match = results.find(food => food.name.toLowerCase() === normalizedName) ?? results[0];
+  const category = (match?.category as FoodCategory | undefined) ?? 'Other';
+  const location = (match?.location as StorageLocation | undefined)
+    ?? (mapCategoryToLocation(category) as StorageLocation);
+
+  return { category, location };
+}
+
+let nextId = 0;
+function generateItemId(): string {
+  return `p-${++nextId}-${Date.now().toString(36)}`;
+}
+
+let nextReceiptRowId = 0;
+function generateReceiptRowId(): string {
+  return `receipt-${++nextReceiptRowId}-${Date.now().toString(36)}`;
+}
+
+function isCancelledError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return message.includes('cancel') || message.includes('dismiss');
+  }
+  return false;
+}
+
 export function AddItemScreen() {
-  const { addPantryItem, setActiveTab, pantryItems, updatePantryItem } = useStore();
-  const [mode, setMode] = useState<AddMode>('manual');
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
+
+  useEffect(() => {
+    if (addItemMode) setAddItemMode(null);
+  }, [addItemMode, setAddItemMode]);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [receiptProcessing, setReceiptProcessing] = useState(false);
+  const [receiptItems, setReceiptItems] = useState<ReceiptListItem[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Manual form state
   const [name, setName] = useState('');
@@ -48,28 +107,157 @@ export function AddItemScreen() {
   const [unit, setUnit] = useState('pcs');
   const [value, setValue] = useState('');
   const [customDays, setCustomDays] = useState('');
+  useEffect(() => {
+    void preloadCoreDatabase();
+  }, []);
+
   const [showSuccess, setShowSuccess] = useState(false);
   const [successName, setSuccessName] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Category-based freezer fallback days (used when no specific entry found)
+  const CATEGORY_FREEZER_DAYS: Record<FoodCategory, number> = {
+    Produce: 365, Dairy: 90, Meat: 120, Seafood: 90,
+    Grains: 365, Frozen: 365, Canned: 730, Snacks: 180,
+    Beverages: 90, Condiments: 365, Bakery: 90, Deli: 60, Other: 90,
+  };
+
+  const foodSuggestions = useMemo(() => {
+    if (name.trim().length < 2) return [];
+    void preloadFullDatabase();
+    return searchFoods(name.trim()).map(f => ({
+      name: f.name,
+      category: f.category as FoodCategory,
+      shelfLifeDays: lookupShelfLife(f.name, f.location) ?? f.shelfLifeDays,
+    }));
+  }, [name]);
+
+  const getSuggestedShelfLifeDays = (itemName: string, itemLocation: StorageLocation, itemCategory: FoodCategory) => {
+    if (!itemName.trim()) return '';
+    const normalizedName = itemName.trim();
+    const days = lookupShelfLife(normalizedName, itemLocation);
+    if (days !== null) {
+      return String(days);
+    }
+    if (itemLocation === 'freezer') {
+      return String(CATEGORY_FREEZER_DAYS[itemCategory] ?? 90);
+    }
+    return '';
+  };
+
+  const applySuggestedShelfLifeDays = (itemName: string, itemLocation: StorageLocation, itemCategory: FoodCategory) => {
+    setCustomDays(getSuggestedShelfLifeDays(itemName, itemLocation, itemCategory));
+  };
+
+  const handleReceiptTap = async () => {
+    if (!isPro()) { setShowUpgrade(true); return; }
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const photo = await Camera.getPhoto({
+          source: CameraSource.Prompt,
+          resultType: CameraResultType.Base64,
+          quality: 80,
+        });
+        if (!photo.base64String) return;
+        processReceiptImage(photo.base64String);
+      } catch (error: unknown) {
+        // User cancelled — do nothing
+        if (!isCancelledError(error)) {
+          debug.error('Camera error:', error);
+        }
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const processReceiptImage = async (base64: string) => {
+    if (!base64) return;
+    setReceiptProcessing(true);
+    try {
+      const items = await scanReceipt(base64);
+      if (items.length === 0) {
+        setReceiptProcessing(false);
+        return;
+      }
+      setReceiptItems(items.map(item => ({ ...item, id: generateReceiptRowId() })));
+      setMode('receipt');
+    } catch (err) {
+      debug.error('Receipt OCR error:', err);
+    } finally {
+      setReceiptProcessing(false);
+    }
+  };
+
+  const handleReceiptFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      processReceiptImage(base64);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const addReceiptItem = (item: ReceiptListItem) => {
+    if (!canAddPantryItem()) { setShowUpgrade(true); return; }
+    const resolved = resolveReceiptItem(item.name);
+    // Compute shelf life independently — never read customDays/quantity from
+    // the manual form (those fields belong to manual-add mode and may hold
+    // stale values that would corrupt receipt rows).
+    const shelfDays = lookupShelfLife(item.name, resolved.location) ?? DEFAULT_SHELF_LIFE[resolved.category];
+    const expDate = new Date();
+    expDate.setDate(expDate.getDate() + shelfDays);
+    hapticMedium();
+    addPantryItem({
+      id: generateItemId(),
+      name: item.name,
+      category: resolved.category,
+      location: resolved.location,
+      quantity: 1,
+      unit: 'pcs',
+      addedDate: formatLocalDate(new Date()),
+      expirationDate: formatLocalDate(expDate),
+      estimatedValue: item.price,
+    });
+    // Filter by object identity, not name — avoids dropping every row when
+    // a receipt contains two lines with the same product name.
+    setReceiptItems(prev => {
+      const idx = prev.indexOf(item);
+      return prev.filter((_, i) => i !== idx);
+    });
+    setSuccessName(item.name);
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 2000);
+  };
 
   const handleAddItem = (itemName?: string, itemCat?: FoodCategory, itemLoc?: StorageLocation, itemVal?: number, itemUnit?: string) => {
     const n = itemName || name.trim();
     if (!n) return;
 
+    if (!canAddPantryItem()) { setShowUpgrade(true); return; }
+
     const cat = itemCat || category;
     const loc = itemLoc || location;
-    const days = customDays ? parseInt(customDays) : DEFAULT_SHELF_LIFE[cat];
+    // Use !== '' so that '0' (expires today) is respected and not treated as
+    // falsy — both the user-entered value and database suggestions can be 0.
+    const resolvedDays = customDays !== '' ? customDays : getSuggestedShelfLifeDays(n, loc, cat);
+    const days = resolvedDays !== '' ? parseInt(resolvedDays, 10) : DEFAULT_SHELF_LIFE[cat];
     const expDate = new Date();
     expDate.setDate(expDate.getDate() + days);
 
+    hapticMedium();
     addPantryItem({
-      id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: generateItemId(),
       name: n,
       category: cat,
       location: loc,
       quantity: parseFloat(quantity) || 1,
       unit: itemUnit || unit,
-      addedDate: new Date().toISOString().split('T')[0],
-      expirationDate: expDate.toISOString().split('T')[0],
+      addedDate: formatLocalDate(new Date()),
+      expirationDate: formatLocalDate(expDate),
       estimatedValue: itemVal || parseFloat(value) || 2.99,
     });
 
@@ -202,6 +390,7 @@ export function AddItemScreen() {
                     setLocation(item.location);
                     setValue(String(item.value));
                     setUnit(item.unit);
+                    applySuggestedShelfLifeDays(item.name, item.location, item.category);
                   }
                 }}
                 style={{
@@ -219,7 +408,7 @@ export function AddItemScreen() {
                   gap: '4px',
                 }}
               >
-                <FoodCategoryIcon category={item.category} size={14} />
+                <FoodCategoryIcon category={item.category} size={16} />
                 {item.name}
                 {existing && <span style={{ fontSize: '10px', opacity: 0.8 }}>×{existing.quantity}</span>}
               </button>
@@ -231,29 +420,93 @@ export function AddItemScreen() {
       {mode === 'manual' && (
         <>
           {/* Name input */}
-          <Card className="card-enter stagger-3">
+          <Card className="card-enter stagger-3" style={{ position: 'relative', zIndex: 10 }}>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
               Item Name
             </div>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Avocados, Chicken Breast..."
-              onKeyDown={e => e.key === 'Enter' && handleAddItem()}
-              style={{
-                width: '100%',
-                background: 'var(--input-bg)',
-                border: '1px solid var(--input-border)',
-                borderRadius: '10px',
-                padding: '12px 14px',
-                color: 'var(--text-primary)',
-                fontFamily: "'Cormorant Garamond', serif",
-                fontSize: '14px',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                value={name}
+                onChange={e => {
+                  setName(e.target.value);
+                  setCustomDays('');
+                  setShowSuggestions(true);
+                }}
+                onBlur={() => {
+                  setShowSuggestions(false);
+                  if (!customDays) {
+                    applySuggestedShelfLifeDays(name, location, category);
+                  }
+                }}
+                onFocus={() => {
+                  if (foodSuggestions.length > 0) setShowSuggestions(true);
+                }}
+                placeholder="e.g. Avocados, Chicken Breast..."
+                onKeyDown={e => e.key === 'Enter' && handleAddItem()}
+                style={{
+                  width: '100%',
+                  background: 'var(--input-bg)',
+                  border: '1px solid var(--input-border)',
+                  borderRadius: showSuggestions && foodSuggestions.length > 0 ? '10px 10px 0 0' : '10px',
+                  padding: '12px 14px',
+                  color: 'var(--text-primary)',
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: '14px',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {showSuggestions && foodSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--input-border)',
+                  borderTop: 'none',
+                  borderRadius: '0 0 10px 10px',
+                  zIndex: 100,
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                }}>
+                  {foodSuggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onMouseDown={() => {
+                        hapticLight();
+                        setName(s.name);
+                        setCategory(s.category);
+                        const suggestedLocation = location;
+                        const days = lookupShelfLife(s.name, suggestedLocation) ?? s.shelfLifeDays;
+                        if (days != null) setCustomDays(String(days));
+                        setShowSuggestions(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        background: 'none',
+                        border: 'none',
+                        borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <FoodCategoryIcon category={s.category} size={14} />
+                      <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontFamily: "'Cormorant Garamond', serif", flex: 1 }}>{s.name}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>{s.category}</span>
+                    </button>
+                  ))}
+                  <div style={{ padding: '6px 14px', borderTop: '1px solid var(--border)', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    via USDA FoodData Central
+                  </div>
+                </div>
+              )}
+            </div>
           </Card>
 
           {/* Category */}
@@ -266,7 +519,12 @@ export function AddItemScreen() {
                 <button
                   key={cat}
                   className="btn-toggle"
-                  onClick={() => setCategory(cat)}
+                  onClick={() => {
+                    setCategory(cat);
+                    if (name.trim() && !showSuggestions) {
+                      applySuggestedShelfLifeDays(name, location, cat);
+                    }
+                  }}
                   style={{
                     padding: '6px 12px',
                     borderRadius: '16px',
@@ -282,7 +540,7 @@ export function AddItemScreen() {
                     gap: '3px',
                   }}
                 >
-                  <FoodCategoryIcon category={cat} size={14} /> {cat}
+                  <FoodCategoryIcon category={cat} size={16} /> {cat}
                 </button>
               ))}
             </div>
@@ -298,7 +556,12 @@ export function AddItemScreen() {
                 <button
                   key={loc.id}
                   className="btn-toggle"
-                  onClick={() => setLocation(loc.id)}
+                  onClick={() => {
+                    setLocation(loc.id);
+                    if (name.trim() && !showSuggestions) {
+                      applySuggestedShelfLifeDays(name, loc.id, category);
+                    }
+                  }}
                   style={{
                     padding: '12px',
                     borderRadius: '12px',
@@ -418,44 +681,21 @@ export function AddItemScreen() {
       )}
 
       {mode === 'scan' && (
-        <Card className="card-enter stagger-3" style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--stone)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 5V2h3M20 2h3v3M1 19v3h3M20 22h3v-3" />
-              <line x1="7" y1="7" x2="7" y2="17" /><line x1="10" y1="7" x2="10" y2="17" />
-              <line x1="13" y1="7" x2="14.5" y2="17" /><line x1="17" y1="7" x2="17" y2="17" />
-            </svg>
-          </div>
-          <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Barcode Scanner</div>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
-            Point your camera at any barcode for instant product recognition and auto-populated shelf life data.
-          </div>
-          <div style={{
-            width: '200px',
-            height: '200px',
-            margin: '0 auto 20px',
-            borderRadius: '16px',
-            border: '2px dashed var(--accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--accent-dim)',
-          }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5">
-                <path d="M1 4V1h3M20 1h3v3M1 20v3h3M20 23h3v-3" strokeLinecap="round" strokeLinejoin="round" />
-                <rect x="5" y="5" width="14" height="14" rx="2" opacity="0.3" />
-              </svg>
-              <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>Ready to scan</span>
-            </div>
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Camera access required. Works with most grocery barcodes.
-          </div>
-        </Card>
+        <BarcodeScanner
+          onClose={() => setMode('manual')}
+          onScan={(product) => {
+            setName(product.name);
+            setCategory(product.category);
+            const loc = mapCategoryToLocation(product.category) as StorageLocation;
+            setLocation(loc);
+            const days = lookupShelfLife(product.name, loc);
+            if (days !== null) setCustomDays(String(days));
+            setMode('manual');
+          }}
+        />
       )}
 
-      {mode === 'receipt' && (
+      {mode === 'receipt' && !receiptProcessing && receiptItems.length === 0 && (
         <Card className="card-enter stagger-3" style={{ textAlign: 'center', padding: '40px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--stone)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -463,15 +703,33 @@ export function AddItemScreen() {
               <line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="14" x2="13" y2="14" />
             </svg>
           </div>
+          {!isPro() && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              padding: '4px 10px', borderRadius: '12px', marginBottom: '10px',
+              background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff',
+              fontSize: '10px', fontWeight: 700,
+            }}>
+              PRO
+            </div>
+          )}
           <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Receipt Scanner</div>
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
             Take a photo of your grocery receipt and we'll automatically add all items to your pantry with prices.
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleReceiptFile}
+            style={{ display: 'none' }}
+          />
           <button
             className="btn-solid"
+            onClick={handleReceiptTap}
             style={{
               padding: '14px 32px',
-              background: 'var(--accent)',
+              background: isPro() ? 'var(--accent)' : 'linear-gradient(135deg, #D4A44A, #B8862D)',
               border: 'none',
               borderRadius: '14px',
               color: '#fff',
@@ -489,9 +747,98 @@ export function AddItemScreen() {
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            Scan Receipt
+            {isPro() ? 'Scan Receipt' : 'Unlock with Pro'}
           </button>
         </Card>
+      )}
+
+      {/* Receipt processing spinner */}
+      {receiptProcessing && (
+        <Card className="card-enter" style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <div className="avo-drift" style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <AvocadoMascot size={50} isStatic />
+          </div>
+          <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>Scanning your receipt...</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Identifying items and prices</div>
+        </Card>
+      )}
+
+      {/* Receipt results */}
+      {mode === 'receipt' && receiptItems.length > 0 && (
+        <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700 }}>
+              {receiptItems.length} items found
+            </div>
+            <button
+              onClick={() => {
+                const slotsLeft = isPro()
+                  ? Infinity
+                  : FREE_LIMITS.pantryItems - pantryItems.length;
+                const toAdd = receiptItems.slice(0, slotsLeft);
+                toAdd.forEach(item => {
+                  const resolved = resolveReceiptItem(item.name);
+                  handleAddItem(item.name, resolved.category, resolved.location, item.price, 'pcs');
+                });
+                const remaining = receiptItems.slice(slotsLeft);
+                setReceiptItems(remaining);
+                if (remaining.length > 0) {
+                  setShowUpgrade(true);
+                }
+              }}
+              style={{
+                padding: '7px 14px', borderRadius: '10px', border: 'none',
+                background: 'var(--accent)', color: '#fff',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Add all
+            </button>
+          </div>
+          {receiptItems.map(item => (
+            <Card key={item.id} style={{ padding: '12px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600 }}>{item.name}</div>
+                  <div className="mono" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>${item.price.toFixed(2)}</div>
+                </div>
+                <button
+                  onClick={() => addReceiptItem(item)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--accent)',
+                    background: 'var(--accent-dim)', color: 'var(--accent)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  + Add
+                </button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Pantry limit indicator for free users */}
+      {!isPro() && (
+        <div style={{
+          textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)',
+          padding: '8px 0',
+        }}>
+          {pantryItems.length}/{FREE_LIMITS.pantryItems} free items used
+          {pantryItems.length >= FREE_LIMITS.pantryItems - 3 && pantryItems.length < FREE_LIMITS.pantryItems && (
+            <span style={{ color: 'var(--expiring)' }}> — running low!</span>
+          )}
+        </div>
+      )}
+
+      {showUpgrade && (
+        <UpgradeModal
+          feature={mode === 'receipt' ? 'receipt' : 'pantry'}
+          onClose={() => setShowUpgrade(false)}
+          onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+        />
       )}
     </div>
   );

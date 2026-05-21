@@ -1,8 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay } from '../types';
+import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate } from '../types';
+import { formatLocalDate, FREE_LIMITS } from '../types';
+import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
+import { resetAvoChatSession } from '../lib/avoChatSession';
+import {
+  scheduleItemNotifications,
+  cancelItemNotifications,
+  rescheduleItemNotifications,
+  cancelAllNotifications,
+  rescheduleAllNotifications,
+  scheduleStreakProtection,
+  scheduleReEngagement,
+  scheduleRecipeNudge,
+  celebrateStreakMilestone,
+} from '../lib/notifications';
 
 interface ShelfLifeStore {
   // State
@@ -14,9 +27,17 @@ interface ShelfLifeStore {
   shoppingLists: ShoppingList[];
   mealPlan: MealPlanDay[];
   activeTab: Tab;
+  addItemMode: 'manual' | 'scan' | 'receipt' | null;
+  setAddItemMode: (mode: 'manual' | 'scan' | 'receipt' | null) => void;
   theme: ThemeMode;
   showSettings: boolean;
-  avocadoTipIndex: number;
+  // Supabase user id (set after OAuth, used for sync)
+  supabaseUserId: string | null;
+  setSupabaseUserId: (id: string | null) => void;
+  loadCloudData: (pantryItems: PantryItem[], wasteLogs: WasteLog[]) => void;
+  // Set after OAuth for new users so onboarding can skip sign-in and pre-fill name
+  oauthNewUser: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null;
+  setOAuthNewUser: (u: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null) => void;
 
   // User
   setUser: (user: User) => void;
@@ -40,80 +61,32 @@ interface ShelfLifeStore {
   updateShoppingList: (id: string, updates: Partial<ShoppingList>) => void;
   removeShoppingList: (id: string) => void;
   toggleShoppingItem: (listId: string, itemId: string) => void;
+  removeShoppingItem: (listId: string, itemId: string) => void;
 
   // Meal Plan
   setMealPlan: (plan: MealPlanDay[]) => void;
+
+  // Subscription
+  setSubscriptionTier: (tier: SubscriptionTier) => Promise<void>;
+  incrementAvoChat: () => boolean; // returns false if limit hit
+  decrementAvoChat: () => void;
+  canAddPantryItem: () => boolean;
+  isPro: () => boolean;
 
   // UI
   setActiveTab: (tab: Tab) => void;
   setTheme: (theme: ThemeMode) => void;
   setShowSettings: (show: boolean) => void;
-  nextAvocadoTip: () => void;
+
+  // Avo AI consent (per-device, persisted)
+  avoAiConsent: 'granted' | 'declined' | null;
+  setAvoAiConsent: (consent: 'granted' | 'declined' | null) => void;
+
+  // Local notifications (per-device, persisted). null = not asked yet.
+  notificationsEnabled: boolean | null;
+  setNotificationsEnabled: (enabled: boolean) => void;
 }
 
-// Sample pantry data for demo
-const SAMPLE_PANTRY: PantryItem[] = [
-  {
-    id: '1', name: 'Spinach', category: 'Produce', location: 'fridge',
-    quantity: 1, unit: 'bag', addedDate: daysAgo(3), expirationDate: daysFromNow(2), estimatedValue: 3.49,
-  },
-  {
-    id: '2', name: 'Chicken Breast', category: 'Meat', location: 'fridge',
-    quantity: 2, unit: 'lbs', addedDate: daysAgo(2), expirationDate: daysFromNow(3), estimatedValue: 8.99,
-  },
-  {
-    id: '3', name: 'Greek Yogurt', category: 'Dairy', location: 'fridge',
-    quantity: 1, unit: 'tub', addedDate: daysAgo(5), expirationDate: daysFromNow(9), estimatedValue: 5.49,
-  },
-  {
-    id: '4', name: 'Avocados', category: 'Produce', location: 'counter',
-    quantity: 3, unit: 'pcs', addedDate: daysAgo(4), expirationDate: daysFromNow(1), estimatedValue: 4.50,
-  },
-  {
-    id: '5', name: 'Sourdough Bread', category: 'Bakery', location: 'counter',
-    quantity: 1, unit: 'loaf', addedDate: daysAgo(3), expirationDate: daysFromNow(2), estimatedValue: 5.99,
-  },
-  {
-    id: '6', name: 'Salmon Fillet', category: 'Seafood', location: 'fridge',
-    quantity: 1, unit: 'lb', addedDate: daysAgo(1), expirationDate: daysFromNow(2), estimatedValue: 12.99,
-  },
-  {
-    id: '7', name: 'Milk', category: 'Dairy', location: 'fridge',
-    quantity: 1, unit: 'gal', addedDate: daysAgo(4), expirationDate: daysFromNow(6), estimatedValue: 4.29,
-  },
-  {
-    id: '8', name: 'Pasta', category: 'Grains', location: 'pantry',
-    quantity: 2, unit: 'box', addedDate: daysAgo(30), expirationDate: daysFromNow(180), estimatedValue: 2.98,
-  },
-  {
-    id: '9', name: 'Tomatoes', category: 'Produce', location: 'counter',
-    quantity: 4, unit: 'pcs', addedDate: daysAgo(3), expirationDate: daysFromNow(4), estimatedValue: 3.20,
-  },
-  {
-    id: '10', name: 'Cheddar Cheese', category: 'Dairy', location: 'fridge',
-    quantity: 1, unit: 'block', addedDate: daysAgo(7), expirationDate: daysFromNow(21), estimatedValue: 4.99,
-  },
-  {
-    id: '11', name: 'Frozen Berries', category: 'Frozen', location: 'freezer',
-    quantity: 1, unit: 'bag', addedDate: daysAgo(14), expirationDate: daysFromNow(76), estimatedValue: 4.99,
-  },
-  {
-    id: '12', name: 'Eggs', category: 'Dairy', location: 'fridge',
-    quantity: 12, unit: 'pcs', addedDate: daysAgo(5), expirationDate: daysFromNow(16), estimatedValue: 3.99,
-  },
-  {
-    id: '13', name: 'Bell Peppers', category: 'Produce', location: 'fridge',
-    quantity: 3, unit: 'pcs', addedDate: daysAgo(4), expirationDate: daysFromNow(3), estimatedValue: 3.50,
-  },
-  {
-    id: '14', name: 'Rice', category: 'Grains', location: 'pantry',
-    quantity: 1, unit: 'bag', addedDate: daysAgo(60), expirationDate: daysFromNow(300), estimatedValue: 3.49,
-  },
-  {
-    id: '15', name: 'Bananas', category: 'Produce', location: 'counter',
-    quantity: 5, unit: 'pcs', addedDate: daysAgo(3), expirationDate: daysFromNow(2), estimatedValue: 1.50,
-  },
-];
 
 const SAMPLE_RECIPES: Recipe[] = [
   {
@@ -270,22 +243,12 @@ const SAMPLE_RECIPES: Recipe[] = [
   },
 ];
 
-const SAMPLE_WASTE: WasteLog[] = [
-  { id: 'w1', itemName: 'Lettuce', category: 'Produce', action: 'composted', date: daysAgo(2), estimatedValue: 2.99, quantity: 1 },
-  { id: 'w2', itemName: 'Chicken Thighs', category: 'Meat', action: 'eaten', date: daysAgo(3), estimatedValue: 7.49, quantity: 1 },
-  { id: 'w3', itemName: 'Yogurt', category: 'Dairy', action: 'eaten', date: daysAgo(1), estimatedValue: 1.29, quantity: 1 },
-  { id: 'w4', itemName: 'Bread', category: 'Bakery', action: 'eaten', date: daysAgo(4), estimatedValue: 4.49, quantity: 1 },
-  { id: 'w5', itemName: 'Strawberries', category: 'Produce', action: 'tossed', date: daysAgo(5), estimatedValue: 4.99, quantity: 1 },
-  { id: 'w6', itemName: 'Apples', category: 'Produce', action: 'eaten', date: daysAgo(2), estimatedValue: 3.99, quantity: 3 },
-  { id: 'w7', itemName: 'Celery', category: 'Produce', action: 'composted', date: daysAgo(6), estimatedValue: 1.99, quantity: 1 },
-  { id: 'w8', itemName: 'Pasta Sauce', category: 'Canned', action: 'eaten', date: daysAgo(3), estimatedValue: 3.49, quantity: 1 },
-];
 
 const SAMPLE_SHOPPING: ShoppingList[] = [
   {
     id: 'sl1',
     name: 'Weekly Essentials',
-    createdDate: daysAgo(0),
+    createdDate: daysAgo(3),
     items: [
       { id: 'si1', name: 'Olive Oil', category: 'Condiments', quantity: 1, unit: 'bottle', checked: false },
       { id: 'si2', name: 'Garlic', category: 'Produce', quantity: 1, unit: 'head', checked: true },
@@ -310,54 +273,150 @@ function daysAgo(n: number): string {
   return formatLocalDate(d);
 }
 
-function daysFromNow(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return formatLocalDate(d);
-}
-
 export const useStore = create<ShelfLifeStore>()(
   persist(
     (set) => ({
-      user: null,
-      pantryItems: SAMPLE_PANTRY,
-      wasteLogs: SAMPLE_WASTE,
+      user: null as User | null,
+      supabaseUserId: null as string | null,
+      oauthNewUser: null as { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null,
+      pantryItems: [] as PantryItem[],
+      wasteLogs: [] as WasteLog[],
       recipes: SAMPLE_RECIPES,
       browseRecipes: BROWSE_RECIPES,
       shoppingLists: SAMPLE_SHOPPING,
       mealPlan: SAMPLE_MEAL_PLAN,
-      activeTab: 'pantry',
-      theme: 'light',
+      activeTab: 'pantry' as Tab,
+      addItemMode: null,
+      theme: 'light' as ThemeMode,
       showSettings: false,
-      avocadoTipIndex: 0,
-
+      avoAiConsent: null as 'granted' | 'declined' | null,
+      notificationsEnabled: null as boolean | null,
+      setSupabaseUserId: (id) => set({ supabaseUserId: id }),
+      loadCloudData: (cloudPantry, cloudWaste) => {
+        // This is only called for users with onboarding_complete = true
+        // (returning users). The cloud result is authoritative — even an empty
+        // array means the user genuinely has no items (intentional deletion,
+        // cleared on another device, etc.). Overwriting cloud with stale local
+        // data would silently resurrect deleted records.
+        //
+        // Network failures throw before reaching here (caught in App.tsx), so
+        // an empty array always means a successful empty response.
+        set({ pantryItems: cloudPantry, wasteLogs: cloudWaste });
+      },
+      setOAuthNewUser: (u) => set({ oauthNewUser: u }),
       setUser: (user) => set({ user }),
       updateUser: (updates) => set((s) => ({
         user: s.user ? { ...s.user, ...updates } : null,
       })),
-      resetOnboarding: () => set({
-        user: null,
-        pantryItems: [],
-        wasteLogs: [],
-        recipes: [],
-        shoppingLists: [],
-        mealPlan: [],
-        activeTab: 'pantry',
-        theme: 'light',
-        showSettings: false,
-        avocadoTipIndex: 0,
-      }),
+      resetOnboarding: () => {
+        // Clear persisted storage first so persist middleware doesn't re-write stale data
+        localStorage.removeItem('shelf-life-storage-v2');
+        resetAvoChatSession();
+        set({
+          user: null,
+          supabaseUserId: null,
+          oauthNewUser: null,
+          pantryItems: [],
+          wasteLogs: [],
+          recipes: SAMPLE_RECIPES,
+          browseRecipes: BROWSE_RECIPES,
+          shoppingLists: SAMPLE_SHOPPING,
+          mealPlan: SAMPLE_MEAL_PLAN,
+          activeTab: 'pantry',
+          addItemMode: null,
+          theme: 'light',
+          showSettings: false,
+          avoAiConsent: null,
+          notificationsEnabled: null,
+        });
+        void cancelAllNotifications();
+      },
 
-      addPantryItem: (item) => set((s) => ({ pantryItems: [...s.pantryItems, item] })),
-      updatePantryItem: (id, updates) => set((s) => ({
-        pantryItems: s.pantryItems.map(i => i.id === id ? { ...i, ...updates } : i),
-      })),
-      removePantryItem: (id) => set((s) => ({
-        pantryItems: s.pantryItems.filter(i => i.id !== id),
-      })),
-      clearPantry: () => set({ pantryItems: [] }),
+      addPantryItem: (item) => {
+        set((s) => ({ pantryItems: [...s.pantryItems, item] }));
+        const { supabaseUserId, notificationsEnabled, user } = useStore.getState();
+        if (supabaseUserId) syncPantryAdd(item, supabaseUserId);
+        if (notificationsEnabled) {
+          void scheduleItemNotifications(item, user?.name);
+          // Activity in the app — push the re-engagement reminder forward
+          void scheduleReEngagement(user?.name);
+        }
+      },
+      updatePantryItem: (id, updates) => {
+        set((s) => ({
+          pantryItems: s.pantryItems.map(i => i.id === id ? { ...i, ...updates } : i),
+        }));
+        const { supabaseUserId, notificationsEnabled, pantryItems, user } = useStore.getState();
+        if (supabaseUserId) syncPantryUpdate(id, updates);
+        if (notificationsEnabled) {
+          if (updates.expirationDate !== undefined) {
+            const updated = pantryItems.find(i => i.id === id);
+            if (updated) void rescheduleItemNotifications(updated, user?.name);
+          }
+          void scheduleReEngagement(user?.name);
+        }
+      },
+      removePantryItem: (id) => {
+        set((s) => ({ pantryItems: s.pantryItems.filter(i => i.id !== id) }));
+        const { supabaseUserId } = useStore.getState();
+        if (supabaseUserId) syncPantryRemove(id);
+        void cancelItemNotifications(id);
+      },
+      clearPantry: () => {
+        set({ pantryItems: [] });
+        void cancelAllNotifications();
+      },
 
-      addWasteLog: (log) => set((s) => ({ wasteLogs: [...s.wasteLogs, log] })),
+      addWasteLog: (log) => {
+        const { supabaseUserId } = useStore.getState();
+        if (supabaseUserId) syncWasteLog(log, supabaseUserId);
+        let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
+        set((s) => {
+          if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
+          const today = formatLocalDate(new Date());
+          const yesterday = (() => {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            return formatLocalDate(d);
+          })();
+          let { streakDays, lastActiveDate } = s.user;
+          if (log.action === 'tossed') {
+            streakDays = 0;
+          } else {
+            if (lastActiveDate !== today) {
+              streakDays = lastActiveDate === yesterday ? streakDays + 1 : 1;
+            }
+            lastActiveDate = today;
+          }
+          profileUpdates = {
+            streak_days: streakDays,
+            last_active_date: lastActiveDate,
+          };
+          return {
+            wasteLogs: [...s.wasteLogs, log],
+            user: { ...s.user, streakDays, lastActiveDate },
+          };
+        });
+        if (supabaseUserId && profileUpdates) {
+          syncProfileUpdates(supabaseUserId, profileUpdates);
+        }
+
+        // Notifications: streak protection (push out evening reminder),
+        // celebrate milestones, and refresh re-engagement + recipe nudge.
+        const { notificationsEnabled, user } = useStore.getState();
+        if (notificationsEnabled && user) {
+          void scheduleStreakProtection(user.streakDays, user.name);
+          if ([3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
+            void celebrateStreakMilestone(user.streakDays);
+          }
+          void scheduleReEngagement(user.name);
+          if (log.action === 'eaten') {
+            // They actually consumed food — refresh the recipe nudge so we
+            // don't bug them about cooking right after a successful meal.
+            void scheduleRecipeNudge(user.name);
+          }
+        }
+      },
 
       setRecipes: (recipes) => set({ recipes }),
 
@@ -375,16 +434,114 @@ export const useStore = create<ShelfLifeStore>()(
             : l
         ),
       })),
+      removeShoppingItem: (listId, itemId) => set((s) => ({
+        shoppingLists: s.shoppingLists.map(l =>
+          l.id === listId
+            ? { ...l, items: l.items.filter(i => i.id !== itemId) }
+            : l
+        ),
+      })),
 
       setMealPlan: (plan) => set({ mealPlan: plan }),
 
-      setActiveTab: (tab) => set({ activeTab: tab }),
-      setTheme: (theme) => set({ theme }),
-      setShowSettings: (show) => set({ showSettings: show }),
-      nextAvocadoTip: () => set((s) => ({ avocadoTipIndex: s.avocadoTipIndex + 1 })),
+      setSubscriptionTier: async (tier) => {
+        const { supabaseUserId } = useStore.getState();
+        let nextUser: User | null = null;
+        set((s) => {
+          nextUser = s.user ? { ...s.user, subscriptionTier: tier } : null;
+          return { user: nextUser };
+        });
+        if (supabaseUserId && nextUser) {
+          // Awaited so the cloud write can't be orphaned by a sign-out or
+          // navigation that happens immediately after an upgrade/cancel.
+          await syncProfileUpdates(supabaseUserId, { subscription_tier: tier });
+        }
+      },
+      incrementAvoChat: (): boolean => {
+        const s = useStore.getState();
+        if (!s.user) return false;
+        const today = formatLocalDate(new Date());
+
+        if (s.user.subscriptionTier === 'pro') {
+          // Pro: 20 chats per day, resets daily
+          const count = s.user.avoChatResetDate === today ? s.user.avoChatCount : 0;
+          if (count >= FREE_LIMITS.proChatPerDay) return false;
+          const nextUser = { ...s.user, avoChatCount: count + 1, avoChatResetDate: today };
+          set({ user: nextUser });
+          if (s.supabaseUserId) {
+            syncProfileUpdates(s.supabaseUserId, {
+              avo_chat_count: nextUser.avoChatCount,
+              avo_chat_reset_date: nextUser.avoChatResetDate,
+            });
+          }
+          return true;
+        }
+
+        // Free: 5 chats total (permanent, never resets)
+        if (s.user.avoChatCount >= FREE_LIMITS.avoChatTotal) return false;
+        const nextUser = { ...s.user, avoChatCount: s.user.avoChatCount + 1 };
+        set({ user: nextUser });
+        if (s.supabaseUserId) {
+          syncProfileUpdates(s.supabaseUserId, {
+            avo_chat_count: nextUser.avoChatCount,
+          });
+        }
+        return true;
+      },
+      decrementAvoChat: (): void => {
+        const s = useStore.getState();
+        if (!s.user) return;
+        const nextUser = { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) };
+        set({ user: nextUser });
+        if (s.supabaseUserId) {
+          syncProfileUpdates(s.supabaseUserId, {
+            avo_chat_count: nextUser.avoChatCount,
+          });
+        }
+      },
+      canAddPantryItem: (): boolean => {
+        const s = useStore.getState();
+        if (!s.user) return false;
+        if (s.user.subscriptionTier === 'pro') return true;
+        return s.pantryItems.length < FREE_LIMITS.pantryItems;
+      },
+      isPro: (): boolean => {
+        const s = useStore.getState();
+        return s.user?.subscriptionTier === 'pro';
+      },
+
+      setActiveTab: (tab: Tab) => set({ activeTab: tab }),
+      setAddItemMode: (mode) => set({ addItemMode: mode }),
+      setTheme: (theme: ThemeMode) => set({ theme }),
+      setShowSettings: (show: boolean) => set({ showSettings: show }),
+      setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),
+      setNotificationsEnabled: (enabled) => {
+        set({ notificationsEnabled: enabled });
+        const { pantryItems, user } = useStore.getState();
+        if (enabled) {
+          void rescheduleAllNotifications({
+            items: pantryItems,
+            streakDays: user?.streakDays ?? 0,
+            userName: user?.name,
+          });
+        } else {
+          void cancelAllNotifications();
+        }
+      },
     }),
     {
       name: 'shelf-life-storage-v2',
+      version: 1,
+      migrate: (state) => state,
+      merge: (persisted, current) => {
+        const p = persisted as Partial<ShelfLifeStore>;
+        return {
+          ...current,
+          ...p,
+          // Never let mealPlan be empty — fall back to sample data
+          mealPlan: p.mealPlan && p.mealPlan.length > 0 ? p.mealPlan : current.mealPlan,
+        };
+      },
       partialize: (state) => ({
         user: state.user,
         pantryItems: state.pantryItems,
@@ -393,7 +550,8 @@ export const useStore = create<ShelfLifeStore>()(
         shoppingLists: state.shoppingLists,
         mealPlan: state.mealPlan,
         theme: state.theme,
-        avocadoTipIndex: state.avocadoTipIndex,
+        avoAiConsent: state.avoAiConsent,
+        notificationsEnabled: state.notificationsEnabled,
       }),
     }
   )

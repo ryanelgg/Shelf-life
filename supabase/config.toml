@@ -1,0 +1,5 @@
+[functions.avo-chat]
+verify_jwt = false
+
+[functions.receipt-ocr]
+verify_jwt = false

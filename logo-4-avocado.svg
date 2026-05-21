@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="#1a3522"/>
+
+  <!-- Avocado outer skin (dark green) -->
+  <path d="M512 138
+    C 648 138 768 296 768 506
+    C 768 706 654 874 512 874
+    C 370 874 256 706 256 506
+    C 256 296 376 138 512 138 Z"
+    fill="#2d5e1e"/>
+
+  <!-- Avocado flesh (bright green) -->
+  <path d="M512 192
+    C 628 192 724 336 724 510
+    C 724 676 626 828 512 828
+    C 398 828 300 676 300 510
+    C 300 336 396 192 512 192 Z"
+    fill="#7ac84a"/>
+
+  <!-- Inner flesh lighter gradient zone -->
+  <path d="M512 248
+    C 608 248 688 372 688 514
+    C 688 648 616 782 512 782
+    C 408 782 336 648 336 514
+    C 336 372 416 248 512 248 Z"
+    fill="#9ad860"/>
+
+  <!-- Pit -->
+  <ellipse cx="512" cy="560" rx="118" ry="148" fill="#c4a060"/>
+
+  <!-- Pit highlight -->
+  <ellipse cx="488" cy="516" rx="38" ry="48" fill="#d8b870" opacity="0.55"/>
+
+  <!-- Pit shadow rim -->
+  <ellipse cx="512" cy="560" rx="118" ry="148" fill="none" stroke="#a08040" stroke-width="6" opacity="0.4"/>
+
+  <!-- Flesh shine -->
+  <path d="M370 340 Q356 400 358 460" stroke="white" stroke-width="18" fill="none" stroke-linecap="round" opacity="0.15"/>
+</svg>

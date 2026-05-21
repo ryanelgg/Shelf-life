@@ -2,10 +2,17 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 :root {
-  /* Shelf Life — Earthy, warm, farmer's market palette */
+  /* Pantre — Earthy, warm, farmer's market palette */
   --forest: #4a7c59;
   --forest-light: rgba(74, 124, 89, 0.08);
   --forest-dim: rgba(74, 124, 89, 0.12);
@@ -169,6 +176,35 @@ h1, h2, h3, h4 {
 .avo-spin-react {
   animation: avoSpin 1s cubic-bezier(0.22, 1, 0.36, 1) both,
              avoPulseGlow 3.5s ease-in-out infinite !important;
+}
+
+.avo-shake {
+  animation: avoShake 0.6s ease both !important;
+}
+
+@keyframes avoShake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-4px) rotate(-2deg); }
+  20% { transform: translateX(4px) rotate(2deg); }
+  30% { transform: translateX(-5px) rotate(-3deg); }
+  40% { transform: translateX(5px) rotate(3deg); }
+  50% { transform: translateX(-6px) rotate(-2deg); }
+  60% { transform: translateX(6px) rotate(2deg); }
+  70% { transform: translateX(-4px) rotate(-1deg); }
+  80% { transform: translateX(4px) rotate(1deg); }
+  90% { transform: translateX(-2px); }
+}
+
+.avo-smash {
+  animation: avoSmash 0.25s cubic-bezier(0.7, 0, 1, 0.5) both !important;
+}
+
+@keyframes avoSmash {
+  0%   { transform: scale(1, 1); opacity: 1; }
+  20%  { transform: scale(0.85, 1.2); }
+  50%  { transform: scale(1.4, 0.5); }
+  75%  { transform: scale(1.8, 0.15); opacity: 0.9; }
+  100% { transform: scale(2.2, 0.02); opacity: 0; }
 }
 
 /* Tip bubble */
@@ -473,15 +509,24 @@ h1, h2, h3, h4 {
 
 /* ===== SETTINGS ===== */
 @keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from { transform: translate3d(100%, 0, 0); }
+  to   { transform: translate3d(0, 0, 0); }
 }
 @keyframes slideOutRight {
-  from { transform: translateX(0); }
-  to { transform: translateX(100%); }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(100%, 0, 0); }
+}
+.settings-screen {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(100%, 0, 0);
 }
 .settings-enter {
-  animation: slideInRight 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: slideInRight 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.settings-exit {
+  animation: slideOutRight 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 /* Toggle switch */

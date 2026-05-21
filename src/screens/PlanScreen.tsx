@@ -4,8 +4,10 @@ import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
+import { EmptyState } from '../components/EmptyState';
 import { formatLocalDate, getFreshnessStatus } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
+import { UpgradeModal } from '../components/UpgradeModal';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -241,13 +243,13 @@ function NotepadIcon({ size = 38, color = 'currentColor' }: { size?: number; col
 const DIET_BLOCKLIST: Record<string, string[]> = {
   vegetarian: [
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
-    'bacon', 'ham', 'sausage', 'anchov', 'prosciutto', 'pancetta', 'steak',
+    'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
     'mussels', 'halibut', 'trout', 'mahi', 'catfish',
   ],
   vegan: [
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
-    'bacon', 'ham', 'sausage', 'anchov', 'prosciutto', 'pancetta', 'steak',
+    'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
     'egg', 'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
     'cheddar', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
@@ -397,8 +399,10 @@ function getIngredientStatus(
 export function PlanScreen() {
   const {
     mealPlan, recipes, pantryItems, browseRecipes, user,
-    shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList,
+    shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
+    isPro, setSubscriptionTier,
   } = useStore();
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [newItemName, setNewItemName] = useState('');
@@ -410,8 +414,8 @@ export function PlanScreen() {
   const [showAllRecipes, setShowAllRecipes] = useState(false);
 
   const recipeUsesExpiring = (recipe: Recipe) =>
-    recipe.matchedItemIds.some(id => {
-      const item = pantryItems.find(p => p.id === id);
+    recipe.ingredients.some(ing => {
+      const item = pantryItems.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
       if (!item) return false;
       const s = getFreshnessStatus(item.expirationDate);
       return s === 'expiring' || s === 'expiring-soon';
@@ -444,8 +448,17 @@ export function PlanScreen() {
     return result;
   }, [browseRecipes, recipeFilter, recipeSearchQuery, activeDiets]);
 
+  // Smart suggestions from missing ingredients
+  // Search both pantry-matched recipes and browse recipes, since meal plan
+  // days can reference recipes from either collection.
+  const plannedRecipes = mealPlan
+    .map(day => day.recipeId
+      ? ([...recipes, ...browseRecipes]).find(r => r.id === day.recipeId)
+      : null)
+    .filter((recipe): recipe is Recipe => Boolean(recipe));
+
   const displayedRecipes = showAllRecipes ? filteredRecipes : filteredRecipes.slice(0, 6);
-  const totalSavings = filteredRecipes.reduce((sum, recipe) => sum + recipe.savingsEstimate, 0);
+  const totalSavings = plannedRecipes.reduce((sum, recipe) => sum + recipe.savingsEstimate, 0);
 
   const handleCreateList = () => {
     if (!newListName.trim()) return;
@@ -480,15 +493,6 @@ export function PlanScreen() {
     setAddingToList(null);
   };
 
-  // Smart suggestions from missing ingredients
-  // Search both pantry-matched recipes and browse recipes, since meal plan
-  // days can reference recipes from either collection.
-  const plannedRecipes = mealPlan
-    .map(day => day.recipeId
-      ? ([...recipes, ...browseRecipes]).find(r => r.id === day.recipeId)
-      : null)
-    .filter((recipe): recipe is Recipe => Boolean(recipe));
-
   const suggestions = plannedRecipes.flatMap(r =>
     r.missingIngredients.map(ing => ({
       name: ing,
@@ -498,6 +502,18 @@ export function PlanScreen() {
 
   // Total items to buy from meal plan
   const totalToBuy = mealPlan.reduce((s, d) => s + d.toBuy, 0);
+
+  // Empty state — no pantry items AND no shopping lists yet means the meal plan has nothing to anchor to
+  if (pantryItems.length === 0 && shoppingLists.length === 0) {
+    return (
+      <EmptyState
+        title="Let's plan your week"
+        description="Add a few pantry items and Avo will suggest recipes, build a shopping list, and plan meals around what you already have."
+        ctaLabel="Add my first item"
+        ctaTab="add"
+      />
+    );
+  }
 
   return (
     <div className="screen-enter" style={{
@@ -524,20 +540,32 @@ export function PlanScreen() {
         padding: '16px',
         border: '1px solid rgba(74, 124, 89, 0.15)',
         background: 'rgba(74, 124, 89, 0.03)',
+        position: 'relative',
+        flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
           <CalendarIcon size={20} color="var(--accent)" />
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>This Week</div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {totalToBuy === 0 ? 'All ingredients in pantry!' : `${totalToBuy} items to buy`}
             </div>
           </div>
+          {!isPro() && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              padding: '3px 8px', borderRadius: '10px',
+              background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff',
+              fontSize: '9px', fontWeight: 700,
+            }}>
+              PRO
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {mealPlan.map((day) => {
-            const recipe = day.recipeId ? recipes.find(r => r.id === day.recipeId) : null;
+          {(isPro() ? mealPlan : mealPlan.slice(0, 2)).map((day) => {
+            const recipe = day.recipeId ? ([...recipes, ...browseRecipes]).find(r => r.id === day.recipeId) : null;
             const isExpanded = expandedDay === day.day;
 
             return (
@@ -618,10 +646,31 @@ export function PlanScreen() {
             );
           })}
         </div>
+
+        {!isPro() && (
+          <button
+            onClick={() => setShowUpgrade(true)}
+            style={{
+              width: '100%',
+              marginTop: '12px',
+              padding: '12px',
+              borderRadius: '12px',
+              border: 'none',
+              background: 'linear-gradient(135deg, #D4A44A, #B8862D)',
+              color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Unlock Full Weekly Plan
+          </button>
+        )}
       </Card>
 
-      {/* Smart suggestions */}
-      {suggestions.length > 0 && (
+      {/* Smart suggestions — Pro only */}
+      {isPro() && suggestions.length > 0 && (
         <Card className="card-enter stagger-2">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
             <LightbulbIcon size={18} color="var(--accent)" />
@@ -648,6 +697,40 @@ export function PlanScreen() {
               </div>
             ))}
           </div>
+
+          {/* Grocery delivery affiliate */}
+          <button
+            onClick={() => {
+              const query = suggestions.map(s => s.name).join(' ');
+              window.open(`https://www.instacart.com/store/s?k=${encodeURIComponent(query)}`, '_blank');
+            }}
+            style={{
+              marginTop: '12px',
+              width: '100%',
+              padding: '11px',
+              borderRadius: '12px',
+              border: '1px solid #43B02A',
+              background: 'rgba(67, 176, 42, 0.06)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '13px',
+              fontWeight: 700,
+              color: '#2D8A1E',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#43B02A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+            </svg>
+            Order on Instacart
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#2D8A1E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9 L9 3 M9 3 L4 3 M9 3 L9 8"/>
+            </svg>
+          </button>
         </Card>
       )}
 
@@ -993,7 +1076,7 @@ export function PlanScreen() {
         <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Shopping Lists</h2>
         <button
           className="btn-solid"
-          onClick={() => setShowNewForm(true)}
+          onClick={() => isPro() ? setShowNewForm(true) : setShowUpgrade(true)}
           style={{
             padding: '8px 16px',
             background: 'var(--accent)',
@@ -1009,6 +1092,7 @@ export function PlanScreen() {
             gap: '4px',
           }}
         >
+          {!isPro() && <span style={{ fontSize: '10px' }}>PRO</span>}
           + New List
         </button>
       </div>
@@ -1144,11 +1228,21 @@ export function PlanScreen() {
                     textDecoration: item.checked ? 'line-through' : 'none',
                     transition: 'all 0.2s',
                   }}>
-                    <FoodCategoryIcon category={item.category} size={15} /> {item.name}
+                    <FoodCategoryIcon category={item.category} size={16} /> {item.name}
                   </span>
                   <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
                     {item.quantity} {item.unit}
                   </span>
+                  <button
+                    onClick={e => { e.stopPropagation(); removeShoppingItem(list.id, item.id); }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-muted)', fontSize: '14px', padding: '2px 4px',
+                      lineHeight: 1, flexShrink: 0,
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
@@ -1229,7 +1323,7 @@ export function PlanScreen() {
           </div>
           <button
             className="btn-solid"
-            onClick={() => setShowNewForm(true)}
+            onClick={() => isPro() ? setShowNewForm(true) : setShowUpgrade(true)}
             style={{
               padding: '12px 24px',
               background: 'var(--accent)',
@@ -1245,6 +1339,13 @@ export function PlanScreen() {
             Create Your First List
           </button>
         </Card>
+      )}
+      {showUpgrade && (
+        <UpgradeModal
+          feature="mealplan"
+          onClose={() => setShowUpgrade(false)}
+          onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+        />
       )}
     </div>
   );

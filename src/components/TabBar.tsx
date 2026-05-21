@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { useStore } from '../store/useStore';
 import type { Tab } from '../types';
 

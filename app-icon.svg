@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="#ede8dc"/>
+
+  <!-- Shadow -->
+  <ellipse cx="512" cy="820" rx="185" ry="22" fill="#c0b8a8" opacity="0.5"/>
+
+  <!-- Avocado outer skin -->
+  <path d="
+    M 512 118
+    C 556 118 618 158 660 218
+    C 704 280 732 360 740 450
+    C 748 546 732 648 692 718
+    C 660 774 594 814 512 814
+    C 430 814 364 774 332 718
+    C 292 648 276 546 284 450
+    C 292 360 320 280 364 218
+    C 406 158 468 118 512 118 Z"
+    fill="#3a6030"/>
+
+  <!-- Avocado flesh -->
+  <path d="
+    M 512 158
+    C 548 158 600 192 636 246
+    C 674 304 698 378 704 458
+    C 712 546 698 638 662 702
+    C 634 750 578 782 512 782
+    C 446 782 390 750 362 702
+    C 326 638 312 546 320 458
+    C 326 378 350 304 388 246
+    C 424 192 476 158 512 158 Z"
+    fill="#ddeab8"/>
+
+  <!-- Pit -->
+  <ellipse cx="512" cy="536" rx="108" ry="132" fill="#7a4e2a"/>
+  <!-- Pit highlight -->
+  <ellipse cx="490" cy="494" rx="36" ry="44" fill="#9a6840" opacity="0.55"/>
+  <!-- Pit lower shadow -->
+  <ellipse cx="522" cy="598" rx="52" ry="24" fill="#4e3018" opacity="0.28"/>
+
+  <!-- Leaf — left petal (heart shape) -->
+  <path d="
+    M 608 188
+    Q 618 152 648 140
+    Q 672 152 662 182
+    Q 652 210 620 222
+    Z"
+    fill="#3a6030"/>
+
+  <!-- Leaf — right petal -->
+  <path d="
+    M 620 222
+    Q 656 198 682 188
+    Q 692 212 676 234
+    Q 658 254 628 248
+    Z"
+    fill="#4a7838"/>
+
+  <!-- Leaf texture lines -->
+  <path d="M 608 188 Q 624 206 620 222" stroke="#2a4a20" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <path d="M 620 222 Q 648 212 662 198" stroke="#2a4a20" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.5"/>
+
+</svg>
