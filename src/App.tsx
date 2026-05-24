@@ -6,7 +6,7 @@ import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
-import { KeyboardInputPreview } from './components/KeyboardInputPreview';
+import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -55,7 +55,6 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
 
   return (
     <>
-      {/* Backdrop */}
       {open && (
         <div
           onClick={() => setOpen(false)}
@@ -63,7 +62,6 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
         />
       )}
 
-      {/* Option buttons */}
       {options.map((opt) => (
         <div
           key={opt.label}
@@ -115,7 +113,6 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
         </div>
       ))}
 
-      {/* Main + button */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -166,13 +163,11 @@ function ScreenFallback({ label }: { label: string }) {
 export default function App() {
   const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser } = useStore();
 
-  // Handle deep link callback from OAuth (Google Sign-In via browser)
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     let lastProcessedUrl: string | null = null;
     const listener = CapApp.addListener('appUrlOpen', async ({ url }) => {
       if (!url.includes('auth/callback')) return;
-      // iOS can deliver the same deep link multiple times — only handle it once
       if (url === lastProcessedUrl) return;
       lastProcessedUrl = url;
       debug.log('[oauth] deep link received, closing browser');
@@ -202,13 +197,9 @@ export default function App() {
       debug.log('[auth] state change:', event, 'userId:', session?.user?.id);
       if (event === 'SIGNED_OUT') {
         if (wasSignOutUserInitiated()) {
-          // User tapped Sign Out in Settings — full wipe.
           clearUserInitiatedSignOutFlag();
           resetOnboarding();
         } else {
-          // Passive session expiry / refresh failure / remote revocation.
-          // Don't wipe local data — let the user keep using the app offline.
-          // They can re-authenticate later and we'll rehydrate from cloud.
           debug.log('[auth] passive sign-out — keeping local data');
           setSupabaseUserId(null);
         }
@@ -220,49 +211,46 @@ export default function App() {
       setSupabaseUserId(sbUser.id);
 
       try {
-      const profile = await loadProfile(sbUser.id);
-      debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
-      if (profile?.onboarding_complete) {
-        // Transition to main app BEFORE loading pantry/waste data — a failed
-        // data load must not leave the user stranded on the sign-in screen.
-        setUser({
-          id: sbUser.id,
-          name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
-          email: profile.email ?? sbUser.email,
-          authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
-          dietaryPreferences: (profile.dietary_preferences ?? []) as never,
-          createdAt: profile.created_at,
-          onboardingComplete: true,
-          streakDays: profile.streak_days,
-          lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
-          subscriptionTier: profile.subscription_tier as 'free' | 'pro',
-          avoChatCount: profile.avo_chat_count,
-          avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
-        });
-        debug.log('[auth] setUser called — transitioning to main app');
-        try {
-          const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
-          loadCloudData(pantryItems, wasteLogs);
-          debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
-        } catch (err) {
-          debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
+        const profile = await loadProfile(sbUser.id);
+        debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
+        if (profile?.onboarding_complete) {
+          setUser({
+            id: sbUser.id,
+            name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
+            email: profile.email ?? sbUser.email,
+            authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
+            dietaryPreferences: (profile.dietary_preferences ?? []) as never,
+            createdAt: profile.created_at,
+            onboardingComplete: true,
+            streakDays: profile.streak_days,
+            lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
+            subscriptionTier: profile.subscription_tier as 'free' | 'pro',
+            avoChatCount: profile.avo_chat_count,
+            avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
+          });
+          debug.log('[auth] setUser called — transitioning to main app');
+          try {
+            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
+            loadCloudData(pantryItems, wasteLogs);
+            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
+          } catch (err) {
+            debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
+          }
+        } else {
+          const rawProvider = sbUser.app_metadata?.provider;
+          const provider: 'apple' | 'google' | 'email' =
+            rawProvider === 'apple' ? 'apple' :
+            rawProvider === 'google' ? 'google' :
+            'email';
+          debug.log('[auth] no onboarding — calling setOAuthNewUser, provider:', provider);
+          setOAuthNewUser({
+            name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
+            email: sbUser.email ?? '',
+            provider,
+          });
         }
-      } else {
-        const rawProvider = sbUser.app_metadata?.provider;
-        const provider: 'apple' | 'google' | 'email' =
-          rawProvider === 'apple' ? 'apple' :
-          rawProvider === 'google' ? 'google' :
-          'email';
-        debug.log('[auth] no onboarding — calling setOAuthNewUser, provider:', provider);
-        setOAuthNewUser({
-          name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
-          email: sbUser.email ?? '',
-          provider,
-        });
-      }
       } catch (err) {
         debug.error('[auth] handler threw — user will be stranded unless we recover:', err);
-        // Fallback: at least put the user into onboarding with whatever provider we know
         const provider = sbUser.app_metadata?.provider === 'apple' ? 'apple' : 'google';
         setOAuthNewUser({
           name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
@@ -284,7 +272,7 @@ export default function App() {
         paddingTop: 'env(safe-area-inset-top)',
       }}>
         <OnboardingFlow />
-        <KeyboardInputPreview />
+        <KeyboardScrollManager />
       </div>
     );
   }
@@ -313,7 +301,7 @@ export default function App() {
       position: 'relative',
       paddingTop: 'env(safe-area-inset-top)',
     }}>
-      <div key={activeTab} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div id="kb-scroll-target" key={activeTab} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Suspense fallback={<ScreenFallback label={activeScreenLabel} />}>
           {screens[activeTab]}
         </Suspense>
@@ -326,7 +314,7 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
-      <KeyboardInputPreview />
+      <KeyboardScrollManager />
     </div>
   );
 }
