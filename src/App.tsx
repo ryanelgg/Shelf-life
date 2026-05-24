@@ -6,6 +6,7 @@ import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { KeyboardInputPreview } from './components/KeyboardInputPreview';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -283,6 +284,7 @@ export default function App() {
         paddingTop: 'env(safe-area-inset-top)',
       }}>
         <OnboardingFlow />
+        <KeyboardInputPreview />
       </div>
     );
   }
@@ -324,6 +326,7 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      <KeyboardInputPreview />
     </div>
   );
 }

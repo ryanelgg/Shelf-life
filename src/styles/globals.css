@@ -75,6 +75,11 @@ html, body, #root {
   overscroll-behavior: none;
 }
 
+@keyframes kbPreviewFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
