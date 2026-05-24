@@ -6,7 +6,7 @@ import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
-import { KeyboardInputPreview } from './components/KeyboardInputPreview';
+import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -284,7 +284,7 @@ export default function App() {
         paddingTop: 'env(safe-area-inset-top)',
       }}>
         <OnboardingFlow />
-        <KeyboardInputPreview />
+        <KeyboardScrollManager />
       </div>
     );
   }
@@ -313,7 +313,7 @@ export default function App() {
       position: 'relative',
       paddingTop: 'env(safe-area-inset-top)',
     }}>
-      <div key={activeTab} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div id="kb-scroll-target" key={activeTab} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Suspense fallback={<ScreenFallback label={activeScreenLabel} />}>
           {screens[activeTab]}
         </Suspense>
@@ -326,7 +326,7 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
-      <KeyboardInputPreview />
+      <KeyboardScrollManager />
     </div>
   );
 }
