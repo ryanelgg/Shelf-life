@@ -5,6 +5,9 @@ import { Keyboard } from '@capacitor/keyboard';
 
 const GAP = 16;
 
+// Track focused input separately — activeElement can be stale during keyboard events
+let focusedInput: HTMLInputElement | HTMLTextAreaElement | null = null;
+
 function findScrollableAncestor(el: Element): HTMLElement | null {
   let node = el.parentElement;
   while (node && node !== document.body) {
@@ -15,33 +18,34 @@ function findScrollableAncestor(el: Element): HTMLElement | null {
   return null;
 }
 
-function applyShift(keyboardHeight: number) {
-  const el = document.activeElement;
-  if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
-  if (el.type === 'password' || el.type === 'file' || el.type === 'hidden') return;
+function scrollInputAboveKeyboard(keyboardHeight: number) {
+  const el = focusedInput;
+  if (!el) return;
 
-  const rect = el.getBoundingClientRect();
-  const visibleBottom = window.innerHeight - keyboardHeight - GAP;
+  // Wait one frame so the DOM has settled after keyboard appearance
+  requestAnimationFrame(() => {
+    const rect = el.getBoundingClientRect();
+    const visibleBottom = window.innerHeight - keyboardHeight - GAP;
 
-  if (rect.bottom <= visibleBottom) return; // already above keyboard, nothing to do
+    if (rect.bottom <= visibleBottom) return; // already visible
 
-  const scrollAmount = rect.bottom - visibleBottom;
-  const scrollable = findScrollableAncestor(el);
+    const scrollAmount = rect.bottom - visibleBottom;
+    const scrollable = findScrollableAncestor(el);
 
-  if (scrollable) {
-    scrollable.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-  } else {
-    // Fallback for non-scrollable screens: shift the whole content wrapper
-    const target = document.getElementById('kb-scroll-target');
-    if (target) {
-      target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
-      target.style.transform = `translateY(-${scrollAmount}px)`;
+    if (scrollable) {
+      scrollable.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    } else {
+      // Fallback: shift the whole content wrapper
+      const target = document.getElementById('kb-scroll-target');
+      if (target) {
+        target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
+        target.style.transform = `translateY(-${scrollAmount}px)`;
+      }
     }
-  }
+  });
 }
 
 function clearShift() {
-  // Only needed for the fallback translate — scrollable containers restore naturally
   const target = document.getElementById('kb-scroll-target');
   if (target && target.style.transform) {
     target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
@@ -50,6 +54,23 @@ function clearShift() {
 }
 
 export function KeyboardScrollManager() {
+  // Track focused input globally
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target;
+      if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
+      if (el.type === 'password' || el.type === 'file' || el.type === 'hidden') return;
+      focusedInput = el;
+    };
+    const onFocusOut = () => { focusedInput = null; };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
+
   // Native: Capacitor keyboard events
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -59,7 +80,9 @@ export function KeyboardScrollManager() {
     let cancelled = false;
 
     (async () => {
-      showHandle = await Keyboard.addListener('keyboardDidShow', ({ keyboardHeight }) => applyShift(keyboardHeight));
+      showHandle = await Keyboard.addListener('keyboardDidShow', ({ keyboardHeight }) => {
+        scrollInputAboveKeyboard(keyboardHeight);
+      });
       hideHandle = await Keyboard.addListener('keyboardWillHide', clearShift);
       if (cancelled) { showHandle?.remove(); hideHandle?.remove(); }
     })();
@@ -79,7 +102,7 @@ export function KeyboardScrollManager() {
 
     const onResize = () => {
       const kbHeight = window.innerHeight - vv.offsetTop - vv.height;
-      if (kbHeight > 50) applyShift(kbHeight);
+      if (kbHeight > 50) scrollInputAboveKeyboard(kbHeight);
       else clearShift();
     };
 
