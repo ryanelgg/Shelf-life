@@ -3,8 +3,17 @@ import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { Keyboard } from '@capacitor/keyboard';
 
-const TARGET_ID = 'kb-scroll-target';
 const GAP = 16;
+
+function findScrollableAncestor(el: Element): HTMLElement | null {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const { overflowY } = window.getComputedStyle(node);
+    if (overflowY === 'auto' || overflowY === 'scroll') return node as HTMLElement;
+    node = node.parentElement;
+  }
+  return null;
+}
 
 function applyShift(keyboardHeight: number) {
   const el = document.activeElement;
@@ -12,24 +21,36 @@ function applyShift(keyboardHeight: number) {
   if (el.type === 'password' || el.type === 'file' || el.type === 'hidden') return;
 
   const rect = el.getBoundingClientRect();
-  const obscured = rect.bottom + GAP - (window.innerHeight - keyboardHeight);
+  const visibleBottom = window.innerHeight - keyboardHeight - GAP;
 
-  const target = document.getElementById(TARGET_ID);
-  if (!target) return;
+  if (rect.bottom <= visibleBottom) return; // already above keyboard, nothing to do
 
-  target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
-  target.style.transform = obscured > 0 ? `translateY(-${obscured}px)` : '';
+  const scrollAmount = rect.bottom - visibleBottom;
+  const scrollable = findScrollableAncestor(el);
+
+  if (scrollable) {
+    scrollable.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+  } else {
+    // Fallback for non-scrollable screens: shift the whole content wrapper
+    const target = document.getElementById('kb-scroll-target');
+    if (target) {
+      target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
+      target.style.transform = `translateY(-${scrollAmount}px)`;
+    }
+  }
 }
 
 function clearShift() {
-  const target = document.getElementById(TARGET_ID);
-  if (!target) return;
-  target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
-  target.style.transform = '';
+  // Only needed for the fallback translate — scrollable containers restore naturally
+  const target = document.getElementById('kb-scroll-target');
+  if (target && target.style.transform) {
+    target.style.transition = 'transform 0.25s cubic-bezier(0.4,0,0.2,1)';
+    target.style.transform = '';
+  }
 }
 
 export function KeyboardScrollManager() {
-  // Native: use Capacitor keyboard events
+  // Native: Capacitor keyboard events
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -38,7 +59,7 @@ export function KeyboardScrollManager() {
     let cancelled = false;
 
     (async () => {
-      showHandle = await Keyboard.addListener('keyboardWillShow', ({ keyboardHeight }) => applyShift(keyboardHeight));
+      showHandle = await Keyboard.addListener('keyboardDidShow', ({ keyboardHeight }) => applyShift(keyboardHeight));
       hideHandle = await Keyboard.addListener('keyboardWillHide', clearShift);
       if (cancelled) { showHandle?.remove(); hideHandle?.remove(); }
     })();
@@ -50,7 +71,7 @@ export function KeyboardScrollManager() {
     };
   }, []);
 
-  // Web: use visualViewport resize to detect keyboard
+  // Web: visualViewport resize detects keyboard
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return;
     const vv = window.visualViewport;
