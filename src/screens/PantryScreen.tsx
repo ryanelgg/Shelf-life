@@ -447,8 +447,6 @@ export function PantryScreen() {
                     { action: 'eaten' as WasteAction, label: 'Eaten', color: 'var(--fresh)', svgPath: <><circle cx="12" cy="12" r="8"/><path d="M8.5 12L11 14.5L15.5 9.5"/></> },
                     { action: 'tossed' as WasteAction, label: 'Tossed', color: 'var(--expired)', svgPath: <><path d="M3 6H21M8 6L9 3H15L16 6"/><path d="M5 6L6 21H18L19 6"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/></> },
                     { action: 'composted' as WasteAction, label: 'Compost', color: 'var(--good)', svgPath: <><path d="M12 20V12"/><path d="M12 16C10 13.5 6.5 13 5.5 10.5C7.5 8 11 9.5 12 12"/><path d="M12 13C14 10.5 17.5 10 18.5 8C16.5 5 13 7 12 11"/><path d="M9 20Q12 18 15 20"/></> },
-                    { action: 'shared' as WasteAction, label: 'Shared', color: 'var(--accent)', svgPath: <><circle cx="9" cy="7" r="3"/><circle cx="15" cy="7" r="3"/><path d="M3 19C3 16.2 5.7 14 9 14"/><path d="M21 19C21 16.2 18.3 14 15 14"/><path d="M9 14C9 14 12 16 15 14"/></> },
-                    { action: 'donated' as WasteAction, label: 'Donate', color: '#9B7FD4', svgPath: <><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></> },
                   ] as { action: WasteAction; label: string; color: string; svgPath: React.ReactNode }[]).map(a => (
                     <button
                       key={a.action}
@@ -465,21 +463,6 @@ export function PantryScreen() {
                       <span style={{ fontSize: '10px', fontWeight: 600, color: a.color, fontFamily: "'Cormorant Garamond', serif" }}>{a.label}</span>
                     </button>
                   ))}
-                  <button
-                    onClick={() => { setEditingItem(item); setSwipingItem(null); }}
-                    style={{
-                      flex: 1, padding: '10px 4px', background: 'transparent',
-                      border: '1px solid var(--text-muted)',
-                      borderRadius: '10px', cursor: 'pointer',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'Cormorant Garamond', serif" }}>Edit</span>
-                  </button>
                   <button
                     onClick={() => setSwipingItem(null)}
                     style={{
