@@ -11,7 +11,7 @@
 
 const isDev = import.meta.env.DEV;
 
-const noop = (..._args: unknown[]): void => { /* stripped in prod */ };
+const noop = (): void => { /* stripped in prod */ };
 
 export const log: (...args: unknown[]) => void = isDev
   ? console.log.bind(console)

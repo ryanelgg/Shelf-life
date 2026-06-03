@@ -1,9 +1,11 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
-import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { loadProfile, loadAllData, mergePantryItemsToCloud, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { formatLocalDate } from './types';
+import type { AuthProvider, PantryItem, User } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
+import { PantryMergeModal } from './components/PantryMergeModal';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
@@ -162,6 +164,14 @@ function ScreenFallback({ label }: { label: string }) {
 
 export default function App() {
   const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser } = useStore();
+  // Set when a guest who has local pantry items signs into an existing account.
+  // The modal asks whether to merge the local items into the cloud account or
+  // discard them and use the cloud-only state. Auth completion is paused until
+  // the user picks.
+  const [pendingMerge, setPendingMerge] = useState<{
+    items: PantryItem[];
+    finalize: (mode: 'merge' | 'discard') => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -208,33 +218,62 @@ export default function App() {
       if (!session?.user) return;
 
       const sbUser = session.user;
+      // Capture pre-signin state so we can detect a guest→account transition
+      // and offer the local pantry items to the cloud account.
+      const prevUserId = useStore.getState().supabaseUserId;
+      const localItemsBeforeSignin = useStore.getState().pantryItems;
       setSupabaseUserId(sbUser.id);
 
       try {
         const profile = await loadProfile(sbUser.id);
         debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
         if (profile?.onboarding_complete) {
-          setUser({
+          const buildUser = (): User => ({
             id: sbUser.id,
             name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
             email: profile.email ?? sbUser.email,
-            authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
-            dietaryPreferences: (profile.dietary_preferences ?? []) as never,
+            authProvider: profile.auth_provider as AuthProvider,
+            dietaryPreferences: (profile.dietary_preferences ?? []) as User['dietaryPreferences'],
             createdAt: profile.created_at,
             onboardingComplete: true,
             streakDays: profile.streak_days,
             lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
-            subscriptionTier: profile.subscription_tier as 'free' | 'pro',
+            subscriptionTier: profile.subscription_tier as User['subscriptionTier'],
             avoChatCount: profile.avo_chat_count,
             avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
           });
-          debug.log('[auth] setUser called — transitioning to main app');
-          try {
-            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
-            loadCloudData(pantryItems, wasteLogs);
-            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
-          } catch (err) {
-            debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
+
+          const finishSignIn = async (mergeLocal: boolean) => {
+            if (mergeLocal && localItemsBeforeSignin.length > 0) {
+              try {
+                await mergePantryItemsToCloud(localItemsBeforeSignin, sbUser.id);
+              } catch (err) {
+                debug.warn('[auth] merge failed, falling back to cloud-only:', err);
+              }
+            }
+            setUser(buildUser());
+            debug.log('[auth] setUser called — transitioning to main app');
+            try {
+              const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
+              loadCloudData(pantryItems, wasteLogs);
+              debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
+            } catch (err) {
+              debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
+            }
+          };
+
+          // Guest→account transition with unsynced local items: ask before
+          // we overwrite local state with the cloud's pantry.
+          if (prevUserId === null && localItemsBeforeSignin.length > 0) {
+            setPendingMerge({
+              items: localItemsBeforeSignin,
+              finalize: async (mode) => {
+                await finishSignIn(mode === 'merge');
+                setPendingMerge(null);
+              },
+            });
+          } else {
+            await finishSignIn(false);
           }
         } else {
           const rawProvider = sbUser.app_metadata?.provider;
@@ -251,7 +290,11 @@ export default function App() {
         }
       } catch (err) {
         debug.error('[auth] handler threw — user will be stranded unless we recover:', err);
-        const provider = sbUser.app_metadata?.provider === 'apple' ? 'apple' : 'google';
+        const rawProvider = sbUser.app_metadata?.provider;
+        const provider: 'apple' | 'google' | 'email' =
+          rawProvider === 'apple' ? 'apple' :
+          rawProvider === 'google' ? 'google' :
+          'email';
         setOAuthNewUser({
           name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
           email: sbUser.email ?? '',
@@ -263,6 +306,14 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, [loadCloudData, resetOnboarding, setOAuthNewUser, setSupabaseUserId, setUser]);
 
+  const mergeModal = pendingMerge && (
+    <PantryMergeModal
+      itemCount={pendingMerge.items.length}
+      onMerge={() => pendingMerge.finalize('merge')}
+      onDiscard={() => pendingMerge.finalize('discard')}
+    />
+  );
+
   if (!user?.onboardingComplete) {
     return (
       <div data-theme={theme} style={{
@@ -273,6 +324,7 @@ export default function App() {
       }}>
         <OnboardingFlow />
         <KeyboardScrollManager />
+        {mergeModal}
       </div>
     );
   }
@@ -315,6 +367,7 @@ export default function App() {
       <TabBar />
       {showSettings && <SettingsScreen />}
       <KeyboardScrollManager />
+      {mergeModal}
     </div>
   );
 }

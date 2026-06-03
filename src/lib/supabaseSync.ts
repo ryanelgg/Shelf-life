@@ -306,8 +306,8 @@ export async function loadAllData(userId: string): Promise<{
 
 // ── Pantry sync ───────────────────────────────────────────────────────────────
 
-export function syncPantryAdd(item: PantryItem, userId: string) {
-  syncWrite(() => supabase.from('pantry_items').insert({
+function pantryRowFromItem(item: PantryItem, userId: string) {
+  return {
     id: item.id,
     user_id: userId,
     name: item.name,
@@ -320,7 +320,23 @@ export function syncPantryAdd(item: PantryItem, userId: string) {
     estimated_value: item.estimatedValue,
     notes: item.notes ?? null,
     frozen: item.frozen ?? false,
-  }), 'pantryAdd');
+  };
+}
+
+export function syncPantryAdd(item: PantryItem, userId: string) {
+  syncWrite(() => supabase.from('pantry_items').insert(pantryRowFromItem(item, userId)), 'pantryAdd');
+}
+
+/**
+ * Bulk insert used by the guest→signed-in merge flow. Awaited (unlike
+ * syncPantryAdd) so the caller can show a spinner and only load cloud data
+ * once every local item has been written.
+ */
+export async function mergePantryItemsToCloud(items: PantryItem[], userId: string): Promise<void> {
+  if (items.length === 0) return;
+  const rows = items.map(item => pantryRowFromItem(item, userId));
+  const { error } = await supabase.from('pantry_items').upsert(rows, { onConflict: 'id' });
+  if (error) throw new Error(error.message);
 }
 
 export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {

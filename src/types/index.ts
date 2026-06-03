@@ -180,6 +180,10 @@ export function formatLocalDate(date: Date): string {
 
 export function parseLocalDate(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
+  // Guard against malformed input — a NaN year would produce Invalid Date,
+  // whose .getTime() is NaN and breaks any caller doing arithmetic or sort
+  // comparisons. Epoch is a safe sentinel that sorts to the top.
+  if (!Number.isFinite(year)) return new Date(0);
   return new Date(year, (month || 1) - 1, day || 1);
 }
 

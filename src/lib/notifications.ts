@@ -30,61 +30,61 @@ const TWO_DAYS_BEFORE = [
 const ONE_DAY_BEFORE = [
   (u: string, n: string) => ({ title: `🥑 ${u}, tomorrow's the day!`, body: `Your ${n} expires tomorrow — let's give it the spotlight 🌟` }),
   (_u: string, n: string) => ({ title: 'Avo says hi 👋', body: `Your ${n} expires tomorrow! Got 5 minutes for a quick recipe?` }),
-  (u: string, n: string) => ({ title: '💚 Quick heads up', body: `Hey ${u}, your ${n} won\'t make it past tomorrow. Need help cooking it?` }),
+  (u: string, n: string) => ({ title: '💚 Quick heads up', body: `Hey ${u}, your ${n} won't make it past tomorrow. Need help cooking it?` }),
   (u: string, n: string) => ({ title: `🥑 ${u}, listen…`, body: `Your ${n} expires tomorrow. We can do this together!` }),
-  (_u: string, n: string) => ({ title: 'One day to go ⏳', body: `Your ${n} is on its last day tomorrow. Avo\'s rooting for it!` }),
-  (u: string, n: string) => ({ title: '🥑 Tomorrow\'s the deadline', body: `${u}, your ${n} expires tomorrow. Let\'s make a plan together!` }),
+  (_u: string, n: string) => ({ title: 'One day to go ⏳', body: `Your ${n} is on its last day tomorrow. Avo's rooting for it!` }),
+  (u: string, n: string) => ({ title: "🥑 Tomorrow's the deadline", body: `${u}, your ${n} expires tomorrow. Let's make a plan together!` }),
   (_u: string, n: string) => ({ title: 'Last call vibes 🌅', body: `Your ${n} expires tomorrow — time to shine ✨` }),
 ];
 
 // ── Expiration: day of ──────────────────────────────────────────────────────
 const DAY_OF = [
-  (u: string, n: string) => ({ title: `🥑 ${u}, it\'s go time!`, body: `Your ${n} expires today. You\'ve got this!` }),
-  (_u: string, n: string) => ({ title: 'Today\'s the day 💚', body: `Your ${n} expires today. Let\'s give it a great send-off.` }),
-  (u: string, n: string) => ({ title: `Avo believes in you, ${u}`, body: `Your ${n} expires today — quick! What\'s for dinner?` }),
+  (u: string, n: string) => ({ title: `🥑 ${u}, it's go time!`, body: `Your ${n} expires today. You've got this!` }),
+  (_u: string, n: string) => ({ title: "Today's the day 💚", body: `Your ${n} expires today. Let's give it a great send-off.` }),
+  (u: string, n: string) => ({ title: `Avo believes in you, ${u}`, body: `Your ${n} expires today — quick! What's for dinner?` }),
   (_u: string, n: string) => ({ title: '🥑 Last call!', body: `Your ${n} expires today. One quick meal can save it ✨` }),
   (u: string, n: string) => ({ title: 'Final stretch! 🏁', body: `${u}, your ${n} expires today. Cook it, freeze it, anything goes!` }),
-  (_u: string, n: string) => ({ title: '🌿 It\'s now or never', body: `Your ${n} expires today. Let\'s do this!` }),
+  (_u: string, n: string) => ({ title: "🌿 It's now or never", body: `Your ${n} expires today. Let's do this!` }),
   (u: string, n: string) => ({ title: '🥑 Hero hour', body: `${u}, your ${n} expires today. Be its hero?` }),
 ];
 
 // ── Streak protection (fires 7pm if streak at risk) ─────────────────────────
 const STREAK_PROTECTION = [
-  (_u: string, s: number) => ({ title: `🔥 Your ${s}-day streak!`, body: `Don\'t break it now — log a meal before midnight 💚` }),
-  (u: string, s: number) => ({ title: 'Avo\'s hyping you up 🥑', body: `${s} days strong, ${u}! Keep the streak alive today.` }),
+  (_u: string, s: number) => ({ title: `🔥 Your ${s}-day streak!`, body: `Don't break it now — log a meal before midnight 💚` }),
+  (u: string, s: number) => ({ title: "Avo's hyping you up 🥑", body: `${s} days strong, ${u}! Keep the streak alive today.` }),
   (u: string, s: number) => ({ title: `🔥 ${u}, the streak!`, body: `${s} days of saving food. Ready for day ${s + 1}?` }),
-  (u: string, s: number) => ({ title: 'Streak alert 🔔', body: `${u}, you\'re on day ${s}. Just one log to keep it rolling!` }),
-  (_u: string, s: number) => ({ title: '🥑 We\'ve come so far!', body: `${s} days strong — let\'s not let today be the day.` }),
-  (u: string, s: number) => ({ title: '🔥 Almost there!', body: `Day ${s} of your streak, ${u}. Avo\'s cheering for you!` }),
+  (u: string, s: number) => ({ title: 'Streak alert 🔔', body: `${u}, you're on day ${s}. Just one log to keep it rolling!` }),
+  (_u: string, s: number) => ({ title: "🥑 We've come so far!", body: `${s} days strong — let's not let today be the day.` }),
+  (u: string, s: number) => ({ title: '🔥 Almost there!', body: `Day ${s} of your streak, ${u}. Avo's cheering for you!` }),
 ];
 
 // ── Streak milestones (fires immediately when hit) ──────────────────────────
 const STREAK_MILESTONES: Record<number, () => { title: string; body: string }> = {
-  3: () => ({ title: '🔥 Three days!', body: '3 days no-waste. Avo\'s noticing 👀' }),
-  7: () => ({ title: '🔥 ONE WEEK!', body: '7 days of beating food waste. Avo\'s SO proud 🥑' }),
-  14: () => ({ title: '🥑 Two weeks strong!', body: '14 days no-waste. You\'re a legend 💚' }),
+  3: () => ({ title: '🔥 Three days!', body: "3 days no-waste. Avo's noticing 👀" }),
+  7: () => ({ title: '🔥 ONE WEEK!', body: "7 days of beating food waste. Avo's SO proud 🥑" }),
+  14: () => ({ title: '🥑 Two weeks strong!', body: "14 days no-waste. You're a legend 💚" }),
   30: () => ({ title: '🏆 ONE MONTH!', body: '30 days! Avo is framing this. Iconic.' }),
-  50: () => ({ title: '🥑 50 days!', body: 'Half a hundred. Avo can\'t even.' }),
-  100: () => ({ title: '💯 100 DAYS!!', body: '100 days no-waste. Avo\'s in tears (happy ones) 🥹' }),
-  365: () => ({ title: '🌟 ONE YEAR!', body: '365 days. You\'ve changed the game. Avo bows 🙇' }),
+  50: () => ({ title: '🥑 50 days!', body: "Half a hundred. Avo can't even." }),
+  100: () => ({ title: '💯 100 DAYS!!', body: "100 days no-waste. Avo's in tears (happy ones) 🥹" }),
+  365: () => ({ title: '🌟 ONE YEAR!', body: "365 days. You've changed the game. Avo bows 🙇" }),
 };
 
 // ── Re-engagement (fires after 3 days of no activity) ───────────────────────
 const RE_ENGAGEMENT = [
-  (u: string) => ({ title: `🥑 Avo misses you, ${u}`, body: 'Haven\'t seen you in a few days — what\'s in the fridge?' }),
-  (u: string) => ({ title: `Hey ${u} 👋`, body: 'It\'s been a minute! Your pantry\'s getting curious.' }),
-  (_u: string) => ({ title: '🥑 Just checking in!', body: 'Avo\'s been waiting. Got something to log?' }),
-  (u: string) => ({ title: 'Hi! 💚', body: `Hey ${u}, Avo\'s keeping watch over your pantry. Wanna peek in?` }),
-  (u: string) => ({ title: `🥑 Where\'d you go, ${u}?`, body: 'Avo\'s been holding down the fort. Come say hi!' }),
+  (u: string) => ({ title: `🥑 Avo misses you, ${u}`, body: "Haven't seen you in a few days — what's in the fridge?" }),
+  (u: string) => ({ title: `Hey ${u} 👋`, body: "It's been a minute! Your pantry's getting curious." }),
+  (_u: string) => ({ title: '🥑 Just checking in!', body: "Avo's been waiting. Got something to log?" }),
+  (u: string) => ({ title: 'Hi! 💚', body: `Hey ${u}, Avo's keeping watch over your pantry. Wanna peek in?` }),
+  (u: string) => ({ title: `🥑 Where'd you go, ${u}?`, body: "Avo's been holding down the fort. Come say hi!" }),
   (_u: string) => ({ title: 'Pssst 👀', body: 'Avo wonders if anything new came home from the store?' }),
 ];
 
 // ── Recipe idle (fires after 5 days of no cook log) ─────────────────────────
 const RECIPE_NUDGE = [
-  (u: string) => ({ title: `🍳 Hungry, ${u}?`, body: 'Avo\'s got recipe ideas using what\'s in your pantry right now.' }),
-  (_u: string) => ({ title: '🥑 Recipe time?', body: 'It\'s been a while since you cooked. Want some inspo?' }),
+  (u: string) => ({ title: `🍳 Hungry, ${u}?`, body: "Avo's got recipe ideas using what's in your pantry right now." }),
+  (_u: string) => ({ title: '🥑 Recipe time?', body: "It's been a while since you cooked. Want some inspo?" }),
   (u: string) => ({ title: 'Cooking SOS 🆘', body: `${u}, Avo can suggest a recipe in 10 seconds. Just ask!` }),
-  (_u: string) => ({ title: '🍽️ Dinner ideas?', body: 'Open the app — Avo\'s got 3 recipes ready for you.' }),
+  (_u: string) => ({ title: '🍽️ Dinner ideas?', body: "Open the app — Avo's got 3 recipes ready for you." }),
 ];
 
 function pickRandom<T>(arr: T[]): T {
@@ -110,20 +110,23 @@ function hashStringToInt(str: string): number {
     hash = ((hash << 5) - hash) + str.charCodeAt(i);
     hash |= 0;
   }
-  return Math.abs(hash) % 100000000;
+  return Math.abs(hash);
 }
 
+// Capacitor LocalNotifications IDs are 32-bit signed ints. We mask the hash to
+// 28 bits and shift left 2 to leave room for a 2-bit slot tag, keeping every
+// item ID under 2^30 — well clear of the reserved engagement range above 1.9e9.
 function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number } {
-  const base = hashStringToInt(itemId);
+  const base = hashStringToInt(itemId) & 0x0fffffff;
   return {
-    twoDays: base * 10 + 1,
-    oneDay: base * 10 + 2,
-    dayOf: base * 10 + 3,
+    twoDays: (base << 2) | 0,
+    oneDay:  (base << 2) | 1,
+    dayOf:   (base << 2) | 2,
   };
 }
 
-// Reserved IDs for engagement notifications (won't collide with item hashes
-// because items max out at base * 10 + 3 < 1_000_000_000).
+// Reserved IDs for engagement notifications (sit above 1.9e9, can't collide
+// with item IDs which are capped at (2^28 - 1) << 2 < 2^30).
 const ENGAGEMENT_IDS = {
   streakProtection: 1_900_000_001,
   reEngagement: 1_900_000_002,

@@ -410,9 +410,10 @@ export const useStore = create<ShelfLifeStore>()(
             void celebrateStreakMilestone(user.streakDays);
           }
           void scheduleReEngagement(user.name);
-          if (log.action === 'eaten') {
-            // They actually consumed food — refresh the recipe nudge so we
-            // don't bug them about cooking right after a successful meal.
+          if (log.action !== 'tossed') {
+            // Any non-waste outcome (eaten, composted, donated, shared) means
+            // the item left the pantry for a good reason — push the cook nudge
+            // forward. Only an actual toss should keep it on schedule.
             void scheduleRecipeNudge(user.name);
           }
         }
