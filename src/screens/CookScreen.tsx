@@ -24,7 +24,7 @@ const SUGGESTIONS = [
 ];
 
 export function CookScreen() {
-  const { user, pantryItems, incrementAvoChat, decrementAvoChat, isPro, setSubscriptionTier, avoAiConsent, setAvoAiConsent } = useStore();
+  const { user, pantryItems, incrementAvoChat, decrementAvoChat, isPro, setSubscriptionTier, avoAiConsent, setAvoAiConsent, cookPrompt, setCookPrompt } = useStore();
   const sessionOwnerId = user?.id ?? null;
   const [messages, setMessages] = useState<AvoDisplayMessage[]>(() => getAvoSession(sessionOwnerId).messages);
   const [input, setInput] = useState('');
@@ -33,6 +33,16 @@ export function CookScreen() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<AvoChatMessage[]>(getAvoSession(sessionOwnerId).history);
+
+  // Cross-screen handoff: when PantryScreen sets cookPrompt via "Eat Me First",
+  // pre-fill the input so the user can review/edit before sending. Cleared
+  // after consumption so re-entering the tab doesn't re-populate.
+  useEffect(() => {
+    if (!cookPrompt) return;
+    setInput(cookPrompt);
+    setCookPrompt(null);
+    inputRef.current?.focus();
+  }, [cookPrompt, setCookPrompt]);
 
   const isProUser = user?.subscriptionTier === 'pro';
   const today = formatLocalDate(new Date());

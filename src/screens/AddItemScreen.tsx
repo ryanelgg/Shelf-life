@@ -6,7 +6,7 @@ import { lookupShelfLife } from '../data/shelfLife';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS } from '../types';
+import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS, parseLocalDate } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -14,6 +14,7 @@ import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
+import { scanExpirationDate } from '../lib/dateOcr';
 import type { FoodCategory, StorageLocation } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt';
@@ -98,6 +99,9 @@ export function AddItemScreen() {
   const [receiptProcessing, setReceiptProcessing] = useState(false);
   const [receiptItems, setReceiptItems] = useState<ReceiptListItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dateFileInputRef = useRef<HTMLInputElement>(null);
+  const [dateScanning, setDateScanning] = useState(false);
+  const [dateScanError, setDateScanError] = useState<string | null>(null);
 
   // Manual form state
   const [name, setName] = useState('');
@@ -169,6 +173,70 @@ export function AddItemScreen() {
     } else {
       fileInputRef.current?.click();
     }
+  };
+
+  const handleSnapDateTap = async () => {
+    if (dateScanning) return;
+    setDateScanError(null);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const photo = await Camera.getPhoto({
+          source: CameraSource.Prompt,
+          resultType: CameraResultType.Base64,
+          quality: 80,
+        });
+        if (!photo.base64String) return;
+        void processDateImage(photo.base64String);
+      } catch (error: unknown) {
+        if (!isCancelledError(error)) {
+          debug.error('Date camera error:', error);
+          setDateScanError("Couldn't open the camera. Try again?");
+        }
+      }
+    } else {
+      dateFileInputRef.current?.click();
+    }
+  };
+
+  const processDateImage = async (base64: string) => {
+    if (!base64) return;
+    setDateScanning(true);
+    setDateScanError(null);
+    try {
+      const isoDate = await scanExpirationDate(base64);
+      if (!isoDate) {
+        setDateScanError("Avo couldn't spot a date. Try a closer shot of the label.");
+        return;
+      }
+      const target = parseLocalDate(isoDate);
+      const today = new Date();
+      const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = Math.round((target.getTime() - now.getTime()) / 86400000);
+      // Negative days = already expired. We still fill the field so the user
+      // can see what was detected and adjust manually if needed.
+      hapticLight();
+      setCustomDays(String(days));
+    } catch (err) {
+      debug.error('Date OCR error:', err);
+      setDateScanError(err instanceof Error ? err.message : 'Date scan failed. Try again?');
+    } finally {
+      setDateScanning(false);
+    }
+  };
+
+  const handleDateFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        const base64 = result.split(',')[1];
+        if (base64) void processDateImage(base64);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const processReceiptImage = async (base64: string) => {
@@ -640,8 +708,42 @@ export function AddItemScreen() {
               />
             </Card>
             <Card className="card-enter stagger-6">
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
-                Days Until Exp.
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px',
+                gap: '6px',
+              }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Days Until Exp.
+                </span>
+                <button
+                  onClick={() => { void handleSnapDateTap(); }}
+                  disabled={dateScanning}
+                  title="Snap the expiration date on the package"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px 8px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--accent)',
+                    background: dateScanning ? 'var(--accent-dim)' : 'transparent',
+                    color: 'var(--accent)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    cursor: dateScanning ? 'wait' : 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                  {dateScanning ? 'Reading…' : 'Snap'}
+                </button>
               </div>
               <input
                 type="number"
@@ -653,6 +755,24 @@ export function AddItemScreen() {
                   borderRadius: '10px', padding: '10px 12px', color: 'var(--text-primary)',
                   fontFamily: 'DM Mono, monospace', fontSize: '14px', outline: 'none', boxSizing: 'border-box',
                 }}
+              />
+              {dateScanError && (
+                <div style={{
+                  marginTop: '6px',
+                  fontSize: '10px',
+                  color: 'var(--expiring)',
+                  lineHeight: 1.4,
+                }}>
+                  {dateScanError}
+                </div>
+              )}
+              <input
+                ref={dateFileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleDateFileSelected}
+                style={{ display: 'none' }}
               />
             </Card>
           </div>

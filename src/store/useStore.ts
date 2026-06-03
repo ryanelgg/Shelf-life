@@ -85,6 +85,12 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+
+  // Cross-screen handoff: when "Ask Avo" is tapped on an expiring pantry
+  // item, this carries the pre-filled question to CookScreen. Not persisted —
+  // it's transient and consumed immediately on the Cook tab.
+  cookPrompt: string | null;
+  setCookPrompt: (prompt: string | null) => void;
 }
 
 
@@ -291,6 +297,7 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      cookPrompt: null as string | null,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
@@ -529,6 +536,7 @@ export const useStore = create<ShelfLifeStore>()(
           void cancelAllNotifications();
         }
       },
+      setCookPrompt: (prompt) => set({ cookPrompt: prompt }),
     }),
     {
       name: 'shelf-life-storage-v2',

@@ -93,7 +93,7 @@ function createWasteLogId() {
 }
 
 export function PantryScreen() {
-  const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem } = useStore();
+  const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setCookPrompt } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
@@ -121,6 +121,26 @@ export function PantryScreen() {
       return a.category.localeCompare(b.category);
     });
   }, [pantryItems, activeLocation, sortBy, searchQuery, expiringOnly]);
+
+  // "Eat Me First" strip — items expiring within 2 days, sorted by urgency.
+  // Capped at 6 to keep the horizontal scroll digestible.
+  const eatMeFirst = useMemo(() => {
+    return pantryItems
+      .map(item => ({ item, days: getDaysUntilExpiration(item.expirationDate) }))
+      .filter(({ days }) => days <= 2)
+      .sort((a, b) => a.days - b.days)
+      .slice(0, 6);
+  }, [pantryItems]);
+
+  const askAvoAbout = (item: PantryItem, days: number) => {
+    const when =
+      days < 0 ? 'expired' :
+      days === 0 ? 'expires today' :
+      days === 1 ? 'expires tomorrow' :
+      `expires in ${days} days`;
+    setCookPrompt(`What can I quickly make with my ${item.name}? It ${when}.`);
+    setActiveTab('cook');
+  };
 
   const expiringCount = pantryItems.filter(i => {
     const status = getFreshnessStatus(i.expirationDate);
@@ -419,6 +439,90 @@ export function PantryScreen() {
             ✕
           </button>
         </Card>
+      )}
+
+      {/* Eat Me First — items expiring in ≤2 days with a one-tap Ask Avo */}
+      {eatMeFirst.length > 0 && (
+        <div className="card-enter stagger-3">
+          <div style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            marginBottom: '8px',
+          }}>
+            <h2 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)' }}>
+              🥑 Eat Me First
+            </h2>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>
+              tap to ask Avo
+            </span>
+          </div>
+          <div
+            className="chips-scroll"
+            style={{
+              display: 'flex',
+              gap: '8px',
+              overflowX: 'auto',
+              margin: '0 -16px',
+              padding: '2px 16px 4px',
+              WebkitOverflowScrolling: 'touch' as const,
+              scrollbarWidth: 'none' as const,
+              msOverflowStyle: 'none' as const,
+            }}
+          >
+            {eatMeFirst.map(({ item, days }) => {
+              const color = getFreshnessColor(getFreshnessStatus(item.expirationDate));
+              const label =
+                days < 0 ? 'expired' :
+                days === 0 ? 'today' :
+                days === 1 ? '1 day' :
+                `${days} days`;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => askAvoAbout(item, days)}
+                  style={{
+                    flexShrink: 0,
+                    minWidth: '120px',
+                    padding: '10px 12px',
+                    borderRadius: '14px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--tab-border)',
+                    borderLeft: `3px solid ${color}`,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    boxShadow: '0 1px 4px rgba(74,124,89,0.06)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                  }}
+                >
+                  <div style={{
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {item.name}
+                  </div>
+                  <div style={{
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    color,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}>
+                    {label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <style>{`.chips-scroll::-webkit-scrollbar { display: none; }`}</style>
+        </div>
       )}
 
       {/* Item grid — re-mounts when sort/filter changes so items animate upward */}
