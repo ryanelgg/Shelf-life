@@ -110,3 +110,20 @@ You can still operate Pantre day-to-day. You just can't be the legal entity.
 3. App description / keywords drafts
 4. Native rebuild + verify on iPhone
 5. Talk to a parent when ready (unblocks Termly publish, App Store Connect, RevenueCat)
+
+---
+
+## 🟣 Household sharing (v1.1, post-launch) — split into 3 PRs
+
+- [x] **PR1** — schema only. `households` + `household_members` tables, nullable
+  `household_id` column added to `profiles` / `pantry_items` / `waste_logs`,
+  RLS policies, `is_household_member` + `is_household_owner` helpers.
+  Migration: `supabase/migrations/20260604000001_households.sql`.
+  Apply with `supabase db push`. App keeps working unchanged.
+- [ ] **PR2** — Edge Function `household` (create / join-by-invite / leave /
+  regenerate code), client lib `src/lib/household.ts`, Settings UI
+  "Family Sharing" section (Pro-gated).
+- [ ] **PR3** — backfill personal household for every existing user, flip
+  pantry/waste queries to filter by `household_id`, add multi-writer
+  conflict handling (last-write-wins via updated_at, or a delete tombstone
+  if we see races in testing).
