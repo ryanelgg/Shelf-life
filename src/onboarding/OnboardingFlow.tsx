@@ -36,6 +36,11 @@ export function OnboardingFlow() {
   const [chosenTier, setChosenTier] = useState<SubscriptionTier>('free');
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [emailExpanded, setEmailExpanded] = useState(false);
+  // Age + ToS gate — required before any sign-in / sign-up flow can run.
+  // The Terms of Use require users to be 13+; this checkbox makes that
+  // explicit at sign-up and serves as click-through acceptance of the
+  // Privacy Policy and Terms of Use.
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [emailMode, setEmailMode] = useState<'signin' | 'signup'>('signin');
   const [emailValue, setEmailValue] = useState('');
   const [passwordValue, setPasswordValue] = useState('');
@@ -193,7 +198,76 @@ export function OnboardingFlow() {
             Keep your pantry, recipes, and subscription synced across devices.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '8px' }}>
+          {/* Age + ToS gate — required for COPPA compliance and click-through acceptance */}
+          <label
+            htmlFor="age-confirm"
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              maxWidth: '300px',
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: '12px',
+              background: ageConfirmed ? 'var(--accent-dim)' : 'var(--bg-card)',
+              border: ageConfirmed ? '1px solid var(--accent)' : '1px solid var(--input-border)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'background 0.2s, border-color 0.2s',
+            }}
+          >
+            <input
+              id="age-confirm"
+              type="checkbox"
+              checked={ageConfirmed}
+              onChange={e => setAgeConfirmed(e.target.checked)}
+              style={{
+                marginTop: '3px',
+                width: '16px',
+                height: '16px',
+                accentColor: 'var(--accent)',
+                flexShrink: 0,
+                cursor: 'pointer',
+              }}
+            />
+            <span style={{
+              fontSize: '12px',
+              lineHeight: 1.45,
+              color: 'var(--text-primary)',
+              fontFamily: "'Cormorant Garamond', serif",
+            }}>
+              I'm 13 or older and agree to the{' '}
+              <a
+                href="https://usepantre.me/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                style={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'underline' }}
+              >Privacy Policy</a>
+              {' '}and{' '}
+              <a
+                href="https://usepantre.me/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                style={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'underline' }}
+              >Terms of Use</a>.
+            </span>
+          </label>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              width: '100%',
+              maxWidth: '300px',
+              marginTop: '8px',
+              opacity: ageConfirmed ? 1 : 0.45,
+              pointerEvents: ageConfirmed ? 'auto' : 'none',
+              transition: 'opacity 0.2s',
+            }}
+          >
             {/* Sign in with Apple */}
             <button
               onClick={() => handleSignIn('apple')}
@@ -393,11 +467,15 @@ export function OnboardingFlow() {
 
           <button
             onClick={() => { setAuthProvider('guest'); setStep('name'); }}
+            disabled={!ageConfirmed}
             style={{
               padding: '10px', background: 'none', border: 'none',
               color: 'var(--text-muted)',
               fontFamily: "'Cormorant Garamond', serif",
-              fontSize: '13px', cursor: 'pointer', marginTop: '4px',
+              fontSize: '13px',
+              cursor: ageConfirmed ? 'pointer' : 'not-allowed',
+              marginTop: '4px',
+              opacity: ageConfirmed ? 1 : 0.4,
             }}
           >
             Continue without an account
