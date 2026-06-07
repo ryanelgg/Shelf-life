@@ -149,7 +149,7 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
         </button>
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', opacity: canClose ? 1 : 0, transition: 'opacity 0.5s ease-out' }}>
-          {[['Privacy Policy', 'https://pantre.app/privacy'], ['Terms of Use', 'https://pantre.app/terms']].map(([label, url]) => (
+          {[['Privacy Policy', 'https://usepantre.me/privacy'], ['Terms of Use', 'https://usepantre.me/terms']].map(([label, url]) => (
             <button
               key={label}
               onClick={() => window.open(url, '_blank')}
