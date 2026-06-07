@@ -248,17 +248,26 @@ export function AddItemScreen() {
     const expDate = new Date();
     expDate.setDate(expDate.getDate() + days);
 
+    // Use Number.isFinite so 0 is preserved — `||` treats 0 as falsy and would
+    // silently swap a user-typed 0 for the fallback. Free or zero-cost items
+    // (gifts, samples, leftovers) are legitimate inputs.
+    const parsedQty = parseFloat(quantity);
+    const qty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 1;
+    const parsedValue = parseFloat(value);
+    const typedValue = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 2.99;
+    const finalValue = itemVal !== undefined && Number.isFinite(itemVal) && itemVal >= 0 ? itemVal : typedValue;
+
     hapticMedium();
     addPantryItem({
       id: generateItemId(),
       name: n,
       category: cat,
       location: loc,
-      quantity: parseFloat(quantity) || 1,
+      quantity: qty,
       unit: itemUnit || unit,
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
-      estimatedValue: itemVal || parseFloat(value) || 2.99,
+      estimatedValue: finalValue,
     });
 
     // Reset form

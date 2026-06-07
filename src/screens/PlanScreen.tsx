@@ -270,13 +270,37 @@ const DIET_BLOCKLIST: Record<string, string[]> = {
   ],
 };
 
+// Qualifiers that flip a blocked term into something safe — "almond milk" is
+// fine for dairy-free, "gluten-free pasta" is fine for gluten-free, etc. Each
+// ingredient is checked per-word and skipped if any preceding token in the
+// same ingredient name is one of these.
+const DIET_SAFE_QUALIFIERS: Record<string, string[]> = {
+  'dairy-free': ['almond', 'oat', 'soy', 'coconut', 'cashew', 'rice', 'hemp', 'pea', 'plant', 'vegan', 'non-dairy', 'dairy-free'],
+  'gluten-free': ['gluten-free', 'almond', 'coconut', 'rice', 'corn', 'chickpea', 'tapioca', 'buckwheat'],
+  vegan: ['almond', 'oat', 'soy', 'coconut', 'cashew', 'rice', 'hemp', 'pea', 'plant', 'vegan', 'non-dairy', 'dairy-free'],
+  vegetarian: [],
+  'nut-free': [],
+};
+
+function ingredientViolatesDiet(ingredientName: string, blocked: string[], diet: string): boolean {
+  const lower = ingredientName.toLowerCase();
+  const tokens = lower.split(/[^a-z0-9-]+/).filter(Boolean);
+  const qualifiers = new Set(DIET_SAFE_QUALIFIERS[diet] ?? []);
+  // If any qualifier appears anywhere in the ingredient, treat it as safe.
+  if (tokens.some(t => qualifiers.has(t))) return false;
+  // Word-boundary check so "rice" doesn't match "price" and "cream" doesn't
+  // match "creamery". Hyphenated tokens are split too.
+  return blocked.some(b => tokens.includes(b) || lower.includes(` ${b}`) || lower.startsWith(`${b} `));
+}
+
 function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   const active = diets.filter(d => d !== 'none');
   if (active.length === 0) return true;
-  const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    if (blocked.some(b => ingredNames.includes(b))) return false;
+    if (recipe.ingredients.some(ing => ingredientViolatesDiet(ing.name, blocked, diet))) {
+      return false;
+    }
   }
   return true;
 }
@@ -365,16 +389,36 @@ function parseAmountUnit(amount: string): string | null {
   return null;
 }
 
+// Compare names by significant tokens, not substrings, so "rice" in the pantry
+// doesn't match "rice vinegar" in a recipe (and vice versa). A pantry item
+// matches an ingredient when their stripped-down token sets overlap exactly,
+// or when one is a single-token subset of the other.
+const NAME_STOP_WORDS = new Set(['fresh', 'frozen', 'organic', 'raw', 'whole', 'large', 'small', 'medium', 'extra', 'virgin', 'unsalted', 'salted', 'sliced', 'chopped', 'diced', 'ground']);
+
+function nameTokens(raw: string): string[] {
+  return raw
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(t => t.length > 1 && !NAME_STOP_WORDS.has(t));
+}
+
+// A pantry item satisfies a recipe ingredient when every meaningful token of
+// the ingredient name appears in the pantry name (pantry can be more
+// specific). The reverse is not allowed — "rice" in the pantry must NOT
+// satisfy "rice vinegar" in a recipe, because pantry rice is not vinegar.
+function pantryCoversIngredient(pantryName: string, ingredientName: string): boolean {
+  const ing = nameTokens(ingredientName);
+  const pan = nameTokens(pantryName);
+  if (ing.length === 0 || pan.length === 0) return false;
+  return ing.every(t => pan.includes(t));
+}
+
 function getIngredientStatus(
   ingredientName: string,
   ingredientAmount: string,
   pantryItems: PantryItem[]
 ): IngredientStatus {
-  const nameL = ingredientName.toLowerCase();
-  const match = pantryItems.find(item => {
-    const itemL = item.name.toLowerCase();
-    return itemL.includes(nameL) || nameL.includes(itemL);
-  });
+  const match = pantryItems.find(item => pantryCoversIngredient(item.name, ingredientName));
   if (!match) return { status: 'missing' };
 
   // Try numeric comparison only when units are compatible.

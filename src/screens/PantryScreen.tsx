@@ -655,7 +655,20 @@ function EditItemModal({ item, onSave, onClose }: {
         </div>
 
         <button
-          onClick={() => onSave({ name: name.trim(), quantity: parseFloat(quantity) || 1, unit, expirationDate: expDate, estimatedValue: parseFloat(value) || item.estimatedValue, location })}
+          onClick={() => {
+            // Use Number.isFinite so 0 is preserved — `||` would treat 0 as falsy
+            // and silently restore the previous value, surprising the user.
+            const parsedQty = parseFloat(quantity);
+            const parsedValue = parseFloat(value);
+            onSave({
+              name: name.trim(),
+              quantity: Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : item.quantity,
+              unit,
+              expirationDate: expDate,
+              estimatedValue: Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : item.estimatedValue,
+              location,
+            });
+          }}
           style={{
             width: '100%', padding: '14px', background: 'var(--accent)', border: 'none',
             borderRadius: '12px', color: '#fff', fontFamily: "'Cormorant Garamond', serif",

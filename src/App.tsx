@@ -3,6 +3,7 @@ import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { formatLocalDate } from './types';
+import type { DietaryPref } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -219,7 +220,7 @@ export default function App() {
             name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
             email: profile.email ?? sbUser.email,
             authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
-            dietaryPreferences: (profile.dietary_preferences ?? []) as never,
+            dietaryPreferences: (profile.dietary_preferences ?? []) as DietaryPref[],
             createdAt: profile.created_at,
             onboardingComplete: true,
             streakDays: profile.streak_days,
@@ -251,7 +252,13 @@ export default function App() {
         }
       } catch (err) {
         debug.error('[auth] handler threw — user will be stranded unless we recover:', err);
-        const provider = sbUser.app_metadata?.provider === 'apple' ? 'apple' : 'google';
+        // Mirror the three-way check above so email signups aren't mislabeled
+        // as Google when loadProfile throws.
+        const rawProvider = sbUser.app_metadata?.provider;
+        const provider: 'apple' | 'google' | 'email' =
+          rawProvider === 'apple' ? 'apple' :
+          rawProvider === 'google' ? 'google' :
+          'email';
         setOAuthNewUser({
           name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
           email: sbUser.email ?? '',

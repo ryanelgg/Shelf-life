@@ -11,7 +11,7 @@ import {
   type AvoChatMessage,
   type AvoDisplayMessage,
 } from '../lib/avoChatSession';
-import { requestAvoChat } from '../lib/avoApi';
+import { requestAvoChat, AvoApiError } from '../lib/avoApi';
 import * as debug from '../lib/debug';
 import { hapticLight } from '../lib/haptics';
 
@@ -116,9 +116,10 @@ export function CookScreen() {
       debug.error('[Avo chat error]', err);
       // Rollback the chat credit since the request failed
       decrementAvoChat();
-      const errorMsg = (err as { status?: number })?.status === 401
+      const status = err instanceof AvoApiError ? err.status : undefined;
+      const errorMsg = status === 401
         ? "Looks like the API key isn't set up yet."
-        : (err as { status?: number })?.status === 429
+        : status === 429
         ? "I'm getting a lot of questions right now — try again in a moment!"
         : "Something went wrong connecting to my brain. Try again?";
 

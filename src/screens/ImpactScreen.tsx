@@ -86,10 +86,12 @@ export function ImpactScreen() {
     const itemsSaved = totalItems - tossed.length;
     const co2Saved = (itemsSaved * 0.5).toFixed(1);
 
-    // Money saved — sum estimatedValue of everything that wasn't tossed
+    // Money saved — sum estimatedValue of everything that wasn't tossed.
+    // estimatedValue is already the full line-item price, so do NOT multiply
+    // by quantity here — PantryScreen totals the same way.
     const moneySaved = wasteLogs
       .filter(w => w.action !== 'tossed')
-      .reduce((sum, w) => sum + (w.estimatedValue * w.quantity), 0);
+      .reduce((sum, w) => sum + w.estimatedValue, 0);
 
     return {
       totalItems,

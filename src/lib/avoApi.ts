@@ -11,6 +11,17 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const hostedAvoChatUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/avo-chat`;
 
+// Carries the HTTP status so callers (CookScreen) can branch on 401/429
+// and show user-friendly copy. A plain Error throws away the status code.
+export class AvoApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AvoApiError';
+    this.status = status;
+  }
+}
+
 async function parseErrorMessage(response: Response) {
   try {
     const data = await response.json() as AvoChatResponse;
@@ -42,7 +53,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
 async function requestFromUrl(url: string, init: RequestInit) {
   const response = await fetchWithTimeout(url, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new AvoApiError(await parseErrorMessage(response), response.status);
   }
 
   const data = await response.json() as AvoChatResponse;
