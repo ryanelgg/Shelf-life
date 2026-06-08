@@ -23,7 +23,7 @@
     "@capacitor/local-notifications": "^8.0.2",
     "@capacitor/share": "^8.0.1",
     "@sentry/capacitor": "^4.0.0",
-    "@sentry/react": "^10.43.0",
+    "@sentry/react": "10.43.0",
     "@supabase/supabase-js": "^2.101.0",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
