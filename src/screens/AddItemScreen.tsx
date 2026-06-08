@@ -14,7 +14,7 @@ import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
-import type { FoodCategory, StorageLocation } from '../types';
+import type { FoodCategory, StorageLocation, PantryItem } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt';
 type ReceiptListItem = { id: string; name: string; price: number };
@@ -77,6 +77,29 @@ function generateItemId(): string {
 let nextReceiptRowId = 0;
 function generateReceiptRowId(): string {
   return `receipt-${++nextReceiptRowId}-${Date.now().toString(36)}`;
+}
+
+// Build a pantry item from a receipt row. Shelf life, quantity, and unit are
+// computed independently here — they must NEVER be read from the manual-add
+// form state (customDays/quantity/unit), which can hold stale values that
+// would silently corrupt receipt rows. Used by both single "+ Add" and
+// "Add all" so the two paths stay consistent.
+function buildReceiptPantryItem(item: ReceiptListItem): PantryItem {
+  const resolved = resolveReceiptItem(item.name);
+  const shelfDays = lookupShelfLife(item.name, resolved.location) ?? DEFAULT_SHELF_LIFE[resolved.category];
+  const expDate = new Date();
+  expDate.setDate(expDate.getDate() + shelfDays);
+  return {
+    id: generateItemId(),
+    name: item.name,
+    category: resolved.category,
+    location: resolved.location,
+    quantity: 1,
+    unit: 'pcs',
+    addedDate: formatLocalDate(new Date()),
+    expirationDate: formatLocalDate(expDate),
+    estimatedValue: item.price,
+  };
 }
 
 function isCancelledError(error: unknown): boolean {
@@ -203,25 +226,8 @@ export function AddItemScreen() {
 
   const addReceiptItem = (item: ReceiptListItem) => {
     if (!canAddPantryItem()) { setShowUpgrade(true); return; }
-    const resolved = resolveReceiptItem(item.name);
-    // Compute shelf life independently — never read customDays/quantity from
-    // the manual form (those fields belong to manual-add mode and may hold
-    // stale values that would corrupt receipt rows).
-    const shelfDays = lookupShelfLife(item.name, resolved.location) ?? DEFAULT_SHELF_LIFE[resolved.category];
-    const expDate = new Date();
-    expDate.setDate(expDate.getDate() + shelfDays);
     hapticMedium();
-    addPantryItem({
-      id: generateItemId(),
-      name: item.name,
-      category: resolved.category,
-      location: resolved.location,
-      quantity: 1,
-      unit: 'pcs',
-      addedDate: formatLocalDate(new Date()),
-      expirationDate: formatLocalDate(expDate),
-      estimatedValue: item.price,
-    });
+    addPantryItem(buildReceiptPantryItem(item));
     // Filter by object identity, not name — avoids dropping every row when
     // a receipt contains two lines with the same product name.
     setReceiptItems(prev => {
@@ -773,13 +779,18 @@ export function AddItemScreen() {
             <button
               onClick={() => {
                 const slotsLeft = isPro()
-                  ? Infinity
-                  : FREE_LIMITS.pantryItems - pantryItems.length;
+                  ? receiptItems.length
+                  : Math.max(0, FREE_LIMITS.pantryItems - pantryItems.length);
                 const toAdd = receiptItems.slice(0, slotsLeft);
-                toAdd.forEach(item => {
-                  const resolved = resolveReceiptItem(item.name);
-                  handleAddItem(item.name, resolved.category, resolved.location, item.price, 'pcs');
-                });
+                // Add each row via the shared builder so quantity/shelf-life are
+                // computed independently — never inherited from the manual form.
+                toAdd.forEach(item => addPantryItem(buildReceiptPantryItem(item)));
+                if (toAdd.length > 0) {
+                  hapticMedium();
+                  setSuccessName(`${toAdd.length} item${toAdd.length > 1 ? 's' : ''}`);
+                  setShowSuccess(true);
+                  setTimeout(() => setShowSuccess(false), 2000);
+                }
                 const remaining = receiptItems.slice(slotsLeft);
                 setReceiptItems(remaining);
                 if (remaining.length > 0) {
