@@ -11,6 +11,7 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import * as debug from './lib/debug';
+import posthog from 'posthog-js';
 
 const PantryScreen = lazy(() => import('./screens/PantryScreen').then((module) => ({ default: module.PantryScreen })));
 const AddItemScreen = lazy(() => import('./screens/AddItemScreen').then((module) => ({ default: module.AddItemScreen })));
@@ -39,12 +40,18 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
     {
       label: 'Scan',
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="7" width="4" height="10" rx="1"/>
-          <rect x="9" y="5" width="2" height="14" rx="1"/>
-          <rect x="13" y="7" width="3" height="10" rx="1"/>
-          <rect x="18" y="6" width="2" height="12" rx="1"/>
-          <line x1="1" y1="12" x2="23" y2="12" stroke="none"/>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {/* Corner brackets framing the barcode */}
+          <path d="M3 8V5a2 2 0 0 1 2-2h3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M21 16v3a2 2 0 0 1-2 2h-3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          {/* Variable-width barcode bars */}
+          <line x1="7" y1="8" x2="7" y2="16" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
+          <line x1="10" y1="8" x2="10" y2="16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+          <line x1="13" y1="8" x2="13" y2="16" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="15.5" y1="8" x2="15.5" y2="16" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="18" y1="8" x2="18" y2="16" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
         </svg>
       ),
       action: () => { setOpen(false); onScan(); },
@@ -198,6 +205,7 @@ export default function App() {
       if (event === 'SIGNED_OUT') {
         if (wasSignOutUserInitiated()) {
           clearUserInitiatedSignOutFlag();
+          posthog.reset();
           resetOnboarding();
         } else {
           debug.log('[auth] passive sign-out — keeping local data');
@@ -214,6 +222,8 @@ export default function App() {
         const profile = await loadProfile(sbUser.id);
         debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
         if (profile?.onboarding_complete) {
+          // Transition to main app BEFORE loading pantry/waste data — a failed
+          // data load must not leave the user stranded on the sign-in screen.
           setUser({
             id: sbUser.id,
             name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
@@ -229,6 +239,11 @@ export default function App() {
             avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
           });
           debug.log('[auth] setUser called — transitioning to main app');
+          posthog.identify(sbUser.id, {
+            email: sbUser.email,
+            tier: profile.subscription_tier,
+            auth_provider: profile.auth_provider,
+          });
           try {
             const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
             loadCloudData(pantryItems, wasteLogs);

@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import posthog from 'posthog-js';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
 import type { FoodCategory } from '../types';
+import { lookupCommunityProduct, submitCommunityProduct } from '../lib/communityProducts';
+import { AvocadoMascot } from './AvocadoMascot';
 
-// Native barcode scanner plugin (BarcodeScannerPlugin.swift in App target)
-const NativeScanner = registerPlugin<{
-  scan(): Promise<{ displayValue: string }>;
-}>('CapacitorBarcodeScanner');
-
-interface ScannedProduct {
+export interface ScannedProduct {
   name: string;
+  brand?: string;
   category: FoodCategory;
   estimatedValue?: number;
 }
@@ -20,20 +18,14 @@ interface Props {
   onClose: () => void;
 }
 
-// Local USDA barcode database — loaded once, cached in module scope
+const CATEGORIES: FoodCategory[] = [
+  'Produce', 'Dairy', 'Meat', 'Seafood', 'Grains', 'Frozen',
+  'Canned', 'Snacks', 'Beverages', 'Condiments', 'Bakery', 'Deli', 'Other',
+];
+
+// ── Local USDA DB ─────────────────────────────────────────────────────────────
 let localDB: Record<string, { n: string; c: FoodCategory }> | null = null;
 let localDBPromise: Promise<void> | null = null;
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error ?? '');
-}
-
-function getErrorCode(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    return String(error.code ?? '');
-  }
-  return '';
-}
 
 function loadLocalDB() {
   if (localDB !== null) return Promise.resolve();
@@ -44,7 +36,6 @@ function loadLocalDB() {
     .catch(() => { localDB = {}; });
   return localDBPromise;
 }
-
 loadLocalDB();
 
 function lookupLocalDB(barcode: string): ScannedProduct | null {
@@ -71,10 +62,22 @@ function mapOFFCategory(categories: string): FoodCategory {
   return 'Other';
 }
 
+/**
+ * Lookup order:
+ * 1. Local USDA DB (instant, no network)
+ * 2. Community Supabase DB (user-contributed)
+ * 3. Open Food Facts (global fallback, with brand extraction)
+ */
 async function lookupBarcode(barcode: string): Promise<ScannedProduct | null> {
   await loadLocalDB();
+
   const local = lookupLocalDB(barcode);
   if (local) return local;
+
+  try {
+    const community = await lookupCommunityProduct(barcode);
+    if (community) return { name: community.name, brand: community.brand ?? undefined, category: community.category };
+  } catch { /* non-fatal */ }
 
   try {
     const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
@@ -83,76 +86,64 @@ async function lookupBarcode(barcode: string): Promise<ScannedProduct | null> {
     const p = data.product;
     const name = p.product_name_en || p.product_name || p.generic_name || null;
     if (!name) return null;
+    const brand = p.brands ? p.brands.split(',')[0].trim() : undefined;
     const categories = p.categories || p.categories_tags?.join(', ') || '';
-    return { name, category: mapOFFCategory(categories) };
+    return { name, brand, category: mapOFFCategory(categories) };
   } catch {
     return null;
   }
 }
 
-const isNative = Capacitor.isNativePlatform();
-const webCameraAvailable = !isNative && !!(navigator.mediaDevices?.getUserMedia);
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export function BarcodeScanner({ onScan, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [status, setStatus] = useState<'idle' | 'scanning' | 'loading' | 'notfound' | 'error'>(
-    () => (!isNative && webCameraAvailable ? 'scanning' : 'idle')
-  );
-  const [errorMsg, setErrorMsg] = useState('');
-  const [manualBarcode, setManualBarcode] = useState('');
-  const [manualLoading, setManualLoading] = useState(false);
-  const [notFound, setNotFound] = useState(false);
   const scannedRef = useRef(false);
   const onScanRef = useRef(onScan);
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
 
-  useEffect(() => {
-    onScanRef.current = onScan;
-  }, [onScan]);
+  const cameraAvailable = !!(navigator.mediaDevices?.getUserMedia);
 
-  const emitScan = (product: ScannedProduct) => {
-    onScanRef.current(product);
+  const [status, setStatus] = useState<'scanning' | 'loading' | 'notfound' | 'error' | 'nocamera'>(
+    cameraAvailable ? 'scanning' : 'nocamera'
+  );
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // "Add unknown product" flow
+  const [addingProduct, setAddingProduct] = useState(false);
+  const [lastBarcode, setLastBarcode] = useState('');
+  const [addName, setAddName] = useState('');
+  const [addBrand, setAddBrand] = useState('');
+  const [addCategory, setAddCategory] = useState<FoodCategory>('Other');
+  const [addSubmitting, setAddSubmitting] = useState(false);
+
+  const emitScan = (product: ScannedProduct) => { onScanRef.current(product); };
+
+  const handleNotFound = (barcode: string) => {
+    posthog.capture('barcode_scan_failed', { reason: 'not_found', source: 'camera' });
+    setLastBarcode(barcode);
+    setAddName('');
+    setAddBrand('');
+    setAddCategory('Other');
+    setStatus('notfound');
   };
 
-  const handleManualLookup = async () => {
-    const code = manualBarcode.trim();
-    if (!code) return;
-    setManualLoading(true);
-    setNotFound(false);
-    const product = await lookupBarcode(code);
-    setManualLoading(false);
-    if (product) { emitScan(product); }
-    else { setNotFound(true); }
-  };
-
-  // Native: AVFoundation live scanner — stays open until barcode is detected
-  const handleNativeScan = async () => {
+  const handleAddSubmit = async () => {
+    if (!addName.trim()) return;
+    setAddSubmitting(true);
     try {
-      setStatus('scanning');
-      const { displayValue } = await NativeScanner.scan();
-      if (!displayValue) { setStatus('idle'); return; }
-
-      setStatus('loading');
-      const product = await lookupBarcode(displayValue);
-      if (product) {
-        emitScan(product);
-      } else {
-        setStatus('notfound');
-      }
-    } catch (error: unknown) {
-      const code = getErrorCode(error);
-      const message = getErrorMessage(error).toLowerCase();
-      if (code === 'USER_CANCELLED' || message.includes('cancel')) {
-        setStatus('idle');
-      } else {
-        setErrorMsg(getErrorMessage(error) || 'Scanner error');
-        setStatus('error');
-      }
-    }
+      await submitCommunityProduct(lastBarcode, { name: addName, brand: addBrand, category: addCategory });
+    } catch { /* non-fatal */ }
+    setAddSubmitting(false);
+    setAddingProduct(false);
+    emitScan({ name: addName, brand: addBrand || undefined, category: addCategory });
   };
 
-  // Web: ZXing live video stream
+  // ZXing live stream — works on both web and native iOS via WKWebView
   useEffect(() => {
-    if (isNative || !webCameraAvailable) return;
+    if (!cameraAvailable) return;
 
     const reader = new BrowserMultiFormatReader();
     if (!videoRef.current) return;
@@ -165,170 +156,287 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       scannedRef.current = true;
       setStatus('loading');
       const product = await lookupBarcode(result.getText());
-      if (product) { emitScan(product); }
-      else {
-        setStatus('notfound');
-        setTimeout(() => { scannedRef.current = false; setStatus('scanning'); }, 2000);
+      if (product) {
+        emitScan(product);
+      } else {
+        handleNotFound(result.getText());
+        setTimeout(() => { scannedRef.current = false; }, 1500);
       }
-    }).catch((e) => {
-      setErrorMsg(e?.message || 'Camera error');
+    }).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Camera error';
+      posthog.capture('barcode_scan_failed', { reason: msg, source: 'camera' });
+      setErrorMsg(msg);
       setStatus('error');
     });
 
     return () => { BrowserMultiFormatReader.releaseAllStreams(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Native UI ────────────────────────────────────────────────────────────
-  if (isNative) {
-    return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 200,
-        background: '#111',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '40px 24px', gap: '24px',
-      }}>
-        <button onClick={onClose} style={{
-          position: 'absolute', top: 20, right: 20,
-          width: 40, height: 40, borderRadius: '50%',
-          background: 'rgba(255,255,255,0.15)', border: 'none',
-          color: '#fff', fontSize: 20, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>×</button>
+  const statusLabel = {
+    scanning: 'Show Avo a barcode',
+    loading: 'Avo’s having a look…',
+    notfound: 'Avo doesn’t recognize this one',
+    error: errorMsg || 'Camera trouble',
+    nocamera: 'Avo needs camera access',
+  }[status];
 
-        <button
-          onClick={handleNativeScan}
-          disabled={status === 'scanning' || status === 'loading'}
-          style={{
-            width: 120, height: 120, borderRadius: '50%',
-            background: (status === 'scanning' || status === 'loading')
-              ? 'rgba(74,124,89,0.4)' : 'var(--accent)',
-            border: '3px solid rgba(255,255,255,0.2)',
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            gap: '8px', cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-        >
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 3h3M18 3h3M3 21h3M18 21h3" />
-            <rect x="7" y="7" width="3" height="8" rx="0.5" />
-            <rect x="11" y="7" width="1.5" height="8" rx="0.5" />
-            <rect x="14" y="7" width="3" height="8" rx="0.5" />
-          </svg>
-          <span style={{ color: '#fff', fontSize: 11, fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>
-            {status === 'loading' ? 'Looking up...' : 'Scan Barcode'}
-          </span>
-        </button>
-
-        {status === 'notfound' && (
-          <div style={{ color: '#ff9999', fontSize: 13, textAlign: 'center' }}>
-            Product not found — try scanning again
-          </div>
-        )}
-        {status === 'error' && (
-          <div style={{ color: '#ff9999', fontSize: 13, textAlign: 'center' }}>{errorMsg}</div>
-        )}
-
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>— or —</div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', width: '100%', maxWidth: 300 }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>Enter barcode manually</div>
-          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={manualBarcode}
-              onChange={e => setManualBarcode(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={e => e.key === 'Enter' && handleManualLookup()}
-              placeholder="e.g. 012345678901"
-              style={{
-                flex: 1, padding: '12px 14px', borderRadius: '10px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(255,255,255,0.08)', color: '#fff',
-                fontSize: '14px', fontFamily: "'Cormorant Garamond', serif",
-              }}
-            />
-            <button
-              onClick={handleManualLookup}
-              disabled={manualLoading || !manualBarcode.trim()}
-              style={{
-                padding: '12px 16px', borderRadius: '10px', border: 'none',
-                background: 'var(--accent)', color: '#fff',
-                fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                opacity: manualLoading || !manualBarcode.trim() ? 0.5 : 1,
-              }}
-            >{manualLoading ? '...' : 'Look up'}</button>
-          </div>
-          {notFound && <div style={{ color: '#ff9999', fontSize: 13 }}>Product not found</div>}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Web UI ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#000', display: 'flex', flexDirection: 'column' }}>
-      {webCameraAvailable && (
-        <video ref={videoRef} style={{ flex: 1, width: '100%', objectFit: 'cover' }} autoPlay muted playsInline />
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#1a1612', display: 'flex', flexDirection: 'column' }}>
+
+      {/* Live camera preview */}
+      {cameraAvailable && (
+        <video
+          ref={videoRef}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          autoPlay
+          muted
+          playsInline
+        />
       )}
+
+      {/* Soft warm vignette over the video */}
+      {cameraAvailable && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(ellipse at center, transparent 35%, rgba(26,22,18,0.55) 100%)',
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Overlay UI */}
       <div style={{
-        position: webCameraAvailable ? 'absolute' : 'relative',
-        inset: webCameraAvailable ? 0 : undefined,
-        flex: webCameraAvailable ? undefined : 1,
+        position: 'absolute', inset: 0,
         display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        pointerEvents: webCameraAvailable ? 'none' : 'auto',
-        padding: '32px 24px', gap: '20px',
+        alignItems: 'center', justifyContent: 'space-between',
+        padding: '60px 24px 48px',
       }}>
-        {webCameraAvailable && (
-          <>
-            <div style={{ width: 240, height: 160, position: 'relative', marginBottom: 24 }}>
-              {[
-                { top: 0, left: 0, borderTop: '3px solid #fff', borderLeft: '3px solid #fff', borderRadius: '4px 0 0 0' },
-                { top: 0, right: 0, borderTop: '3px solid #fff', borderRight: '3px solid #fff', borderRadius: '0 4px 0 0' },
-                { bottom: 0, left: 0, borderBottom: '3px solid #fff', borderLeft: '3px solid #fff', borderRadius: '0 0 0 4px' },
-                { bottom: 0, right: 0, borderBottom: '3px solid #fff', borderRight: '3px solid #fff', borderRadius: '0 0 4px 0' },
-              ].map((s, i) => <div key={i} style={{ position: 'absolute', width: 24, height: 24, ...s }} />)}
+        {/* Top: close */}
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{
+              width: 40, height: 40, borderRadius: '50%',
+              background: 'rgba(26,22,18,0.55)',
+              border: '1px solid rgba(255,255,255,0.18)',
+              color: '#faf7f2', fontSize: 22, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(8px)',
+              fontFamily: "'Cormorant Garamond', serif",
+            }}
+          >×</button>
+        </div>
+
+        {/* Center: soft viewfinder */}
+        {cameraAvailable && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '18px', position: 'relative' }}>
+            {/* Avo peeking from the side, watching */}
+            <div style={{
+              position: 'absolute',
+              top: -28,
+              right: -22,
+              zIndex: 2,
+              animation: status === 'scanning' ? 'avoPeek 3s ease-in-out infinite' : 'none',
+              transformOrigin: 'bottom center',
+            }}>
+              <AvocadoMascot size={60} isStatic />
+            </div>
+
+            {/* Soft rounded viewfinder with breathing pulse */}
+            <div style={{ position: 'relative', width: 280, height: 180 }}>
+              <div style={{
+                position: 'absolute', inset: 0,
+                borderRadius: '28px',
+                border: '2px solid rgba(250,247,242,0.85)',
+                boxShadow: '0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 24px rgba(250,247,242,0.08)',
+                animation: status === 'scanning' ? 'softBreath 2.6s ease-in-out infinite' : 'none',
+              }} />
+
+              {/* Subtle inner glow ring */}
               {status === 'scanning' && (
-                <div style={{ position: 'absolute', left: 8, right: 8, height: 2, background: 'var(--accent)', boxShadow: '0 0 8px var(--accent)', animation: 'scanLine 1.8s ease-in-out infinite' }} />
+                <div style={{
+                  position: 'absolute', inset: '10px',
+                  borderRadius: '22px',
+                  border: '1px solid rgba(250,247,242,0.18)',
+                  pointerEvents: 'none',
+                }} />
+              )}
+
+              {/* Loading: gentle Avo bounce in the middle */}
+              {status === 'loading' && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <div style={{ animation: 'gentleBounce 1.1s ease-in-out infinite' }}>
+                    <AvocadoMascot size={64} isStatic />
+                  </div>
+                </div>
               )}
             </div>
-            <div style={{ background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '8px 20px', borderRadius: 20, fontSize: 14, fontWeight: 600, fontFamily: "'Cormorant Garamond', serif" }}>
-              {status === 'scanning' && 'Point at a barcode'}
-              {status === 'loading' && 'Looking up product...'}
-              {status === 'notfound' && 'Not found — try again'}
-              {status === 'error' && (errorMsg || 'Camera error')}
+
+            {/* Status text */}
+            <div style={{
+              color: '#faf7f2',
+              padding: '0 20px',
+              fontSize: 17,
+              fontWeight: 700,
+              fontFamily: "'Cormorant Garamond', serif",
+              letterSpacing: '0.01em',
+              textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+              textAlign: 'center',
+            }}>
+              {statusLabel}
             </div>
-          </>
+
+            {/* "Help Avo" prompt when not found */}
+            {status === 'notfound' && (
+              <button
+                onClick={() => setAddingProduct(true)}
+                style={{
+                  padding: '11px 22px', borderRadius: '24px',
+                  border: 'none',
+                  background: 'var(--accent)',
+                  color: '#faf7f2', fontSize: '14px', fontWeight: 700,
+                  cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif",
+                  boxShadow: '0 4px 14px rgba(74,124,89,0.4)',
+                }}
+              >
+                Help Avo learn this one
+              </button>
+            )}
+          </div>
         )}
-        <div style={{ pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%', maxWidth: 320 }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
-            {webCameraAvailable ? 'Or enter barcode manually' : 'Enter barcode number'}
+
+        {/* Bottom: no-camera fallback (just info, no manual entry) */}
+        {!cameraAvailable && (
+          <div style={{ width: '100%', maxWidth: 320, textAlign: 'center' }}>
+            <AvocadoMascot size={56} isStatic />
+            <div style={{
+              color: '#faf7f2',
+              fontSize: '14px',
+              marginTop: '12px',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontWeight: 600,
+              lineHeight: 1.45,
+            }}>
+              Avo can't see — no camera on this device.
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={manualBarcode}
-              onChange={e => setManualBarcode(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={e => e.key === 'Enter' && handleManualLookup()}
-              placeholder="e.g. 012345678901"
-              style={{ flex: 1, padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: '14px', fontFamily: "'Cormorant Garamond', serif" }}
-            />
-            <button
-              onClick={handleManualLookup}
-              disabled={manualLoading || !manualBarcode.trim()}
-              style={{ padding: '12px 16px', borderRadius: '10px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', opacity: manualLoading || !manualBarcode.trim() ? 0.5 : 1 }}
-            >{manualLoading ? '...' : 'Look up'}</button>
-          </div>
-          {notFound && <div style={{ color: '#ff9999', fontSize: 13 }}>Product not found</div>}
-        </div>
+        )}
+        {cameraAvailable && <div />}
       </div>
-      <button onClick={onClose} style={{ position: 'absolute', top: 20, right: 20, width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>×</button>
-      <style>{`@keyframes scanLine { 0% { top: 8px; } 50% { top: calc(100% - 10px); } 100% { top: 8px; } }`}</style>
+
+      {/* "Add unknown product" full overlay */}
+      {addingProduct && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 10,
+          background: 'linear-gradient(180deg, #1a1612 0%, #221b16 100%)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: '32px 24px', gap: '14px',
+        }}>
+          <AvocadoMascot size={64} isStatic />
+          <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+            <div style={{ fontSize: '22px', fontWeight: 800, color: '#faf7f2', fontFamily: "'Cormorant Garamond', serif", lineHeight: 1.2 }}>
+              Teach Avo this one
+            </div>
+            <div style={{ fontSize: '13px', color: 'rgba(250,247,242,0.55)', marginTop: '8px', lineHeight: 1.5, fontFamily: "'Cormorant Garamond', serif" }}>
+              Add it once and the whole<br />Pantre community gets it for free.
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '320px' }}>
+            <input
+              type="text" value={addName}
+              onChange={e => setAddName(e.target.value)}
+              placeholder="Product name *" autoFocus
+              style={overlayInputStyle}
+            />
+            <input
+              type="text" value={addBrand}
+              onChange={e => setAddBrand(e.target.value)}
+              placeholder="Brand (optional)"
+              style={overlayInputStyle}
+            />
+
+            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', fontWeight: 600, marginTop: '2px' }}>
+              Category
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setAddCategory(cat)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '20px', border: 'none',
+                    background: addCategory === cat ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+                    color: '#fff', fontSize: '12px', fontWeight: 600,
+                    cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif",
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => { void handleAddSubmit(); }}
+              disabled={addSubmitting || !addName.trim()}
+              style={{
+                marginTop: '6px', padding: '14px', borderRadius: '12px', border: 'none',
+                background: addName.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.15)',
+                color: '#fff', fontSize: '15px', fontWeight: 700,
+                cursor: addName.trim() ? 'pointer' : 'not-allowed',
+                fontFamily: "'Cormorant Garamond', serif",
+                opacity: addSubmitting ? 0.7 : 1,
+              }}
+            >
+              {addSubmitting ? 'Saving...' : 'Add to Pantre'}
+            </button>
+
+            <button
+              onClick={() => { setAddingProduct(false); setStatus('scanning'); scannedRef.current = false; }}
+              style={{
+                padding: '10px', background: 'none', border: 'none',
+                color: 'rgba(255,255,255,0.4)', fontSize: '13px',
+                cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif",
+              }}
+            >
+              Skip — scan again
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes softBreath {
+          0%, 100% { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 24px rgba(250,247,242,0.08), 0 0 0 0 rgba(250,247,242,0); }
+          50%      { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 36px rgba(250,247,242,0.14), 0 0 0 10px rgba(250,247,242,0.06); }
+        }
+        @keyframes avoPeek {
+          0%, 100% { transform: translateY(0) rotate(-4deg); }
+          50%      { transform: translateY(-6px) rotate(4deg); }
+        }
+        @keyframes gentleBounce {
+          0%, 100% { transform: translateY(0) scale(1); }
+          50%      { transform: translateY(-10px) scale(1.03); }
+        }
+      `}</style>
     </div>
   );
 }
+
+const overlayInputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: '10px',
+  border: '1px solid rgba(255,255,255,0.2)',
+  background: 'rgba(255,255,255,0.08)',
+  color: '#fff',
+  fontSize: '14px',
+  fontFamily: "'Cormorant Garamond', serif",
+  outline: 'none',
+  boxSizing: 'border-box',
+};

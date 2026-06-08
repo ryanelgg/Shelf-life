@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react';
+import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate } from '../types';
+import { lookupShelfLife } from '../data/shelfLife';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
-import type { StorageLocation, PantryItem, WasteAction } from '../types';
+import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe } from '../types';
 
 const LOCATIONS: StorageLocation[] = ['fridge', 'freezer', 'pantry', 'counter'];
 const LOCATION_LABELS: Record<StorageLocation, string> = {
@@ -13,6 +15,12 @@ const LOCATION_LABELS: Record<StorageLocation, string> = {
   freezer: 'Freezer',
   pantry: 'Pantry',
   counter: 'Counter',
+};
+
+const FREEZER_FALLBACK_DAYS: Record<FoodCategory, number> = {
+  Produce: 365, Dairy: 90, Meat: 120, Seafood: 90,
+  Grains: 365, Frozen: 365, Canned: 730, Snacks: 180,
+  Beverages: 90, Condiments: 365, Bakery: 90, Deli: 60, Other: 90,
 };
 
 function EmptyPantryIllustration() {
@@ -92,8 +100,25 @@ function createWasteLogId() {
   return `w-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
 }
 
+function dateDaysFromToday(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return formatLocalDate(d);
+}
+
+function wasLoggedWithinDays(date: string, days: number): boolean {
+  return parseLocalDate(date).getTime() >= dateDaysAgo(days).getTime();
+}
+
+function dateDaysAgo(days: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 export function PantryScreen() {
-  const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem } = useStore();
+  const { user, pantryItems, wasteLogs, recipes, browseRecipes, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
@@ -128,8 +153,66 @@ export function PantryScreen() {
   }).length;
 
   const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
+  const urgentItems = useMemo(() => (
+    pantryItems
+      .filter(i => ['expired', 'expiring', 'expiring-soon'].includes(getFreshnessStatus(i.expirationDate)))
+      .sort((a, b) => parseLocalDate(a.expirationDate).getTime() - parseLocalDate(b.expirationDate).getTime())
+      .slice(0, 3)
+  ), [pantryItems]);
+  const weeklySaves = wasteLogs.filter(w => w.action !== 'tossed' && wasLoggedWithinDays(w.date, 7)).length;
+
+  const briefing = useMemo(() => {
+    // 2. Best dinner option — the recipe that matches the most pantry items,
+    //    preferring ones that use food which is expiring soon.
+    const allRecipes = [...recipes, ...browseRecipes];
+    let bestDinner: { recipe: Recipe; matchCount: number; usesExpiring: boolean } | null = null;
+    for (const r of allRecipes) {
+      let matchCount = 0;
+      let usesExpiring = false;
+      for (const ing of r.ingredients) {
+        const b = ing.name.toLowerCase();
+        const m = pantryItems.find(p => {
+          const a = p.name.toLowerCase();
+          return a.includes(b) || b.includes(a);
+        });
+        if (m) {
+          matchCount++;
+          const s = getFreshnessStatus(m.expirationDate);
+          if (s === 'expiring' || s === 'expiring-soon' || s === 'expired') usesExpiring = true;
+        }
+      }
+      if (matchCount === 0) continue;
+      const better =
+        !bestDinner ||
+        (usesExpiring && !bestDinner.usesExpiring) ||
+        (usesExpiring === bestDinner.usesExpiring && matchCount > bestDinner.matchCount);
+      if (better) bestDinner = { recipe: r, matchCount, usesExpiring };
+    }
+
+    // 3. One item worth freezing — expiring soon, not already frozen, and
+    //    freezing actually buys meaningful extra time.
+    // Only suggest items that genuinely freeze well — use the real FoodKeeper
+    // value (null means "don't freeze this"), not the category fallback.
+    const freezeCandidate = pantryItems
+      .filter(i => i.location !== 'freezer' && !i.frozen)
+      .filter(i => {
+        const s = getFreshnessStatus(i.expirationDate);
+        return s === 'expiring' || s === 'expiring-soon' || s === 'expired';
+      })
+      .map(i => ({ item: i, freezerDays: lookupShelfLife(i.name, 'freezer') }))
+      .filter((x): x is { item: PantryItem; freezerDays: number } => x.freezerDays != null && x.freezerDays >= 14)
+      .sort((a, b) => b.freezerDays - a.freezerDays)[0] ?? null;
+
+    return { attention: urgentItems, bestDinner, freezeCandidate };
+  }, [pantryItems, recipes, browseRecipes, urgentItems]);
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
+    const daysLeft = getDaysUntilExpiration(item.expirationDate);
+    if (action === 'eaten') {
+      posthog.capture('pantry_item_eaten', { days_until_expiry: daysLeft, category: item.category });
+    } else if (action === 'tossed') {
+      posthog.capture('pantry_item_wasted', { days_past_expiry: -daysLeft, category: item.category, estimated_value: item.estimatedValue });
+    }
     addWasteLog({
       id: createWasteLogId(),
       itemName: item.name,
@@ -141,6 +224,27 @@ export function PantryScreen() {
     });
     removePantryItem(item.id);
     setSwipingItem(null);
+  };
+
+  const handleFreezeItem = (item: PantryItem) => {
+    const freezerDays = lookupShelfLife(item.name, 'freezer') ?? FREEZER_FALLBACK_DAYS[item.category];
+    updatePantryItem(item.id, {
+      location: 'freezer',
+      expirationDate: dateDaysFromToday(freezerDays),
+      frozen: true,
+    });
+    setSwipingItem(null);
+    setListAnimKey(k => k + 1);
+  };
+
+  const openRecipesFor = (item: PantryItem) => {
+    setRecipeSearchSeed(item.name);
+    setActiveTab('plan');
+  };
+
+  const openRecipe = (recipe: Recipe) => {
+    setRecipeSearchSeed(recipe.name);
+    setActiveTab('plan');
   };
 
   const handleDismissAlert = (e: React.MouseEvent) => {
@@ -234,6 +338,230 @@ export function PantryScreen() {
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>Value</div>
         </Card>
       </div>
+
+      {/* Avo daily briefing */}
+      <Card className="card-enter stagger-2" style={{
+        padding: '16px',
+        background: 'linear-gradient(135deg, rgba(74,124,89,0.10), rgba(196,149,106,0.08))',
+        border: '1px solid rgba(74, 124, 89, 0.16)',
+        overflow: 'hidden',
+        position: 'relative',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          position: 'absolute',
+          right: -28,
+          top: -28,
+          width: 90,
+          height: 90,
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.24)',
+        }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative', marginBottom: '12px' }}>
+          <div className="use-tonight-pulse" style={{ flexShrink: 0 }}>
+            <AvocadoMascot size={34} isStatic />
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Avo Daily Briefing
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '1px' }}>
+              Here's what matters today
+            </div>
+          </div>
+        </div>
+
+        {pantryItems.length === 0 ? (
+          <div style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.45, fontWeight: 600, position: 'relative' }}>
+            Add a few items and I'll start building a nightly save plan around what expires first.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
+            {/* 1. Things that need attention */}
+            <button
+              onClick={() => { setExpiringOnly(true); setListAnimKey(k => k + 1); }}
+              disabled={briefing.attention.length === 0}
+              style={briefingRowStyle(briefing.attention.length === 0)}
+            >
+              <span style={briefingIconStyle('rgba(212,134,11,0.14)')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--expiring-soon)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </span>
+              <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <span style={briefingLabelStyle}>
+                  {briefing.attention.length > 0
+                    ? `${briefing.attention.length} thing${briefing.attention.length === 1 ? '' : 's'} need attention`
+                    : 'Nothing urgent today'}
+                </span>
+                <span style={briefingValueStyle}>
+                  {briefing.attention.length > 0
+                    ? briefing.attention.map(i => i.name).join(', ')
+                    : `$${totalValue.toFixed(0)} in pantry · ${weeklySaves} saved this week`}
+                </span>
+              </span>
+            </button>
+
+            {/* 2. Best dinner option */}
+            {briefing.bestDinner && (
+              <button onClick={() => openRecipe(briefing.bestDinner!.recipe)} style={briefingRowStyle(false)}>
+                <span style={briefingIconStyle('var(--accent-dim)')}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 002-2V2"/><path d="M5 2v20"/><path d="M17 2v20"/><path d="M17 8c0-3 1-6 2-6s2 3 2 6-1 4-2 4-2-1-2-4z"/>
+                  </svg>
+                </span>
+                <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <span style={briefingLabelStyle}>Your best dinner option</span>
+                  <span style={briefingValueStyle}>
+                    {briefing.bestDinner.recipe.name}
+                    {briefing.bestDinner.usesExpiring && (
+                      <span style={{ color: 'var(--expiring-soon)', fontWeight: 700 }}> · uses expiring food</span>
+                    )}
+                  </span>
+                </span>
+                <span style={briefingChevronStyle}>›</span>
+              </button>
+            )}
+
+            {/* 3. One item worth freezing */}
+            {briefing.freezeCandidate && (
+              <div style={briefingRowStyle(false)}>
+                <span style={briefingIconStyle('var(--accent-dim)')}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2v20M4.5 5.5L19.5 18.5M19.5 5.5L4.5 18.5"/><path d="M8 2L12 6L16 2M8 22L12 18L16 22M2 8L6 12L2 16M22 8L18 12L22 16"/>
+                  </svg>
+                </span>
+                <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <span style={briefingLabelStyle}>One item worth freezing</span>
+                  <span style={briefingValueStyle}>
+                    {briefing.freezeCandidate.item.name} · keeps {briefing.freezeCandidate.freezerDays}d frozen
+                  </span>
+                </span>
+                <button
+                  onClick={() => handleFreezeItem(briefing.freezeCandidate!.item)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '6px 12px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    fontFamily: "'Cormorant Garamond', serif",
+                    cursor: 'pointer',
+                  }}
+                >
+                  Freeze
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* Use it tonight */}
+      {urgentItems.length > 0 && (
+        <Card className="card-enter stagger-2" style={{
+          padding: '16px',
+          border: '1px solid rgba(212, 134, 11, 0.25)',
+          background: 'rgba(212, 134, 11, 0.04)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', marginBottom: '12px' }}>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: 800 }}>Use It Tonight</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Avo picked the food most worth rescuing now.
+              </div>
+            </div>
+            <button
+              onClick={() => { setExpiringOnly(true); setListAnimKey(k => k + 1); }}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '999px',
+                border: '1px solid rgba(212,134,11,0.28)',
+                background: 'var(--bg-card)',
+                color: 'var(--expiring-soon)',
+                fontSize: '11px',
+                fontWeight: 700,
+                fontFamily: "'Cormorant Garamond', serif",
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Show all
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {urgentItems.map((item, index) => {
+              const days = getDaysUntilExpiration(item.expirationDate);
+              const color = getFreshnessColor(getFreshnessStatus(item.expirationDate));
+              return (
+                <div
+                  key={item.id}
+                  className={`use-tonight-row use-tonight-row-${index + 1}`}
+                  style={{
+                    padding: '11px 12px',
+                    borderRadius: '13px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid rgba(74,124,89,0.10)',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto',
+                    gap: '10px',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <FoodCategoryIcon category={item.category} size={18} />
+                      <span style={{ fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color, marginTop: '4px', fontWeight: 700 }}>
+                      {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Expires today' : `${days} day${days === 1 ? '' : 's'} left`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => openRecipesFor(item)}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: 'var(--accent)',
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        fontFamily: "'Cormorant Garamond', serif",
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cook
+                    </button>
+                    {item.location !== 'freezer' && (
+                      <button
+                        onClick={() => handleFreezeItem(item)}
+                        style={{
+                          padding: '7px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid var(--accent)',
+                          background: 'var(--accent-dim)',
+                          color: 'var(--accent)',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          fontFamily: "'Cormorant Garamond', serif",
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Freeze
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Search bar */}
       <div className="card-enter stagger-2" style={{ position: 'relative' }}>
@@ -443,13 +771,13 @@ export function PantryScreen() {
                   borderRadius: '14px', border: 'var(--card-border)',
                   alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {([
-                    { action: 'eaten' as WasteAction, label: 'Eaten', color: 'var(--fresh)', svgPath: <><circle cx="12" cy="12" r="8"/><path d="M8.5 12L11 14.5L15.5 9.5"/></> },
-                    { action: 'tossed' as WasteAction, label: 'Tossed', color: 'var(--expired)', svgPath: <><path d="M3 6H21M8 6L9 3H15L16 6"/><path d="M5 6L6 21H18L19 6"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/></> },
-                    { action: 'composted' as WasteAction, label: 'Compost', color: 'var(--good)', svgPath: <><path d="M12 20V12"/><path d="M12 16C10 13.5 6.5 13 5.5 10.5C7.5 8 11 9.5 12 12"/><path d="M12 13C14 10.5 17.5 10 18.5 8C16.5 5 13 7 12 11"/><path d="M9 20Q12 18 15 20"/></> },
-                    { action: 'shared' as WasteAction, label: 'Shared', color: 'var(--accent)', svgPath: <><circle cx="9" cy="7" r="3"/><circle cx="15" cy="7" r="3"/><path d="M3 19C3 16.2 5.7 14 9 14"/><path d="M21 19C21 16.2 18.3 14 15 14"/><path d="M9 14C9 14 12 16 15 14"/></> },
-                    { action: 'donated' as WasteAction, label: 'Donate', color: '#9B7FD4', svgPath: <><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></> },
-                  ] as { action: WasteAction; label: string; color: string; svgPath: React.ReactNode }[]).map(a => (
+	                  {([
+	                    { action: 'eaten' as WasteAction, label: 'Eaten', color: 'var(--fresh)', svgPath: <><circle cx="12" cy="12" r="8"/><path d="M8.5 12L11 14.5L15.5 9.5"/></> },
+	                    { action: 'tossed' as WasteAction, label: 'Tossed', color: 'var(--expired)', svgPath: <><path d="M3 6H21M8 6L9 3H15L16 6"/><path d="M5 6L6 21H18L19 6"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/></> },
+	                    { action: 'composted' as WasteAction, label: 'Compost', color: 'var(--good)', svgPath: <><path d="M12 20V12"/><path d="M12 16C10 13.5 6.5 13 5.5 10.5C7.5 8 11 9.5 12 12"/><path d="M12 13C14 10.5 17.5 10 18.5 8C16.5 5 13 7 12 11"/><path d="M9 20Q12 18 15 20"/></> },
+	                    { action: 'shared' as WasteAction, label: 'Shared', color: 'var(--accent)', svgPath: <><circle cx="9" cy="7" r="3"/><circle cx="15" cy="7" r="3"/><path d="M3 19C3 16.2 5.7 14 9 14"/><path d="M21 19C21 16.2 18.3 14 15 14"/><path d="M9 14C9 14 12 16 15 14"/></> },
+	                    { action: 'donated' as WasteAction, label: 'Donate', color: '#9B7FD4', svgPath: <><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></> },
+	                  ] as { action: WasteAction; label: string; color: string; svgPath: React.ReactNode }[]).map(a => (
                     <button
                       key={a.action}
                       className="btn-solid"
@@ -463,9 +791,26 @@ export function PantryScreen() {
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={a.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{a.svgPath}</svg>
                       <span style={{ fontSize: '10px', fontWeight: 600, color: a.color, fontFamily: "'Cormorant Garamond', serif" }}>{a.label}</span>
+	                    </button>
+	                  ))}
+                  {item.location !== 'freezer' && (
+                    <button
+                      onClick={() => handleFreezeItem(item)}
+                      style={{
+                        flex: 1, padding: '10px 4px', background: 'transparent',
+                        border: '1px solid var(--accent)',
+                        borderRadius: '10px', cursor: 'pointer',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2V22M4.5 5.5L19.5 18.5M19.5 5.5L4.5 18.5" />
+                        <path d="M8 2L12 6L16 2M8 22L12 18L16 22M2 8L6 12L2 16M22 8L18 12L22 16" />
+                      </svg>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent)', fontFamily: "'Cormorant Garamond', serif" }}>Freeze</span>
                     </button>
-                  ))}
-                  <button
+                  )}
+	                  <button
                     onClick={() => { setEditingItem(item); setSwipingItem(null); }}
                     style={{
                       flex: 1, padding: '10px 4px', background: 'transparent',
@@ -576,6 +921,25 @@ export function PantryScreen() {
           onClose={() => setEditingItem(null)}
         />
       )}
+      <style>{`
+        @keyframes useTonightPulse {
+          0%, 100% { transform: translateY(0) scale(1); }
+          50% { transform: translateY(-2px) scale(1.04); }
+        }
+        @keyframes useTonightSlide {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .use-tonight-pulse {
+          animation: useTonightPulse 2.8s ease-in-out infinite;
+        }
+        .use-tonight-row {
+          animation: useTonightSlide 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
+        .use-tonight-row-1 { animation-delay: 40ms; }
+        .use-tonight-row-2 { animation-delay: 110ms; }
+        .use-tonight-row-3 { animation-delay: 180ms; }
+      `}</style>
     </div>
   );
 }
@@ -668,6 +1032,61 @@ function EditItemModal({ item, onSave, onClose }: {
     </div>
   );
 }
+
+function briefingRowStyle(disabled: boolean): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '13px',
+    background: 'rgba(255,255,255,0.32)',
+    border: '1px solid rgba(74,124,89,0.10)',
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.7 : 1,
+    textAlign: 'left',
+    fontFamily: 'inherit',
+  };
+}
+
+function briefingIconStyle(bg: string): React.CSSProperties {
+  return {
+    width: 30,
+    height: 30,
+    borderRadius: '9px',
+    background: bg,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  };
+}
+
+const briefingLabelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '13px',
+  fontWeight: 700,
+  color: 'var(--text-primary)',
+};
+
+const briefingValueStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '11px',
+  color: 'var(--text-muted)',
+  fontWeight: 600,
+  marginTop: '1px',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const briefingChevronStyle: React.CSSProperties = {
+  flexShrink: 0,
+  color: 'var(--text-muted)',
+  fontSize: '18px',
+  fontWeight: 700,
+};
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px',

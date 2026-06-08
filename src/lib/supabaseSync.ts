@@ -142,29 +142,18 @@ export class EmailAlreadyRegisteredError extends Error {
 /**
  * Returns { needsConfirmation: true } when Supabase has email confirmation
  * enabled — in that case the user is created but not signed in until they
- * click the confirmation link. The caller should show a "check your email"
- * message instead of waiting for SIGNED_IN.
+ * verify the 6-digit code from the confirmation email. The caller should show
+ * the code-entry UI and then call verifyEmailOtp().
  *
  * Throws EmailAlreadyRegisteredError if the email already has an account —
  * Supabase silently swallows duplicate signups (anti-enumeration), so we
  * detect it by checking that `data.user.identities` is empty.
- *
- * On native, the confirmation link redirects to our custom URL scheme so the
- * deep-link handler in App.tsx can pick up the tokens. On web, we use the
- * current origin + /auth/callback.
  */
 export async function signUpWithEmail(
   email: string,
   password: string,
 ): Promise<{ needsConfirmation: boolean }> {
-  const emailRedirectTo = Capacitor.isNativePlatform()
-    ? 'com.elghazzali.shelflife://auth/callback'
-    : `${window.location.origin}/auth/callback`;
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo },
-  });
+  const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) throw error;
   // Supabase returns user.identities = [] when the email is already registered.
   // A real new signup has at least one identity entry.
@@ -172,6 +161,26 @@ export async function signUpWithEmail(
     throw new EmailAlreadyRegisteredError();
   }
   return { needsConfirmation: !data.session };
+}
+
+/**
+ * Verifies the 6-digit code from the signup confirmation email. On success a
+ * session is created, which fires the SIGNED_IN listener in App.tsx and routes
+ * the user into onboarding — no deep link or password re-entry needed.
+ */
+export async function verifyEmailOtp(email: string, token: string): Promise<void> {
+  const { error } = await supabase.auth.verifyOtp({
+    email,
+    token: token.trim(),
+    type: 'signup',
+  });
+  if (error) throw error;
+}
+
+/** Re-sends the signup confirmation code to the given email. */
+export async function resendEmailOtp(email: string): Promise<void> {
+  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  if (error) throw error;
 }
 
 // Tracks whether the most recent SIGNED_OUT event came from a user tapping

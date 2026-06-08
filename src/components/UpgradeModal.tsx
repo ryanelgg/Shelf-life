@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
+import posthog from 'posthog-js';
 import { Card } from './Card';
 import { hapticSuccess } from '../lib/haptics';
 
 interface UpgradeModalProps {
-  feature: 'pantry' | 'chat' | 'receipt' | 'mealplan' | 'onboarding';
+  feature: 'pantry' | 'chat' | 'receipt' | 'mealplan' | 'briefing' | 'onboarding';
   onClose: () => void;
   onUpgrade: () => void;
   /** Delay in ms before the close button appears. 0 = immediate. */
@@ -27,6 +28,10 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
     title: 'Advanced meal planning is Pro',
     description: 'Get personalized weekly meal plans and budget-optimized shopping lists.',
   },
+  briefing: {
+    title: "Avo's Daily Briefing is Pro",
+    description: 'Wake up to a personalized rundown from Avo — what to cook today, what to use up first, and a fresh recipe pick.',
+  },
   onboarding: {
     title: 'Get more from Pantre',
     description: 'Unlock unlimited pantry tracking, AI-powered nutrition advice, receipt scanning, and more.',
@@ -36,6 +41,7 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
 const PRO_FEATURES = [
   'Unlimited pantry items',
   '20 Avo chats per day',
+  "Avo's Daily Briefing",
   'Receipt scanning',
   'Personalized meal plans',
   'Budget-optimized shopping lists',
@@ -44,6 +50,10 @@ const PRO_FEATURES = [
 export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }: UpgradeModalProps) {
   const copy = FEATURE_COPY[feature];
   const [canClose, setCanClose] = useState(closeDelay === 0);
+
+  useEffect(() => {
+    posthog.capture('paywall_viewed', { trigger: feature });
+  }, [feature]);
 
   useEffect(() => {
     if (closeDelay > 0) {
@@ -112,7 +122,7 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
         </Card>
 
         <button
-          onClick={() => { hapticSuccess(); onUpgrade(); }}
+          onClick={() => { hapticSuccess(); posthog.capture('pro_purchase_started', { product_id: 'pantre_pro_monthly' }); onUpgrade(); }}
           style={{
             padding: '16px',
             borderRadius: '14px',

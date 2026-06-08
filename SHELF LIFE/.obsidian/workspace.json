@@ -11,17 +11,10 @@
             "id": "4f5df107a7f1c12b",
             "type": "leaf",
             "state": {
-              "type": "canvas",
-              "state": {
-                "file": "Untitled 1.canvas",
-                "viewState": {
-                  "x": -511.5,
-                  "y": 303.1799999999999,
-                  "zoom": 0
-                }
-              },
-              "icon": "lucide-layout-dashboard",
-              "title": "Untitled 1"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -188,8 +181,37 @@
   },
   "active": "4f5df107a7f1c12b",
   "lastOpenFiles": [
-    "Untitled.canvas",
+    "Pantre/Observability.md",
+    "Pantre/Services & Integrations.md",
+    "Pantre/Recipes/Dinner.md",
+    "Pantre/Recipes/Breakfast.md",
+    "Flora sinclair.canvas",
+    "Pantre/Recipes/Lunch.md",
+    "Pantre/Pantre.md",
+    "Pantre/Recipes/Recipes.md",
+    "Pantre/Recipes",
     "Untitled 1.canvas",
-    "Welcome.md"
+    "Pantre/Services/GitHub.md",
+    "Pantre/Services/Vercel.md",
+    "Pantre/Services/Termly.md",
+    "Pantre/Services/Cloudflare.md",
+    "Pantre/Services/Resend.md",
+    "Pantre/Services/Instacart.md",
+    "Pantre/Services/USDA FoodData Central.md",
+    "Pantre/Services/Open Food Facts.md",
+    "Pantre/Services/RevenueCat.md",
+    "Pantre/Services/Google.md",
+    "Pantre/Services/Apple.md",
+    "Pantre/Services/Anthropic.md",
+    "Pantre/Services/Groq.md",
+    "Pantre/Services/Supabase.md",
+    "Pantre/Services",
+    "Pantre/Backend.md",
+    "Pantre/Bug Log.md",
+    "Pantre/Design & Brand.md",
+    "Pantre/Avo AI.md",
+    "Pantre/Features.md",
+    "Pantree.canvas",
+    "Pantre"
   ]
 }

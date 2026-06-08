@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import type { JSX } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -370,11 +370,7 @@ function getIngredientStatus(
   ingredientAmount: string,
   pantryItems: PantryItem[]
 ): IngredientStatus {
-  const nameL = ingredientName.toLowerCase();
-  const match = pantryItems.find(item => {
-    const itemL = item.name.toLowerCase();
-    return itemL.includes(nameL) || nameL.includes(itemL);
-  });
+  const match = findPantryMatch(ingredientName, pantryItems);
   if (!match) return { status: 'missing' };
 
   // Try numeric comparison only when units are compatible.
@@ -396,11 +392,47 @@ function getIngredientStatus(
   return { status: 'have', pantryQty: match.quantity, pantryUnit: match.unit };
 }
 
+function findPantryMatch(ingredientName: string, pantryItems: PantryItem[]): PantryItem | undefined {
+  const nameL = ingredientName.toLowerCase();
+  return pantryItems.find(item => {
+    const itemL = item.name.toLowerCase();
+    return itemL.includes(nameL) || nameL.includes(itemL);
+  });
+}
+
+function matchedPantryItemsForRecipe(recipe: Recipe, pantryItems: PantryItem[]): PantryItem[] {
+  const seen = new Set<string>();
+  return recipe.ingredients
+    .map(ing => findPantryMatch(ing.name, pantryItems))
+    .filter((item): item is PantryItem => {
+      if (!item || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function createWasteLogId() {
+  return `w-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
+}
+
+const RECIPE_SEARCH_STOP_WORDS = new Set([
+  'and', 'with', 'the', 'for', 'fresh', 'frozen', 'organic', 'natural',
+  'pack', 'count', 'ct', 'oz', 'lb', 'lbs', 'lite', 'large', 'small',
+]);
+
+function recipeSearchTokens(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(token => token.trim())
+    .filter(token => token.length > 2 && !RECIPE_SEARCH_STOP_WORDS.has(token));
+}
+
 export function PlanScreen() {
   const {
     mealPlan, recipes, pantryItems, browseRecipes, user,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
-    isPro, setSubscriptionTier,
+    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -410,8 +442,14 @@ export function PlanScreen() {
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [recipeFilter, setRecipeFilter] = useState('all');
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
-  const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
-  const [showAllRecipes, setShowAllRecipes] = useState(false);
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => recipeSearchSeed ?? '');
+  const [showAllRecipes, setShowAllRecipes] = useState(() => Boolean(recipeSearchSeed));
+  const [cookingRecipe, setCookingRecipe] = useState<Recipe | null>(null);
+
+  useEffect(() => {
+    if (!recipeSearchSeed) return;
+    setRecipeSearchSeed(null);
+  }, [recipeSearchSeed, setRecipeSearchSeed]);
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
@@ -439,11 +477,27 @@ export function PlanScreen() {
     // 3. Search query
     if (recipeSearchQuery.trim()) {
       const q = recipeSearchQuery.toLowerCase().trim();
-      result = result.filter(r =>
-        r.name.toLowerCase().includes(q) ||
-        r.description.toLowerCase().includes(q) ||
-        r.ingredients.some(ing => ing.name.toLowerCase().includes(q))
-      );
+      const tokens = recipeSearchTokens(recipeSearchQuery);
+      result = result
+        .map(recipe => {
+          const ingredientHaystack = [
+            recipe.name,
+            ...recipe.ingredients.map(ing => ing.name),
+          ].join(' ').toLowerCase();
+          const fullHaystack = [
+            recipe.name,
+            recipe.description,
+            ...recipe.ingredients.map(ing => ing.name),
+          ].join(' ').toLowerCase();
+          return {
+            recipe,
+            matchesFullQuery: fullHaystack.includes(q),
+            tokenScore: tokens.filter(token => ingredientHaystack.includes(token)).length,
+          };
+        })
+        .filter(({ matchesFullQuery, tokenScore }) => matchesFullQuery || tokenScore > 0)
+        .sort((a, b) => b.tokenScore - a.tokenScore)
+        .map(({ recipe }) => recipe);
     }
     return result;
   }, [browseRecipes, recipeFilter, recipeSearchQuery, activeDiets]);
@@ -491,6 +545,25 @@ export function PlanScreen() {
     });
     setNewItemName('');
     setAddingToList(null);
+  };
+
+  const handleCookFinish = (recipe: Recipe, usedItemIds: string[]) => {
+    usedItemIds.forEach(id => {
+      const item = pantryItems.find(p => p.id === id);
+      if (!item) return;
+      addWasteLog({
+        id: createWasteLogId(),
+        itemName: item.name,
+        category: item.category,
+        action: 'eaten',
+        date: formatLocalDate(new Date()),
+        estimatedValue: item.estimatedValue,
+        quantity: item.quantity,
+      });
+      removePantryItem(id);
+    });
+    setCookingRecipe(null);
+    setExpandedRecipe(recipe.id);
   };
 
   const suggestions = plannedRecipes.flatMap(r =>
@@ -640,6 +713,27 @@ export function PlanScreen() {
                         saves ${recipe.savingsEstimate.toFixed(2)}
                       </span>
                     </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCookingRecipe(recipe);
+                      }}
+                      style={{
+                        marginTop: '10px',
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: 'var(--accent)',
+                        color: '#fff',
+                        fontFamily: "'Cormorant Garamond', serif",
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Start Cook Mode
+                    </button>
                   </div>
                 )}
               </div>
@@ -1017,6 +1111,29 @@ export function PlanScreen() {
                       </div>
                     </div>
 
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCookingRecipe(recipe);
+                      }}
+                      style={{
+                        width: '100%',
+                        marginTop: '14px',
+                        padding: '12px',
+                        borderRadius: '12px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, var(--accent), #6F966F)',
+                        color: '#fff',
+                        fontFamily: "'Cormorant Garamond', serif",
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        boxShadow: '0 3px 12px rgba(74,124,89,0.22)',
+                      }}
+                    >
+                      Start Cook Mode
+                    </button>
+
                     {/* Tags */}
                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '12px' }}>
                       {recipe.tags.map(tag => (
@@ -1347,6 +1464,546 @@ export function PlanScreen() {
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
+      {cookingRecipe && (
+        <CookModeOverlay
+          recipe={cookingRecipe}
+          pantryItems={pantryItems}
+          onClose={() => setCookingRecipe(null)}
+          onFinish={handleCookFinish}
+        />
+      )}
+    </div>
+  );
+}
+
+// Pull an explicit time (in minutes) out of a step's text, if one is mentioned.
+function parseStepMinutes(step: string): number | null {
+  const text = step.toLowerCase();
+  let total = 0;
+  let found = false;
+  const minMatch = text.match(/(\d+)\s*(?:-\s*\d+\s*)?min/);
+  if (minMatch) {
+    let mins = parseInt(minMatch[1], 10);
+    if (/per side/.test(text)) mins *= 2; // "6 min per side" → 12
+    total += mins;
+    found = true;
+  }
+  const secMatch = text.match(/(\d+)\s*sec/);
+  if (secMatch) { total += parseInt(secMatch[1], 10) / 60; found = true; }
+  return found ? total : null;
+}
+
+// Estimate per-step minutes: parse what we can, distribute the rest of the
+// recipe's total cook time across the steps that don't mention a time.
+function estimateStepTimes(recipe: Recipe): number[] {
+  const steps = recipe.steps;
+  const n = steps.length;
+  if (n === 0) return [];
+  const parsed = steps.map(parseStepMinutes);
+  const totalParsed = parsed.reduce((sum: number, m) => sum + (m ?? 0), 0);
+  const knownCount = parsed.filter(m => m !== null).length;
+  const remaining = Math.max(0, recipe.cookTime - totalParsed);
+  const unknownCount = n - knownCount;
+  const perUnknown = unknownCount > 0 ? remaining / unknownCount : 0;
+  let result = parsed.map(m => (m ?? perUnknown));
+  const sum = result.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    const even = (recipe.cookTime || n * 5) / n;
+    result = steps.map(() => even);
+  }
+  return result.map(m => Math.max(1, Math.round(m)));
+}
+
+// Cute hand-drawn avocado tree that marks the finish line.
+function AvocadoTree({ celebrating = false }: { celebrating?: boolean }) {
+  return (
+    <svg
+      className={celebrating ? 'cook-tree-shake' : ''}
+      width="54" height="66" viewBox="0 0 54 66" fill="none"
+    >
+      {/* trunk */}
+      <rect x="24" y="38" width="6" height="26" rx="3" fill="#7c5130" stroke="#4d3118" strokeWidth="1.4" />
+      {/* canopy */}
+      <circle cx="27" cy="24" r="19" fill="#3e6a2e" stroke="#264a1c" strokeWidth="1.6" />
+      <circle cx="14" cy="29" r="11" fill="#4d6d3b" stroke="#264a1c" strokeWidth="1.4" />
+      <circle cx="40" cy="29" r="11" fill="#4d6d3b" stroke="#264a1c" strokeWidth="1.4" />
+      {/* hanging avocados */}
+      <ellipse cx="17" cy="34" rx="3" ry="4" fill="#cdd98f" stroke="#2b3f1a" strokeWidth="1" />
+      <ellipse cx="37" cy="36" rx="3" ry="4" fill="#cdd98f" stroke="#2b3f1a" strokeWidth="1" />
+      <ellipse cx="27" cy="20" rx="3" ry="4" fill="#cdd98f" stroke="#2b3f1a" strokeWidth="1" />
+    </svg>
+  );
+}
+
+// Horizontal "time chart" of steps with Avo hopping node-to-node toward the tree.
+function CookTrack({ steps, stepTimes, currentStep, finale, isFlipping }: {
+  steps: string[];
+  stepTimes: number[];
+  currentStep: number;
+  finale: boolean;
+  isFlipping: boolean;
+}) {
+  const n = steps.length;
+  const stepLeft = (i: number) => (n <= 1 ? 10 : 10 + (i / (n - 1)) * 66);
+  const treeLeft = 90;
+  const avoLeft = finale ? treeLeft - 7 : stepLeft(currentStep);
+  const fillRight = finale ? treeLeft : stepLeft(currentStep);
+
+  return (
+    <div className="cook-track">
+      <div className="cook-track-base" />
+      <div className="cook-track-fill" style={{ width: `${Math.max(0, fillRight - 10)}%` }} />
+      {/* Only render the current step's node — past/future steps are tracked in the progress fill */}
+      {!finale && (
+        <div className="cook-track-node" style={{ left: `${stepLeft(currentStep)}%` }}>
+          <div className="cook-node-dot current">
+            {currentStep + 1}
+          </div>
+          <div className="cook-node-time">{stepTimes[currentStep]}m</div>
+        </div>
+      )}
+      <div className="cook-track-tree" style={{ left: `${treeLeft}%` }}>
+        <AvocadoTree celebrating={finale} />
+      </div>
+      <div className="cook-track-avo" style={{ left: `${avoLeft}%` }}>
+        <div className={`cook-track-avo-inner ${finale ? 'is-finale' : isFlipping ? 'is-flipping' : 'is-idle'}`}>
+          <AvocadoMascot size={30} isStatic />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
+  recipe: Recipe;
+  pantryItems: PantryItem[];
+  onClose: () => void;
+  onFinish: (recipe: Recipe, usedItemIds: string[]) => void;
+}) {
+  const matchedItems = useMemo(() => matchedPantryItemsForRecipe(recipe, pantryItems), [recipe, pantryItems]);
+  const stepTimes = useMemo(() => estimateStepTimes(recipe), [recipe]);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [reviewing, setReviewing] = useState(false);
+  const [finale, setFinale] = useState(false);
+  const [isFlipping, setIsFlipping] = useState(false);
+  const [usedIds, setUsedIds] = useState<string[]>(() => matchedItems.map(item => item.id));
+  const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / recipe.steps.length) * 100;
+  const activeStep = recipe.steps[currentStep] ?? recipe.steps[0] ?? 'Cook and enjoy.';
+
+  const goNext = () => {
+    if (currentStep >= recipe.steps.length - 1) {
+      setFinale(true);
+      window.setTimeout(() => { setReviewing(true); setFinale(false); }, 1350);
+    } else {
+      setIsFlipping(true);
+      setCurrentStep(step => step + 1);
+      window.setTimeout(() => setIsFlipping(false), 780);
+    }
+  };
+  const goBack = () => setCurrentStep(step => Math.max(0, step - 1));
+
+  const toggleUsed = (id: string) => {
+    setUsedIds(prev => prev.includes(id) ? prev.filter(itemId => itemId !== id) : [...prev, id]);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 240,
+      background: 'var(--bg-primary)',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      padding: `max(20px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom))`,
+      animation: 'cookModeIn 220ms ease-out both',
+    }}>
+      {/* ── Header ── */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+          <button
+            onClick={onClose}
+            style={{
+              width: 34, height: 34,
+              borderRadius: '50%',
+              border: '1px solid var(--tab-border)',
+              background: 'transparent',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >✕</button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '1px' }}>
+              {reviewing ? 'All done' : finale ? 'Finishing up' : `Step ${currentStep + 1} of ${recipe.steps.length} · ~${stepTimes[currentStep] ?? 0} min`}
+            </div>
+            <h2 style={{
+              fontSize: '21px', fontWeight: 700,
+              fontFamily: "'Cormorant Garamond', serif",
+              lineHeight: 1.15,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{recipe.name}</h2>
+          </div>
+        </div>
+
+        {/* Thin progress line */}
+        <div style={{ marginBottom: '18px' }}>
+          <ProgressBar value={progress} color="var(--accent)" height={2} />
+        </div>
+
+        {/* Avo track */}
+        {!reviewing && (
+          <CookTrack steps={recipe.steps} stepTimes={stepTimes} currentStep={currentStep} finale={finale} isFlipping={isFlipping} />
+        )}
+      </div>
+
+      {/* ── Content ── */}
+      <div>
+        {finale ? (
+          /* ── Celebration ── */
+          <Card className="cook-step-card" style={{
+            padding: '36px 24px',
+            textAlign: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--tab-border)',
+          }}>
+            {[...Array(8)].map((_, i) => (
+              <span key={i} className="cook-confetti" style={{
+                left: `${10 + i * 11}%`,
+                background: ['var(--accent)', '#cdd98f', '#D4A44A', '#6F966F'][i % 4],
+                animationDelay: `${i * 70}ms`,
+              }} />
+            ))}
+            <div style={{ fontSize: '28px', marginBottom: '10px' }}>🎉</div>
+            <div style={{ fontSize: '22px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Perfectly cooked!</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.55 }}>
+              Avo made it to the tree. Let's see what you used.
+            </div>
+          </Card>
+
+        ) : !reviewing ? (
+          /* ── Current step ── */
+          <Card key={currentStep} className="cook-step-card" style={{
+            padding: '24px 22px 18px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--tab-border)',
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: '12px',
+            }}>
+              <div style={{
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                fontWeight: 600,
+                letterSpacing: '0.07em',
+                textTransform: 'uppercase',
+              }}>
+                Step {currentStep + 1} of {recipe.steps.length}
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                fontWeight: 600,
+              }}>
+                ~{stepTimes[currentStep]} min
+              </div>
+            </div>
+            <div style={{
+              fontSize: '20px',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontWeight: 600,
+              lineHeight: 1.55,
+              color: 'var(--text-primary)',
+              marginBottom: '20px',
+            }}>
+              {activeStep}
+            </div>
+            {/* Buttons live INSIDE the card so they can never go missing */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: currentStep === 0 ? '1fr' : '80px 1fr',
+              gap: '10px',
+              paddingTop: '16px',
+              borderTop: '1px solid var(--tab-border)',
+            }}>
+              {currentStep > 0 && (
+                <button
+                  onClick={goBack}
+                  style={{
+                    padding: '13px 10px',
+                    borderRadius: '11px',
+                    border: '1px solid var(--tab-border)',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+                  }}
+                >← Back</button>
+              )}
+              <button
+                onClick={goNext}
+                style={{
+                  padding: '13px',
+                  borderRadius: '11px',
+                  border: 'none',
+                  background: 'var(--accent)',
+                  color: '#fff',
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                {currentStep >= recipe.steps.length - 1 ? 'Finish cooking' : 'Next step →'}
+              </button>
+            </div>
+          </Card>
+
+        ) : (
+          /* ── Review ── */
+          <Card className="cook-step-card" style={{
+            padding: '22px 20px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--tab-border)',
+          }}>
+            <div style={{ fontSize: '17px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif", marginBottom: '4px' }}>
+              What did you use?
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '14px' }}>
+              Checked items will be logged as eaten and removed from your pantry.
+            </div>
+            {matchedItems.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                {matchedItems.map((item, index) => {
+                  const checked = usedIds.includes(item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      className="cook-ingredient-pop"
+                      onClick={() => toggleUsed(item.id)}
+                      style={{
+                        animationDelay: `${index * 55}ms`,
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: checked ? '1px solid var(--accent)' : '1px solid var(--tab-border)',
+                        background: checked ? 'var(--accent-dim)' : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        color: 'var(--text-primary)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{
+                        width: 20, height: 20,
+                        borderRadius: '6px',
+                        background: checked ? 'var(--accent)' : 'transparent',
+                        border: checked ? 'none' : '1px solid var(--tab-border)',
+                        color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '11px', fontWeight: 800, flexShrink: 0,
+                      }}>
+                        {checked ? '✓' : ''}
+                      </span>
+                      <FoodCategoryIcon category={item.category} size={16} />
+                      <span style={{ flex: 1, fontSize: '13px', fontWeight: 600 }}>{item.name}</span>
+                      <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.quantity} {item.unit}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ padding: '14px', borderRadius: '10px', background: 'var(--accent-dim)', color: 'var(--text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
+                No pantry items matched this recipe by name — nothing to auto-log.
+              </div>
+            )}
+            {/* Buttons inside the review card */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '80px 1fr',
+              gap: '10px',
+              marginTop: '18px',
+              paddingTop: '16px',
+              borderTop: '1px solid var(--tab-border)',
+            }}>
+              <button
+                onClick={() => setReviewing(false)}
+                style={{
+                  padding: '13px 10px',
+                  borderRadius: '11px',
+                  border: '1px solid var(--tab-border)',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >← Back</button>
+              <button
+                onClick={() => onFinish(recipe, usedIds)}
+                style={{
+                  padding: '13px',
+                  borderRadius: '11px',
+                  border: 'none',
+                  background: 'var(--accent)',
+                  color: '#fff',
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >Mark cooked ✓</button>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes cookModeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cookStepIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cookIngredientPop {
+          from { opacity: 0; transform: translateY(5px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .cook-step-card { animation: cookStepIn 240ms ease-out both; }
+        .cook-ingredient-pop { animation: cookIngredientPop 240ms ease-out both; }
+
+        /* ── Track ── */
+        .cook-track {
+          position: relative;
+          height: 86px;
+          margin: 0 4px 16px;
+          flex-shrink: 0;
+        }
+        .cook-track-base, .cook-track-fill {
+          position: absolute;
+          top: 44px;
+          height: 3px;
+          border-radius: 2px;
+        }
+        .cook-track-base { left: 10%; right: 10%; background: var(--tab-border); }
+        .cook-track-fill {
+          left: 10%;
+          background: var(--accent);
+          transition: width 560ms cubic-bezier(0.34, 1.1, 0.5, 1);
+        }
+        .cook-track-node {
+          position: absolute;
+          top: 36px;
+          transform: translateX(-50%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 5px;
+        }
+        .cook-node-dot {
+          width: 18px; height: 18px;
+          border-radius: 50%;
+          background: var(--bg-card);
+          border: 1.5px solid var(--tab-border);
+          color: var(--text-muted);
+          font-size: 9px; font-weight: 700;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 220ms ease;
+        }
+        .cook-node-dot.current {
+          border-color: var(--accent);
+          color: var(--accent);
+          transform: scale(1.15);
+        }
+        .cook-node-dot.done {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #fff;
+        }
+        .cook-node-time {
+          font-size: 8px;
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+        .cook-track-tree {
+          position: absolute;
+          top: 0;
+          transform: translateX(-50%);
+          z-index: 2;
+        }
+        .cook-track-avo {
+          position: absolute;
+          top: 14px;
+          transform: translateX(-50%);
+          transition: left 560ms cubic-bezier(0.34, 1.2, 0.5, 1);
+          z-index: 3;
+          pointer-events: none;
+        }
+        /* Avo gently bounces while waiting */
+        .cook-track-avo-inner.is-idle {
+          animation: avoIdleBounce 2200ms ease-in-out infinite;
+        }
+        /* Avo frontflips to the next node */
+        .cook-track-avo-inner.is-flipping {
+          animation: avoFrontflip 760ms cubic-bezier(0.34, 0, 0.2, 1) forwards;
+        }
+        /* Avo leaps into the tree */
+        .cook-track-avo-inner.is-finale {
+          animation: cookAvoLeap 1100ms cubic-bezier(0.3, 0.9, 0.4, 1) forwards;
+        }
+        /* Higher, weightier idle bounce with a small hang at the peak */
+        @keyframes avoIdleBounce {
+          0%   { transform: translateY(0)    rotate(-3deg); }
+          15%  { transform: translateY(-10px) rotate(-1deg); }
+          35%  { transform: translateY(-22px) rotate(3deg); }
+          50%  { transform: translateY(-24px) rotate(4deg); }
+          65%  { transform: translateY(-20px) rotate(2deg); }
+          85%  { transform: translateY(-6px)  rotate(-3deg); }
+          100% { transform: translateY(0)    rotate(-3deg); }
+        }
+        /* Smooth, high-arc frontflip — 11 keyframes so the rotation reads cleanly */
+        @keyframes avoFrontflip {
+          0%   { transform: translateY(0)    rotate(0deg)   scale(1);    }
+          10%  { transform: translateY(-14px) rotate(40deg)  scale(0.97); }
+          22%  { transform: translateY(-30px) rotate(100deg) scale(0.93); }
+          35%  { transform: translateY(-40px) rotate(160deg) scale(0.90); }
+          45%  { transform: translateY(-44px) rotate(195deg) scale(0.89); }
+          55%  { transform: translateY(-42px) rotate(230deg) scale(0.90); }
+          65%  { transform: translateY(-34px) rotate(265deg) scale(0.93); }
+          78%  { transform: translateY(-18px) rotate(305deg) scale(0.97); }
+          88%  { transform: translateY(-6px)  rotate(335deg) scale(1.02); }
+          95%  { transform: translateY(-1px)  rotate(352deg) scale(1.04); }
+          100% { transform: translateY(0)    rotate(360deg) scale(1);    }
+        }
+        @keyframes cookAvoLeap {
+          0%   { transform: translateY(0) scale(1) rotate(0); }
+          40%  { transform: translateY(-36px) scale(1.08) rotate(-12deg); }
+          75%  { transform: translateY(-10px) scale(0.9) rotate(10deg); }
+          100% { transform: translateY(-8px) scale(0.5) rotate(0); opacity: 0; }
+        }
+        @keyframes cookTreeShake {
+          0%, 100% { transform: rotate(0); }
+          25% { transform: rotate(-5deg); }
+          50% { transform: rotate(4deg); }
+          75% { transform: rotate(-2deg); }
+        }
+        .cook-tree-shake { animation: cookTreeShake 680ms ease 220ms; transform-origin: 50% 92%; }
+        @keyframes cookConfettiFall {
+          0%   { transform: translateY(-8px) rotate(0); opacity: 0; }
+          20%  { opacity: 1; }
+          100% { transform: translateY(110px) rotate(280deg); opacity: 0; }
+        }
+        .cook-confetti {
+          position: absolute; top: 0;
+          width: 7px; height: 7px; border-radius: 2px;
+          animation: cookConfettiFall 1100ms ease-in forwards;
+          pointer-events: none;
+        }
+      `}</style>
     </div>
   );
 }

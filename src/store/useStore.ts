@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS } from '../types';
@@ -29,6 +30,8 @@ interface ShelfLifeStore {
   activeTab: Tab;
   addItemMode: 'manual' | 'scan' | 'receipt' | null;
   setAddItemMode: (mode: 'manual' | 'scan' | 'receipt' | null) => void;
+  recipeSearchSeed: string | null;
+  setRecipeSearchSeed: (seed: string | null) => void;
   theme: ThemeMode;
   showSettings: boolean;
   // Supabase user id (set after OAuth, used for sync)
@@ -45,7 +48,7 @@ interface ShelfLifeStore {
   resetOnboarding: () => void;
 
   // Pantry
-  addPantryItem: (item: PantryItem) => void;
+  addPantryItem: (item: PantryItem, method?: 'barcode' | 'manual' | 'receipt') => void;
   updatePantryItem: (id: string, updates: Partial<PantryItem>) => void;
   removePantryItem: (id: string) => void;
   clearPantry: () => void;
@@ -287,6 +290,7 @@ export const useStore = create<ShelfLifeStore>()(
       mealPlan: SAMPLE_MEAL_PLAN,
       activeTab: 'pantry' as Tab,
       addItemMode: null,
+      recipeSearchSeed: null as string | null,
       theme: 'light' as ThemeMode,
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
@@ -324,6 +328,7 @@ export const useStore = create<ShelfLifeStore>()(
           mealPlan: SAMPLE_MEAL_PLAN,
           activeTab: 'pantry',
           addItemMode: null,
+          recipeSearchSeed: null,
           theme: 'light',
           showSettings: false,
           avoAiConsent: null,
@@ -332,8 +337,13 @@ export const useStore = create<ShelfLifeStore>()(
         void cancelAllNotifications();
       },
 
-      addPantryItem: (item) => {
+      addPantryItem: (item, method = 'manual') => {
         set((s) => ({ pantryItems: [...s.pantryItems, item] }));
+        posthog.capture('pantry_item_added', {
+          method,
+          category: item.category,
+          has_expiry: !!item.expirationDate,
+        });
         const { supabaseUserId, notificationsEnabled, user } = useStore.getState();
         if (supabaseUserId) syncPantryAdd(item, supabaseUserId);
         if (notificationsEnabled) {
@@ -512,6 +522,7 @@ export const useStore = create<ShelfLifeStore>()(
 
       setActiveTab: (tab: Tab) => set({ activeTab: tab }),
       setAddItemMode: (mode) => set({ addItemMode: mode }),
+      setRecipeSearchSeed: (seed) => set({ recipeSearchSeed: seed }),
       setTheme: (theme: ThemeMode) => set({ theme }),
       setShowSettings: (show: boolean) => set({ showSettings: show }),
       setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),

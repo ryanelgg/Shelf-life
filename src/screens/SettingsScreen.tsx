@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import posthog from 'posthog-js';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -71,8 +72,10 @@ export function SettingsScreen() {
     }
     const granted = await ensureNotificationPermission();
     if (granted) {
+      posthog.capture('notification_permission_granted');
       setNotificationsEnabled(true);
     } else {
+      posthog.capture('notification_permission_denied');
       // Permission denied — user has to flip it in iOS Settings
       showToast('Notifications are blocked. Go to iOS Settings → Pantre → Notifications to turn them on.');
     }

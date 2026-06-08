@@ -1,6 +1,7 @@
 import type { Recipe } from '../types';
+import { EXTRA_RECIPES } from './recipesExtra';
 
-export const BROWSE_RECIPES: Recipe[] = [
+const ORIGINAL_RECIPES: Recipe[] = [
   {
     id: 'br1',
     name: 'Spaghetti Aglio e Olio',
@@ -1687,3 +1688,5 @@ export const BROWSE_RECIPES: Recipe[] = [
     tags: ['breakfast', 'snack', 'quick', 'easy', 'healthy', 'vegetarian', 'vegan', 'dairy-free', 'gluten-free', 'meal-prep'],
   },
 ];
+
+export const BROWSE_RECIPES: Recipe[] = [...ORIGINAL_RECIPES, ...EXTRA_RECIPES];
