@@ -329,7 +329,46 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      <DesktopBackButton />
       <KeyboardScrollManager />
     </div>
+  );
+}
+
+// Floating back button — only visible on desktop widths (≥768px), where
+// browser history is the natural way to undo navigation inside the SPA.
+function DesktopBackButton() {
+  return (
+    <button
+      onClick={() => window.history.back()}
+      className="desktop-back-btn"
+      aria-label="Go back"
+      style={{
+        position: 'fixed',
+        top: '20px',
+        left: '20px',
+        zIndex: 95,
+        width: '40px',
+        height: '40px',
+        borderRadius: '50%',
+        background: 'rgba(26, 22, 18, 0.55)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        color: '#faf7f2',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+        transition: 'transform 0.15s ease, background 0.15s ease',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(26, 22, 18, 0.8)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(26, 22, 18, 0.55)'; }}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+    </button>
   );
 }
