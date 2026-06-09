@@ -97,35 +97,13 @@ body {
   .desktop-back-btn { display: flex; }
 }
 
-/* ── Desktop frame ──────────────────────────────────────────────────────
-   On wider viewports the mobile-shaped app gets centered in a phone-style
-   frame, with a warm brand-dark surround filling the rest of the screen.
-   On phones (≤767px) nothing changes. */
+/* ── Desktop: full-bleed, no white borders ─────────────────────────────
+   App fills the entire viewport. We still set a warm dark background on
+   the html element so anything that escapes the app (overscroll, etc)
+   shows the brand color instead of system white. */
 @media (min-width: 768px) {
-  body {
-    background: radial-gradient(circle at top, #2a2218 0%, #1a1612 70%);
-    padding: 28px 0;
-    overflow: auto;
-  }
-  html, body, #root { height: auto; min-height: 100%; }
-  #root {
-    width: 440px;
-    max-width: 92vw;
-    margin: 0 auto;
-    height: calc(100dvh - 56px);
-    max-height: 920px;
-    border-radius: 32px;
-    overflow: hidden;
-    background: var(--bg-primary);
-    box-shadow:
-      0 30px 80px rgba(0, 0, 0, 0.45),
-      0 0 0 1px rgba(255, 255, 255, 0.04);
-    position: relative;
-  }
-  /* The app's own 100dvh containers now fill the frame instead of viewport */
-  #root > [data-theme] {
-    height: 100% !important;
-  }
+  html { background: #1a1612; }
+  body { background: var(--bg-primary); }
 }
 
 h1, h2, h3, h4 {
