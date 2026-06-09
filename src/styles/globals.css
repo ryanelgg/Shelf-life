@@ -91,12 +91,6 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
-/* Hide the desktop back button on phones — the iOS native gesture handles it */
-.desktop-back-btn { display: none; }
-@media (min-width: 768px) {
-  .desktop-back-btn { display: flex; }
-}
-
 /* ── Desktop: full-bleed, no white borders ─────────────────────────────
    App fills the entire viewport. We still set a warm dark background on
    the html element so anything that escapes the app (overscroll, etc)
