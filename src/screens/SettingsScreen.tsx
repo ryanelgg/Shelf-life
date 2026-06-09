@@ -401,11 +401,11 @@ export function SettingsScreen() {
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <SettingsLink
               label="Contact Support"
-              onClick={() => window.open('mailto:support@pantre.app?subject=Pantre%20Support', '_blank')}
+              onClick={() => window.open('mailto:support@usepantre.me?subject=Pantre%20Support', '_blank')}
             />
             <SettingsLink
               label="Send Feedback"
-              onClick={() => window.open('mailto:feedback@pantre.app?subject=Pantre%20Feedback', '_blank')}
+              onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank')}
             />
             {APP_STORE_REVIEW_URL && (
               <SettingsLink
@@ -419,11 +419,11 @@ export function SettingsScreen() {
             />
             <SettingsLink
               label="Privacy Policy"
-              onClick={() => window.open('https://pantre.app/privacy', '_blank')}
+              onClick={() => window.open('https://www.usepantre.me/privacy', '_blank')}
             />
             <SettingsLink
               label="Terms of Service"
-              onClick={() => window.open('https://pantre.app/terms', '_blank')}
+              onClick={() => window.open('https://www.usepantre.me/terms', '_blank')}
               hideBorder
             />
           </div>

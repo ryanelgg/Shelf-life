@@ -1,0 +1,11 @@
+# Cloudflare Pages routing rules.
+#
+# Static legal pages take priority — they're served as-is from public/.
+# Everything else falls through to the SPA so React Router-style client
+# routing works for in-app navigation.
+
+/privacy   /privacy.html   200
+/terms     /terms.html     200
+
+# SPA fallback — any other path renders the main app shell.
+/*         /index.html     200
