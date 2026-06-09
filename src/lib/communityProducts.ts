@@ -94,6 +94,45 @@ export async function validateCommunityProduct(
   }
 }
 
+// ── Read a product from a photo ──────────────────────────────────────────────
+//
+// Sends a photo of a product package to the product-photo Edge Function, where
+// Claude vision reads the real label and returns a structured draft. Used for
+// unknown barcodes so the user can snap the package instead of typing it blind.
+
+export interface PhotoReadResult {
+  name: string | null;
+  brand: string | null;
+  category: FoodCategory;
+}
+
+const photoUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/product-photo`;
+
+export async function readProductPhoto(base64Image: string): Promise<PhotoReadResult> {
+  const url = import.meta.env.DEV ? '/api/product-photo' : photoUrl;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (!import.meta.env.DEV) {
+    headers['apikey'] = supabaseAnonKey;
+    headers['Authorization'] = `Bearer ${supabaseAnonKey}`;
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ image: base64Image }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error || `Photo read failed (${res.status})`);
+  }
+  const data = await res.json() as Partial<PhotoReadResult>;
+  return {
+    name: data.name ? String(data.name).trim() : null,
+    brand: data.brand ? String(data.brand).trim() : null,
+    category: (data.category as FoodCategory) ?? 'Other',
+  };
+}
+
 // ── Submission ─────────────────────────────────────────────────────────────
 
 export interface SubmitResult {

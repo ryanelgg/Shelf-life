@@ -1,10 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import posthog from 'posthog-js';
+import { Capacitor } from '@capacitor/core';
+import { Camera, CameraSource, CameraResultType } from '@capacitor/camera';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
 import type { FoodCategory } from '../types';
-import { lookupCommunityProduct, submitCommunityProduct, validateCommunityProduct } from '../lib/communityProducts';
+import { lookupCommunityProduct, submitCommunityProduct, validateCommunityProduct, readProductPhoto } from '../lib/communityProducts';
+import * as debug from '../lib/debug';
 import { AvocadoMascot } from './AvocadoMascot';
+
+function isCancelledError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return message.includes('cancel') || message.includes('dismiss');
+  }
+  return false;
+}
 
 export interface ScannedProduct {
   name: string;
@@ -123,10 +134,74 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   // so a real product Avo wrongly flagged is never permanently blocked.
   const overrideRef = useRef(false);
 
+  const [photoReading, setPhotoReading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
   const openAddProduct = () => {
     setAddNotice(null);
     overrideRef.current = false;
     setAddingProduct(true);
+  };
+
+  // Read a product from a photo of its package, then open the add form
+  // pre-filled with what Avo's vision model read off the label.
+  const processProductPhoto = async (base64: string) => {
+    setPhotoReading(true);
+    setAddNotice(null);
+    posthog.capture('product_photo_started');
+    try {
+      const r = await readProductPhoto(base64);
+      overrideRef.current = false;
+      setAddCategory(r.category);
+      if (!r.name) {
+        setAddName('');
+        setAddBrand('');
+        setAddNotice({ tone: 'warn', text: "Avo couldn't read that label. Try another photo, or type it in below." });
+      } else {
+        posthog.capture('product_photo_succeeded');
+        setAddName(r.name);
+        setAddBrand(r.brand ?? '');
+        setAddNotice({ tone: 'warn', text: 'Avo read this off the label — check it looks right, then add.' });
+      }
+      setAddingProduct(true);
+    } catch (err) {
+      debug.error('Product photo error:', err);
+      posthog.capture('product_photo_failed');
+      overrideRef.current = false;
+      setAddNotice({ tone: 'warn', text: "Couldn't read the photo. Check your connection, or type it in below." });
+      setAddingProduct(true);
+    } finally {
+      setPhotoReading(false);
+    }
+  };
+
+  const handleSnapPhoto = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const photo = await Camera.getPhoto({
+          source: CameraSource.Prompt,
+          resultType: CameraResultType.Base64,
+          quality: 80,
+        });
+        if (photo.base64String) void processProductPhoto(photo.base64String);
+      } catch (error) {
+        if (!isCancelledError(error)) debug.error('Camera error:', error);
+      }
+    } else {
+      photoInputRef.current?.click();
+    }
+  };
+
+  const handlePhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      void processProductPhoto(base64);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const emitScan = (product: ScannedProduct) => { onScanRef.current(product); };
@@ -340,21 +415,51 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
               {statusLabel}
             </div>
 
-            {/* "Help Avo" prompt when not found */}
+            {/* "Help Avo" prompt when not found — snap the package (preferred)
+                or type it in. */}
             {status === 'notfound' && (
-              <button
-                onClick={openAddProduct}
-                style={{
-                  padding: '11px 22px', borderRadius: '24px',
-                  border: 'none',
-                  background: 'var(--accent)',
-                  color: '#faf7f2', fontSize: '14px', fontWeight: 700,
-                  cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif",
-                  boxShadow: '0 4px 14px rgba(74,124,89,0.4)',
-                }}
-              >
-                Help Avo learn this one
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoFile}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  onClick={() => { void handleSnapPhoto(); }}
+                  disabled={photoReading}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '11px 22px', borderRadius: '24px', border: 'none',
+                    background: 'var(--accent)',
+                    color: '#faf7f2', fontSize: '14px', fontWeight: 700,
+                    cursor: photoReading ? 'default' : 'pointer',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    boxShadow: '0 4px 14px rgba(74,124,89,0.4)',
+                    opacity: photoReading ? 0.7 : 1,
+                  }}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  {photoReading ? 'Avo’s reading the label…' : 'Snap the package'}
+                </button>
+                <button
+                  onClick={openAddProduct}
+                  disabled={photoReading}
+                  style={{
+                    padding: '6px', background: 'none', border: 'none',
+                    color: 'rgba(250,247,242,0.6)', fontSize: '13px', fontWeight: 700,
+                    cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif",
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Type it in instead
+                </button>
+              </div>
             )}
           </div>
         )}
