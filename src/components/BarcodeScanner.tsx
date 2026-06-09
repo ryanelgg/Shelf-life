@@ -3,7 +3,7 @@ import posthog from 'posthog-js';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
 import type { FoodCategory } from '../types';
-import { lookupCommunityProduct, submitCommunityProduct } from '../lib/communityProducts';
+import { lookupCommunityProduct, submitCommunityProduct, validateCommunityProduct } from '../lib/communityProducts';
 import { AvocadoMascot } from './AvocadoMascot';
 
 export interface ScannedProduct {
@@ -118,6 +118,16 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   const [addBrand, setAddBrand] = useState('');
   const [addCategory, setAddCategory] = useState<FoodCategory>('Other');
   const [addSubmitting, setAddSubmitting] = useState(false);
+  const [addNotice, setAddNotice] = useState<{ tone: 'warn' | 'error'; text: string } | null>(null);
+  // Set once Avo has rejected an entry — lets the next tap submit it anyway,
+  // so a real product Avo wrongly flagged is never permanently blocked.
+  const overrideRef = useRef(false);
+
+  const openAddProduct = () => {
+    setAddNotice(null);
+    overrideRef.current = false;
+    setAddingProduct(true);
+  };
 
   const emitScan = (product: ScannedProduct) => { onScanRef.current(product); };
 
@@ -130,15 +140,56 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     setStatus('notfound');
   };
 
-  const handleAddSubmit = async () => {
-    if (!addName.trim()) return;
-    setAddSubmitting(true);
-    try {
-      await submitCommunityProduct(lastBarcode, { name: addName, brand: addBrand, category: addCategory });
-    } catch { /* non-fatal */ }
-    setAddSubmitting(false);
+  // Add to the user's own pantry without touching the community database. Used
+  // both as the normal success path and as the escape hatch when the shared
+  // save fails so the user's core action is never lost.
+  const addToPantryOnly = (p: { name: string; brand: string; category: FoodCategory }) => {
     setAddingProduct(false);
-    emitScan({ name: addName, brand: addBrand || undefined, category: addCategory });
+    emitScan({ name: p.name, brand: p.brand || undefined, category: p.category });
+  };
+
+  const handleAddSubmit = async () => {
+    const name = addName.trim();
+    if (!name) return;
+    setAddSubmitting(true);
+    setAddNotice(null);
+
+    let final = { name, brand: addBrand.trim(), category: addCategory };
+    let verified = false;
+
+    // 1. Ask Avo to validate + normalize the entry (skipped if the user already
+    //    chose to override a rejection on a previous tap).
+    if (!overrideRef.current) {
+      const result = await validateCommunityProduct(lastBarcode, final);
+      if (result.checked && !result.valid) {
+        overrideRef.current = true; // next tap submits as-is
+        setAddNotice({
+          tone: 'warn',
+          text: result.reason || "Avo isn't sure this is a real product. Edit it, or tap Add anyway.",
+        });
+        setAddSubmitting(false);
+        return;
+      }
+      // Adopt Avo's cleaned-up values so the user sees and stores the tidy entry.
+      final = { name: result.name, brand: result.brand ?? '', category: result.category };
+      setAddName(final.name);
+      setAddBrand(final.brand);
+      setAddCategory(final.category);
+      verified = result.valid && result.checked;
+    }
+
+    // 2. Save to the shared database. Failure is surfaced, not swallowed.
+    const submit = await submitCommunityProduct(lastBarcode, final, verified);
+    setAddSubmitting(false);
+
+    if (!submit.ok) {
+      setAddNotice({
+        tone: 'error',
+        text: "Couldn't reach the community database. Try again, or just add it to your own pantry.",
+      });
+      return;
+    }
+    addToPantryOnly(final);
   };
 
   // ZXing live stream — works on both web and native iOS via WKWebView
@@ -292,7 +343,7 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
             {/* "Help Avo" prompt when not found */}
             {status === 'notfound' && (
               <button
-                onClick={() => setAddingProduct(true)}
+                onClick={openAddProduct}
                 style={{
                   padding: '11px 22px', borderRadius: '24px',
                   border: 'none',
@@ -381,6 +432,18 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
               ))}
             </div>
 
+            {addNotice && (
+              <div style={{
+                fontSize: '12px', lineHeight: 1.45, padding: '10px 12px', borderRadius: '10px',
+                marginTop: '4px',
+                color: addNotice.tone === 'error' ? '#ffb4a8' : '#ffd9a8',
+                background: addNotice.tone === 'error' ? 'rgba(192,57,43,0.16)' : 'rgba(212,134,11,0.16)',
+                fontFamily: "'Cormorant Garamond', serif",
+              }}>
+                {addNotice.text}
+              </div>
+            )}
+
             <button
               onClick={() => { void handleAddSubmit(); }}
               disabled={addSubmitting || !addName.trim()}
@@ -393,8 +456,25 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
                 opacity: addSubmitting ? 0.7 : 1,
               }}
             >
-              {addSubmitting ? 'Saving...' : 'Add to Pantre'}
+              {addSubmitting
+                ? 'Checking with Avo…'
+                : overrideRef.current
+                ? 'Add anyway'
+                : 'Add to Pantre'}
             </button>
+
+            {addNotice?.tone === 'error' && (
+              <button
+                onClick={() => addToPantryOnly({ name: addName.trim(), brand: addBrand.trim(), category: addCategory })}
+                style={{
+                  padding: '8px', background: 'none', border: 'none',
+                  color: 'rgba(250,247,242,0.7)', fontSize: '13px', fontWeight: 700,
+                  cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif", textDecoration: 'underline',
+                }}
+              >
+                Add to my pantry only
+              </button>
+            )}
 
             <button
               onClick={() => { setAddingProduct(false); setStatus('scanning'); scannedRef.current = false; }}
