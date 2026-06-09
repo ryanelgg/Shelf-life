@@ -122,6 +122,7 @@ export function AddItemScreen() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [receiptProcessing, setReceiptProcessing] = useState(false);
   const [receiptItems, setReceiptItems] = useState<ReceiptListItem[]>([]);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Manual form state
@@ -200,10 +201,12 @@ export function AddItemScreen() {
   const processReceiptImage = async (base64: string) => {
     if (!base64) return;
     setReceiptProcessing(true);
+    setReceiptError(null);
     posthog.capture('receipt_ocr_started');
     try {
       const items = await scanReceipt(base64);
       if (items.length === 0) {
+        setReceiptError("We couldn't find any items on that receipt. Try a clearer, well-lit photo with the whole receipt in frame.");
         setReceiptProcessing(false);
         return;
       }
@@ -213,6 +216,7 @@ export function AddItemScreen() {
     } catch (err) {
       debug.error('Receipt OCR error:', err);
       posthog.capture('receipt_ocr_failed', { reason: err instanceof Error ? err.message : 'unknown' });
+      setReceiptError("Something went wrong scanning that receipt. Check your connection and give it another try.");
     } finally {
       setReceiptProcessing(false);
     }
@@ -755,6 +759,15 @@ export function AddItemScreen() {
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
             Take a photo of your grocery receipt and we'll automatically add all items to your pantry with prices.
           </div>
+          {receiptError && (
+            <div style={{
+              fontSize: '13px', color: 'var(--danger, #C0392B)', marginBottom: '20px',
+              lineHeight: 1.5, padding: '10px 14px', borderRadius: '10px',
+              background: 'rgba(192, 57, 43, 0.08)',
+            }}>
+              {receiptError}
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"
