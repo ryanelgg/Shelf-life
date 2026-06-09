@@ -54,8 +54,10 @@ export async function exportUserData(input: ExportInput): Promise<void> {
   const filename = timestampedFilename();
 
   if (Capacitor.isNativePlatform()) {
-    // Write to documents directory, then open the iOS share sheet so the user
-    // can save to Files, AirDrop, email it to themselves, etc.
+    // Write to the cache directory (a scratch space for transient files), then
+    // open the iOS share sheet so the user can save it to Files, AirDrop it, or
+    // email it to themselves. Cache is intentional: the file only needs to live
+    // long enough to hand off to the share sheet, and the OS reclaims it later.
     const writeRes = await Filesystem.writeFile({
       path: filename,
       data: json,
