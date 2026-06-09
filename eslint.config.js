@@ -6,9 +6,12 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'SHELF LIFE/**', 'android/**', 'ios/**', 'scripts/**', 'supabase/functions/**/*.js']),
   {
     files: ['**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
