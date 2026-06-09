@@ -1,10 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
+import { AvoWrapped } from '../components/AvoWrapped';
+import { UpgradeModal } from '../components/UpgradeModal';
+import { hapticLight } from '../lib/haptics';
 
 function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string; size?: number; color?: string }) {
   const s = { width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 as const };
@@ -61,7 +64,15 @@ function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string;
 }
 
 export function ImpactScreen() {
-  const { wasteLogs, user } = useStore();
+  const { wasteLogs, user, isPro, setSubscriptionTier } = useStore();
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const openWrapped = () => {
+    hapticLight();
+    if (isPro()) setShowWrapped(true);
+    else setShowUpgrade(true);
+  };
 
   const stats = useMemo(() => {
     const eaten = wasteLogs.filter(w => w.action === 'eaten');
@@ -155,6 +166,36 @@ export function ImpactScreen() {
             {stats.saveRate.toFixed(0)}% of tracked food used before expiring
           </div>
         </div>
+      </Card>
+
+      {/* Avo Wrapped — shareable weekly recap (Pro) */}
+      <Card
+        className="card-enter stagger-2"
+        onClick={openWrapped}
+        style={{
+          cursor: 'pointer',
+          background: 'linear-gradient(135deg, rgba(74,124,89,0.12), rgba(159,211,171,0.06))',
+          border: '1px solid rgba(74,124,89,0.2)',
+          display: 'flex', alignItems: 'center', gap: '12px',
+        }}
+      >
+        <AvocadoMascot size={38} isStatic />
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '15px', fontWeight: 800 }}>Avo Wrapped</span>
+            {!isPro() && (
+              <span style={{
+                fontSize: '9px', fontWeight: 800, color: '#fff', letterSpacing: '0.06em',
+                padding: '2px 7px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #D4A44A, #B8862D)',
+              }}>PRO</span>
+            )}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            Your shareable weekly recap — tap to see it
+          </div>
+        </div>
+        <span style={{ color: 'var(--text-muted)', fontSize: '20px', flexShrink: 0 }}>›</span>
       </Card>
 
       {/* Action breakdown */}
@@ -273,6 +314,16 @@ export function ImpactScreen() {
           <span style={{ color: 'var(--accent)' }}>4 days left</span>
         </div>
       </Card>
+
+      {showWrapped && <AvoWrapped onClose={() => setShowWrapped(false)} />}
+
+      {showUpgrade && (
+        <UpgradeModal
+          feature="wrapped"
+          onClose={() => setShowUpgrade(false)}
+          onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+        />
+      )}
 
     </div>
   );

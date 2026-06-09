@@ -4,7 +4,7 @@ import { Card } from './Card';
 import { hapticSuccess } from '../lib/haptics';
 
 interface UpgradeModalProps {
-  feature: 'pantry' | 'chat' | 'receipt' | 'mealplan' | 'briefing' | 'onboarding';
+  feature: 'pantry' | 'chat' | 'receipt' | 'mealplan' | 'briefing' | 'wrapped' | 'onboarding';
   onClose: () => void;
   onUpgrade: () => void;
   /** Delay in ms before the close button appears. 0 = immediate. */
@@ -31,6 +31,10 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
   briefing: {
     title: "Avo's Daily Briefing is Pro",
     description: 'Wake up to a personalized rundown from Avo — what to cook today, what to use up first, and a fresh recipe pick.',
+  },
+  wrapped: {
+    title: 'Avo Wrapped is Pro',
+    description: 'Get a shareable weekly recap of the money and food you saved — your own Pantre Wrapped, every week.',
   },
   onboarding: {
     title: 'Get more from Pantre',
