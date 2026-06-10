@@ -80,8 +80,8 @@ You can still operate Pantre day-to-day. You just can't be the legal entity.
 ## 🟢 Can do RIGHT NOW
 
 ### Design / branding
-- [ ] App icon decision — pick from `logo-1` through `logo-5` SVG variants
-- [ ] Generate iOS asset catalog (light/dark/tinted variants) once icon picked
+- [x] App icon decision — picked a custom design (not one of the `logo-1`…`logo-5` variants)
+- [ ] Generate iOS asset catalog (light/dark/tinted variants) from the chosen icon
 - [ ] App Store screenshot mockups in Canva (drafts) — 1290×2796
 - [ ] App description / keywords drafts in a Notes doc
 
