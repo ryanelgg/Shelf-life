@@ -41,7 +41,15 @@
 ### Content
 - **Chicken on "counter" showing 1095 days expiry** — "chicken broth canned" was matching "counter" storage pattern; fixed shelf life lookup logic
 
+### Daily Code Check — 2026-06-10
+- **`npm run lint` was scanning the Obsidian vault** — `eslint.config.js` only ignored `dist`, so it linted the vault's bundled `obsidian-local-rest-api/main.js` and reported ~16 spurious "rule not found" errors. Fixed by adding `android`, `ios`, and `SHELF LIFE` to `globalIgnores`.
+- **Unused-var lint errors on `_`-prefixed args** — `debug.ts` `_args` and `notifications.ts` `_u` copy-builder params failed `no-unused-vars`. Fixed by adding `argsIgnorePattern: '^_'` / `varsIgnorePattern: '^_'` to the rule.
+- **14 `no-useless-escape` errors in `notifications.ts`** — `\'` escaped inside backtick template literals (only needed inside single-quoted strings). Fixed all 14; left the legitimately-escaped single-quoted ones intact.
+- ✅ After fixes: `tsc -b`, `npm run lint`, and `npm run build` all pass clean.
+
 ## Known / Outstanding
+- **`avoApi.ts` / `receiptApi.ts` have no fallback for `VITE_SUPABASE_URL`** — unlike `supabase.ts` (which falls back to a placeholder), these call `supabaseUrl.replace(...)` at module load. If the env var is ever missing, the module throws `Cannot read properties of undefined` at import time and the chat/receipt features hard-crash. Low risk in prod (env is set) but a latent footgun. Manual fix: mirror the `|| 'https://placeholder.supabase.co'` fallback.
+- **`App.tsx` auth catch-block mislabels email users** — in the outer `catch` (the recovery path when `loadProfile` throws), `provider` resolves to only `'apple' | 'google'`, so an email/password user who hits that path is tagged `'google'`. Cosmetic/analytics only — does not block sign-in. Manual fix: include the `'email'` branch like the happy path does.
 - **Supabase email confirmations rate-limited** (default SMTP ~2-3/hour) — needs custom SMTP via Resend + domain verification (SPF/DKIM for `pantre.app`)
 - **Resend domain `usepantre.me` showed "No activity"** — Supabase SMTP key may not have been saved correctly
 - **Receipt OCR** needs `ANTHROPIC_API_KEY` secret + `supabase functions deploy receipt-ocr`

@@ -98,3 +98,8 @@
 - Trademark search for "Pantre"
 - App icon: finalize SVG, generate iOS asset catalog (light/dark/tinted)
 - App Store screenshots (6.7" + 6.5") — mockups exist at `app-store-mockups.html`
+
+### Ideas from Daily Code Check (2026-06-10)
+- **"Use It Up" smart bundle** — when 2-3 items are all expiring within ~3 days, Avo proactively suggests a single recipe that uses all of them together (e.g. "Your spinach + eggs + bread expire this week → Avocado Toast"). Surfaces on the Pantry expiring-soon card and as a notification. Leverages existing `getDaysUntilExpiration` + recipe `matchedItemIds` logic.
+- **Barcode → auto shelf-life + reorder reminder** — after a scan, pre-fill the expiration from `DEFAULT_SHELF_LIFE` (already done) AND remember how fast the user goes through that item, then nudge "Running low on milk?" when their typical reorder window hits. Builds on the existing waste-log history.
+- **Weekly Impact recap notification** — every Sunday, a friendly Avo push summarizing the week ($X saved, N items rescued, streak status) with a share-to-social card. Reuses ImpactScreen stats + the existing notification system; strong retention + organic-growth lever for launch.
