@@ -8,8 +8,10 @@ interface ReceiptOcrResponse {
   error?: string;
 }
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+// Fall back to a placeholder if the env var is missing so module load can't
+// crash the whole app (mirrors the guard in supabase.ts).
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || 'https://placeholder.supabase.co';
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || 'placeholder-key';
 const hostedUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/receipt-ocr`;
 
 export async function scanReceipt(base64Image: string): Promise<ReceiptItem[]> {

@@ -7,8 +7,11 @@ interface AvoChatResponse {
 }
 
 const REQUEST_TIMEOUT_MS = 15000;
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+// Fall back to a placeholder if the env var is missing so module load can't
+// crash the whole app (mirrors the guard in supabase.ts). A missing URL only
+// breaks Avo chat, not app startup.
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || 'https://placeholder.supabase.co';
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || 'placeholder-key';
 const hostedAvoChatUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/avo-chat`;
 
 async function parseErrorMessage(response: Response) {
