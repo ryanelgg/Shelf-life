@@ -98,3 +98,8 @@
 - Trademark search for "Pantre"
 - App icon: finalize SVG, generate iOS asset catalog (light/dark/tinted)
 - App Store screenshots (6.7" + 6.5") — mockups exist at `app-store-mockups.html`
+
+### 🆕 Daily code-check ideas (2026-06-12) — see [[Pantre]]
+- **iOS "Expiring Soon" Home Screen widget** — WidgetKit widget showing the top 3 items closest to expiring + a total count, deep-linking into the Pantry tab. Pure re-engagement play that complements the existing notification system. Data source: the same `getDaysUntilExpiration` sort already used in `PantryScreen`. Native Swift target + App Group to share the pantry snapshot with the main app.
+- **Shared Household Pantry** — invite family/roommates by email to a single synced pantry. Leverages the existing Supabase backend (new `households` table + membership join, Realtime subscription, RLS by household_id). Natural Pantre Pro upsell ("share with your household").
+- **Avo Vision "Is it still good?"** — snap a photo of produce and Claude's vision API estimates freshness / days left and suggests eat-now vs. compost. Reuses the receipt-OCR vision pipeline (Supabase Edge Function + `ANTHROPIC_API_KEY`); gate behind Avo AI consent + Pro.

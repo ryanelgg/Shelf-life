@@ -2,6 +2,13 @@
 
 ← [[Pantre]]
 
+## Daily code check — 2026-06-12
+- **`npm run lint` was failing (exit 1)** — fixed. Three root causes, none affecting runtime:
+  1. ESLint was scanning the vendored Obsidian vault (`SHELF LIFE/.obsidian/**`), whose bundled plugin uses rules we don't install. Added it (plus `android/`, `ios/`, `scripts/`) to `globalIgnores`.
+  2. Intentionally-unused `_`-prefixed args (`_u`, `_args` in notification copy builders) tripped `no-unused-vars`. Added `argsIgnorePattern: '^_'`.
+  3. Redundant `\'` escapes inside template literals in `notifications.ts`. Removed.
+- **Full health check otherwise GREEN:** `tsc -b` passes (0 type errors), production `vite build` succeeds, no committed secrets (Anthropic key stays server-side in the `avo-chat` Edge Function; only the public Supabase anon key ships). No runtime/logic bugs found in store, sync, notifications, or date math.
+
 ## Fixed
 
 ### Auth & Sign In
