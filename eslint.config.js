@@ -6,7 +6,10 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Only lint our own app source. Ignore build output and the vendored
+  // Obsidian vault (SHELF LIFE/.obsidian/**), which ships its own bundled
+  // plugins that trip ESLint with rules we don't have installed.
+  globalIgnores(['dist', 'SHELF LIFE/**', 'android/**', 'ios/**', 'scripts/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +21,15 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // Allow intentionally-unused args/vars prefixed with `_` (e.g. `_u` in
+      // notification copy builders that keep a consistent call signature).
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
     },
   },
 ])
