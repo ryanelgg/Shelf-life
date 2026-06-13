@@ -2363,6 +2363,40 @@ const shelfLifeMap: Record<string, ShelfLifeEntry> = {
     "fridgeDays": null,
     "freezerDays": null,
     "pantryDays": 730
+  },
+
+  // ── Standalone protein fallbacks ──────────────────────────────────────────
+  // An unqualified single word ("beef" typed by hand, or a bare product name
+  // from Open Food Facts) previously had no match and fell through to the coarse
+  // per-category default. These give a closer estimate. More specific multi-word
+  // keys ("ground beef", "tuna steak") still win via longest-match, so these only
+  // apply when nothing more specific does. Values use the whole-cut / fresh
+  // numbers and lean conservative — under-estimating shelf life nudges earlier
+  // use, the safe direction for a freshness tracker.
+  "beef": {
+    "fridgeDays": 5,
+    "freezerDays": 365,
+    "pantryDays": null
+  },
+  "pork": {
+    "fridgeDays": 5,
+    "freezerDays": 270,
+    "pantryDays": null
+  },
+  "lamb": {
+    "fridgeDays": 5,
+    "freezerDays": 270,
+    "pantryDays": null
+  },
+  "fish": {
+    "fridgeDays": 2,
+    "freezerDays": 90,
+    "pantryDays": null
+  },
+  "tuna": {
+    "fridgeDays": 2,
+    "freezerDays": 90,
+    "pantryDays": null
   }
 };
 

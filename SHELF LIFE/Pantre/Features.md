@@ -98,3 +98,21 @@
 - Trademark search for "Pantre"
 - App icon: finalize SVG, generate iOS asset catalog (light/dark/tinted)
 - App Store screenshots (6.7" + 6.5") — mockups exist at `app-store-mockups.html`
+- **Shared / household pantry (PREMIUM)** — two+ people sync the same pantry.
+  Design decision: gated behind Pro, but only ONE member of the household needs
+  a Pro subscription for the whole shared pantry to work (the others join free).
+  Builds on the existing Supabase sync layer (add a household/group id to the
+  `pantry_items` row scope). Strong word-of-mouth driver.
+
+## 🗒️ Notes from daily code check (2026-06-13)
+- **Barcode auto shelf-life** — already implemented. On scan, `AddItemScreen`
+  calls `lookupShelfLife(product.name, location)` and pre-fills the expiry
+  (`AddItemScreen.tsx:723-732`). No work needed.
+- **"Use It Up" digest** — already covered by Avo's Daily Briefing (CookScreen +
+  PantryScreen) plus per-item expiration notifications. Not building separately.
+- **Shelf-life standalone keys** — added `beef / pork / lamb / fish / tuna`
+  (previously returned null → coarse category default). Verified longer keys
+  ("ground beef", "tuna steak", "canned tuna") still win via longest-match.
+- **Known minor quirk (not yet fixed):** plain "milk" resolves to 10 days
+  (matches "soy/oat milk" via the 50%-length rule) instead of dairy milk's 7.
+  Over-estimates by 3 days. Pre-existing; left as-is pending a matcher tweak.
