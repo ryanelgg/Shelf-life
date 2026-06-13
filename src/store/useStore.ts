@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS } from '../types';
+import { formatLocalDate, parseLocalDate, getDaysUntilExpiration, FREE_LIMITS } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import {
@@ -16,7 +16,52 @@ import {
   scheduleReEngagement,
   scheduleRecipeNudge,
   celebrateStreakMilestone,
+  crossedMoneyMilestone,
+  celebrateMoneyMilestone,
+  scheduleWeeklyDigest,
+  scheduleCookNudge,
+  scheduleAvoChatNight,
+  scheduleGroceryReminder,
 } from '../lib/notifications';
+
+// ── Notification context helpers ───────────────────────────────────────────
+// Total money saved = everything logged that wasn't tossed (matches ImpactScreen).
+function computeMoneySaved(logs: WasteLog[]): number {
+  return logs.filter(w => w.action !== 'tossed').reduce((s, w) => s + w.estimatedValue * w.quantity, 0);
+}
+function savedInLastDays(logs: WasteLog[], days: number): number {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return logs
+    .filter(w => w.action !== 'tossed' && parseLocalDate(w.date).getTime() >= cutoff.getTime())
+    .reduce((s, w) => s + w.estimatedValue * w.quantity, 0);
+}
+function expiringWithinDays(items: PantryItem[], days: number): number {
+  return items.filter(i => {
+    const d = getDaysUntilExpiration(i.expirationDate);
+    return d >= 0 && d <= days;
+  }).length;
+}
+// Soonest-to-expire item still in its window (0–4 days out) — the one worth cooking tonight.
+function soonestAtRiskItem(items: PantryItem[]): string | null {
+  const atRisk = items
+    .filter(i => { const d = getDaysUntilExpiration(i.expirationDate); return d >= 0 && d <= 4; })
+    .sort((a, b) => getDaysUntilExpiration(a.expirationDate) - getDaysUntilExpiration(b.expirationDate));
+  return atRisk[0]?.name ?? null;
+}
+function buildRescheduleContext() {
+  const s = useStore.getState();
+  return {
+    items: s.pantryItems,
+    streakDays: s.user?.streakDays ?? 0,
+    userName: s.user?.name,
+    savedThisWeek: savedInLastDays(s.wasteLogs, 7),
+    expiringNextWeek: expiringWithinDays(s.pantryItems, 7),
+    cookItemName: soonestAtRiskItem(s.pantryItems),
+    avoChatUnused: (s.user?.avoChatCount ?? 0) === 0,
+    groceryWeekday: s.groceryDay,
+  };
+}
 
 interface ShelfLifeStore {
   // State
@@ -88,6 +133,10 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+
+  // Weekly grocery-day reminder. 0 = Sunday … 6 = Saturday; null = off.
+  groceryDay: number | null;
+  setGroceryDay: (day: number | null) => void;
 }
 
 
@@ -295,6 +344,7 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      groceryDay: null as number | null,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
@@ -333,6 +383,7 @@ export const useStore = create<ShelfLifeStore>()(
           showSettings: false,
           avoAiConsent: null,
           notificationsEnabled: null,
+          groceryDay: null,
         });
         void cancelAllNotifications();
       },
@@ -344,12 +395,19 @@ export const useStore = create<ShelfLifeStore>()(
           category: item.category,
           has_expiry: !!item.expirationDate,
         });
-        const { supabaseUserId, notificationsEnabled, user } = useStore.getState();
+        const { supabaseUserId, notificationsEnabled, user, pantryItems, wasteLogs } = useStore.getState();
         if (supabaseUserId) syncPantryAdd(item, supabaseUserId);
         if (notificationsEnabled) {
           void scheduleItemNotifications(item, user?.name);
           // Activity in the app — push the re-engagement reminder forward
           void scheduleReEngagement(user?.name);
+          // A new item changes what's expiring — refresh the digest + cook nudge.
+          void scheduleWeeklyDigest({
+            savedThisWeek: savedInLastDays(wasteLogs, 7),
+            expiringNextWeek: expiringWithinDays(pantryItems, 7),
+            userName: user?.name,
+          });
+          void scheduleCookNudge(soonestAtRiskItem(pantryItems), user?.name);
         }
       },
       updatePantryItem: (id, updates) => {
@@ -413,7 +471,7 @@ export const useStore = create<ShelfLifeStore>()(
 
         // Notifications: streak protection (push out evening reminder),
         // celebrate milestones, and refresh re-engagement + recipe nudge.
-        const { notificationsEnabled, user } = useStore.getState();
+        const { notificationsEnabled, user, wasteLogs, pantryItems } = useStore.getState();
         if (notificationsEnabled && user) {
           void scheduleStreakProtection(user.streakDays, user.name);
           if ([3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
@@ -425,6 +483,18 @@ export const useStore = create<ShelfLifeStore>()(
             // don't bug them about cooking right after a successful meal.
             void scheduleRecipeNudge(user.name);
           }
+          // Money milestone — celebrate the moment total savings crosses a threshold.
+          const newTotal = computeMoneySaved(wasteLogs);
+          const contributed = log.action !== 'tossed' ? log.estimatedValue * log.quantity : 0;
+          const crossed = crossedMoneyMilestone(newTotal - contributed, newTotal);
+          if (crossed) void celebrateMoneyMilestone(crossed);
+          // Keep the weekly digest + evening cook nudge in sync with the new state.
+          void scheduleWeeklyDigest({
+            savedThisWeek: savedInLastDays(wasteLogs, 7),
+            expiringNextWeek: expiringWithinDays(pantryItems, 7),
+            userName: user.name,
+          });
+          void scheduleCookNudge(soonestAtRiskItem(pantryItems), user.name);
         }
       },
 
@@ -471,6 +541,11 @@ export const useStore = create<ShelfLifeStore>()(
         const s = useStore.getState();
         if (!s.user) return false;
         const today = formatLocalDate(new Date());
+        // First time chatting → the nighttime "discover Avo chat" nudge has served
+        // its purpose, so cancel it.
+        if (s.user.avoChatCount === 0 && s.notificationsEnabled) {
+          void scheduleAvoChatNight(false, s.user.name);
+        }
 
         if (s.user.subscriptionTier === 'pro') {
           // Pro: 20 chats per day, resets daily
@@ -528,15 +603,17 @@ export const useStore = create<ShelfLifeStore>()(
       setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),
       setNotificationsEnabled: (enabled) => {
         set({ notificationsEnabled: enabled });
-        const { pantryItems, user } = useStore.getState();
         if (enabled) {
-          void rescheduleAllNotifications({
-            items: pantryItems,
-            streakDays: user?.streakDays ?? 0,
-            userName: user?.name,
-          });
+          void rescheduleAllNotifications(buildRescheduleContext());
         } else {
           void cancelAllNotifications();
+        }
+      },
+      setGroceryDay: (day) => {
+        set({ groceryDay: day });
+        const { notificationsEnabled, user } = useStore.getState();
+        if (notificationsEnabled) {
+          void scheduleGroceryReminder(day, user?.name);
         }
       },
     }),
@@ -563,6 +640,7 @@ export const useStore = create<ShelfLifeStore>()(
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
         notificationsEnabled: state.notificationsEnabled,
+        groceryDay: state.groceryDay,
       }),
     }
   )

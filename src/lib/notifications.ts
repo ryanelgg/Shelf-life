@@ -87,6 +87,55 @@ const RECIPE_NUDGE = [
   (_u: string) => ({ title: '🍽️ Dinner ideas?', body: 'Open the app — Avo\'s got 3 recipes ready for you.' }),
 ];
 
+// ── Leftovers — used in place of the generic expiration banks when an item
+// looks like leftovers / cooked food, so the copy feels specific ────────────
+const LEFTOVER_RE = /leftover|cooked |soup|stew|chili|casserole|curry/i;
+function isLeftover(name: string): boolean {
+  return LEFTOVER_RE.test(name);
+}
+const LEFTOVER_SOON = [
+  (u: string, n: string) => ({ title: '🍲 Leftover check-in', body: `Hey ${u}, those ${n} won't keep forever — let's finish them soon!` }),
+  (_u: string, n: string) => ({ title: '🥑 Don\'t forget the leftovers', body: `Your ${n} are waiting in the fridge. Lunch sorted?` }),
+  (u: string, n: string) => ({ title: '🍱 Leftovers calling', body: `${u}, your ${n} are best eaten in the next day or two!` }),
+];
+
+// ── Expired-but-unlogged (fires the morning AFTER the expiration date) ───────
+const EXPIRED_UNLOGGED = [
+  (u: string, n: string) => ({ title: '🥑 Did it make it?', body: `Your ${n} hit its date, ${u}. Tap to log whether you saved it or tossed it 💚` }),
+  (_u: string, n: string) => ({ title: 'Quick question 🤔', body: `Did your ${n} get eaten? Logging it keeps your impact honest.` }),
+  (u: string, n: string) => ({ title: '📋 One to log', body: `${u}, your ${n} expired yesterday. Eaten, frozen, or tossed? Tap to tell Avo.` }),
+];
+
+// ── Impact money milestones — relatable framing, not abstract stats ──────────
+const MONEY_MILESTONES: Record<number, () => { title: string; body: string }> = {
+  25:   () => ({ title: '💚 $25 saved!', body: 'That\'s a nice dinner out — rescued from your own fridge 🍝' }),
+  50:   () => ({ title: '🎉 $50 saved with Pantre', body: 'Fifty dollars kept out of the trash. Avo\'s proud 🥑' }),
+  100:  () => ({ title: '💯 $100 saved!', body: 'About a week of groceries’ worth of food — saved, not wasted 🛒' }),
+  250:  () => ({ title: '🌟 $250 saved', body: 'Real money back in your pocket. You\'re crushing waste 💪' }),
+  500:  () => ({ title: '🏆 $500 saved!', body: 'Half a grand. Avo is genuinely emotional right now 🥹' }),
+  1000: () => ({ title: '👑 $1,000 saved!!', body: 'One THOUSAND dollars rescued from the bin. Iconic 🥑👑' }),
+};
+const MONEY_THRESHOLDS = [25, 50, 100, 250, 500, 1000];
+
+// ── Evening cook nudge — surfaces one at-risk item to use tonight ────────────
+const COOK_NUDGE = [
+  (u: string, n: string) => ({ title: '🍳 Dinner idea?', body: `${u}, your ${n} would be perfect tonight before it turns. Ask Avo for a recipe!` }),
+  (_u: string, n: string) => ({ title: '🥑 Use it tonight', body: `That ${n} is getting close — let's give it a delicious ending.` }),
+  (u: string, n: string) => ({ title: '🌿 One to rescue', body: `Hey ${u}, your ${n} could use you tonight. Avo's got ideas in 10 seconds.` }),
+];
+
+// ── Avo chat discovery — nighttime only (local 8pm) ──────────────────────────
+const AVO_CHAT_NIGHT = [
+  (u: string) => ({ title: `🌙 Stuck on dinner, ${u}?`, body: 'Just ask Avo — I\'ll build a recipe from exactly what\'s in your pantry 💬' }),
+  (_u: string) => ({ title: '🥑 Avo\'s a night owl', body: 'Late-night fridge raid? Tell Avo what you\'ve got and get an instant idea 💬' }),
+];
+
+// ── Grocery day reminder — weekly, user-chosen day, local 5pm ────────────────
+const GROCERY_DAY = [
+  (u: string) => ({ title: '🛒 Grocery day!', body: `Heading to the store, ${u}? Check your Pantre list first so nothing doubles up.` }),
+  (_u: string) => ({ title: '🥑 Shopping time', body: 'Before you shop — peek at what\'s already in your pantry to skip the repeats!' }),
+];
+
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -113,12 +162,13 @@ function hashStringToInt(str: string): number {
   return Math.abs(hash) % 100000000;
 }
 
-function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number } {
+function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number; expiredCheck: number } {
   const base = hashStringToInt(itemId);
   return {
     twoDays: base * 10 + 1,
     oneDay: base * 10 + 2,
     dayOf: base * 10 + 3,
+    expiredCheck: base * 10 + 4,
   };
 }
 
@@ -128,8 +178,14 @@ const ENGAGEMENT_IDS = {
   streakProtection: 1_900_000_001,
   reEngagement: 1_900_000_002,
   recipeNudge: 1_900_000_003,
-  // Milestones use 1_900_001_000 + streakDays for uniqueness
+  weeklyDigest: 1_900_000_004,
+  groceryReminder: 1_900_000_005,
+  avoChatNight: 1_900_000_006,
+  cookNudge: 1_900_000_007,
+  // Streak milestones use 1_900_001_000 + streakDays for uniqueness
   milestoneBase: 1_900_001_000,
+  // Money milestones use 1_900_002_000 + dollar-threshold for uniqueness
+  moneyMilestoneBase: 1_900_002_000,
 } as const;
 
 function milestoneId(streakDays: number): number {
@@ -163,6 +219,23 @@ function reEngagementTime(daysFromNow: number, hour = 18): Date {
   return t;
 }
 
+// Today at the given local time, or tomorrow if that time has already passed.
+function eveningTime(hour: number, minute = 0): Date {
+  const t = new Date();
+  t.setHours(hour, minute, 0, 0);
+  if (t.getTime() <= Date.now() + 60_000) t.setDate(t.getDate() + 1);
+  return t;
+}
+
+// The next upcoming Sunday at 6pm local (never today — always the next one).
+function nextWeeklyDigestTime(): Date {
+  const t = new Date();
+  const daysUntilSunday = (7 - t.getDay()) % 7 || 7;
+  t.setDate(t.getDate() + daysUntilSunday);
+  t.setHours(18, 0, 0, 0);
+  return t;
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export async function ensureNotificationPermission(): Promise<boolean> {
@@ -190,23 +263,30 @@ export async function scheduleItemNotifications(item: PantryItem, userName?: str
   try {
     const u = firstName(userName);
     const ids = notificationIdsForItem(item.id);
+    const leftover = isLeftover(item.name);
     const twoDayTime = expirationNotificationTime(item.expirationDate, 2);
     const oneDayTime = expirationNotificationTime(item.expirationDate, 1);
     const dayOfTime = expirationNotificationTime(item.expirationDate, 0);
+    // Negative daysBefore → the morning AFTER the expiration date.
+    const expiredTime = expirationNotificationTime(item.expirationDate, -1);
 
     const toSchedule: Parameters<typeof LocalNotifications.schedule>[0]['notifications'] = [];
 
     if (twoDayTime) {
-      const copy = pickRandom(TWO_DAYS_BEFORE)(u, item.name);
+      const copy = (leftover ? pickRandom(LEFTOVER_SOON) : pickRandom(TWO_DAYS_BEFORE))(u, item.name);
       toSchedule.push({ id: ids.twoDays, title: copy.title, body: copy.body, schedule: { at: twoDayTime, allowWhileIdle: true } });
     }
     if (oneDayTime) {
-      const copy = pickRandom(ONE_DAY_BEFORE)(u, item.name);
+      const copy = (leftover ? pickRandom(LEFTOVER_SOON) : pickRandom(ONE_DAY_BEFORE))(u, item.name);
       toSchedule.push({ id: ids.oneDay, title: copy.title, body: copy.body, schedule: { at: oneDayTime, allowWhileIdle: true } });
     }
     if (dayOfTime) {
-      const copy = pickRandom(DAY_OF)(u, item.name);
+      const copy = (leftover ? pickRandom(LEFTOVER_SOON) : pickRandom(DAY_OF))(u, item.name);
       toSchedule.push({ id: ids.dayOf, title: copy.title, body: copy.body, schedule: { at: dayOfTime, allowWhileIdle: true } });
+    }
+    if (expiredTime) {
+      const copy = pickRandom(EXPIRED_UNLOGGED)(u, item.name);
+      toSchedule.push({ id: ids.expiredCheck, title: copy.title, body: copy.body, schedule: { at: expiredTime, allowWhileIdle: true } });
     }
 
     if (toSchedule.length > 0) {
@@ -222,7 +302,7 @@ export async function cancelItemNotifications(itemId: string): Promise<void> {
   try {
     const ids = notificationIdsForItem(itemId);
     await LocalNotifications.cancel({
-      notifications: [{ id: ids.twoDays }, { id: ids.oneDay }, { id: ids.dayOf }],
+      notifications: [{ id: ids.twoDays }, { id: ids.oneDay }, { id: ids.dayOf }, { id: ids.expiredCheck }],
     });
   } catch (e) {
     debug.warn('[notifications] cancel failed:', e);
@@ -348,10 +428,138 @@ export async function cancelAllNotifications(): Promise<void> {
   }
 }
 
+// ── Impact money milestone (fires immediately when a $ threshold is crossed) ──
+
+/** Returns the dollar threshold just crossed (prev < t ≤ next), or null. */
+export function crossedMoneyMilestone(prev: number, next: number): number | null {
+  return MONEY_THRESHOLDS.find(t => prev < t && next >= t) ?? null;
+}
+
+export async function celebrateMoneyMilestone(threshold: number): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const builder = MONEY_MILESTONES[threshold];
+  if (!builder) return;
+  try {
+    const copy = builder();
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: ENGAGEMENT_IDS.moneyMilestoneBase + threshold,
+        title: copy.title,
+        body: copy.body,
+        schedule: { at: new Date(Date.now() + 30_000), allowWhileIdle: true },
+      }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] money milestone failed:', e);
+  }
+}
+
+// ── Weekly digest (recap + freshness outlook), fires Sunday evening ──────────
+
+interface WeeklyDigestContext {
+  savedThisWeek: number;
+  expiringNextWeek: number;
+  userName?: string | null;
+}
+
+export async function scheduleWeeklyDigest(ctx: WeeklyDigestContext): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.weeklyDigest }] });
+    const u = firstName(ctx.userName);
+    const saved = Math.round(ctx.savedThisWeek);
+    let title: string;
+    let body: string;
+    if (ctx.expiringNextWeek === 0) {
+      title = '🥑 Fridge looking fresh!';
+      body = saved > 0
+        ? `Nothing expiring next week, ${u} — and you saved $${saved} this week. On top of it! ✨`
+        : `Nothing expiring next week, ${u}. Your pantry's in great shape ✨`;
+    } else {
+      title = `🌿 Your week ahead, ${u}`;
+      const savedLine = saved > 0 ? `You saved $${saved} this week. ` : '';
+      body = `${savedLine}${ctx.expiringNextWeek} item${ctx.expiringNextWeek === 1 ? '' : 's'} need you in the next 7 days — let's plan!`;
+    }
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.weeklyDigest, title, body, schedule: { at: nextWeeklyDigestTime(), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] weekly digest failed:', e);
+  }
+}
+
+// ── Evening cook nudge — surfaces one at-risk item to use tonight ────────────
+
+export async function scheduleCookNudge(itemName: string | null, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.cookNudge }] });
+    if (!itemName) return;
+    const copy = pickRandom(COOK_NUDGE)(firstName(userName), itemName);
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.cookNudge, title: copy.title, body: copy.body, schedule: { at: eveningTime(17, 30), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] cook nudge failed:', e);
+  }
+}
+
+// ── Avo chat discovery — nighttime only, only while the user hasn't chatted ──
+
+export async function scheduleAvoChatNight(shouldSchedule: boolean, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.avoChatNight }] });
+    if (!shouldSchedule) return;
+    const copy = pickRandom(AVO_CHAT_NIGHT)(firstName(userName));
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.avoChatNight, title: copy.title, body: copy.body, schedule: { at: eveningTime(20, 0), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] avo chat night failed:', e);
+  }
+}
+
+// ── Grocery day reminder — repeats weekly on the user's chosen day at 5pm ─────
+
+export async function scheduleGroceryReminder(weekday: number | null, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.groceryReminder }] });
+    if (weekday === null) return; // 0 = Sunday … 6 = Saturday; null = off
+    const copy = pickRandom(GROCERY_DAY)(firstName(userName));
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: ENGAGEMENT_IDS.groceryReminder,
+        title: copy.title,
+        body: copy.body,
+        // Capacitor weekday is 1 = Sunday … 7 = Saturday. `on` repeats weekly.
+        schedule: { on: { weekday: weekday + 1, hour: 17, minute: 0 }, allowWhileIdle: true },
+      }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] grocery reminder failed:', e);
+  }
+}
+
+export async function cancelGroceryReminder(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.groceryReminder }] });
+  } catch (e) {
+    debug.warn('[notifications] cancel grocery reminder failed:', e);
+  }
+}
+
 interface RescheduleContext {
   items: PantryItem[];
   streakDays: number;
   userName?: string | null;
+  savedThisWeek?: number;
+  expiringNextWeek?: number;
+  cookItemName?: string | null;
+  avoChatUnused?: boolean;
+  groceryWeekday?: number | null;
 }
 
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
@@ -363,4 +571,12 @@ export async function rescheduleAllNotifications(ctx: RescheduleContext): Promis
   await scheduleStreakProtection(ctx.streakDays, ctx.userName);
   await scheduleReEngagement(ctx.userName);
   await scheduleRecipeNudge(ctx.userName);
+  await scheduleWeeklyDigest({
+    savedThisWeek: ctx.savedThisWeek ?? 0,
+    expiringNextWeek: ctx.expiringNextWeek ?? 0,
+    userName: ctx.userName,
+  });
+  await scheduleCookNudge(ctx.cookItemName ?? null, ctx.userName);
+  await scheduleAvoChatNight(ctx.avoChatUnused ?? false, ctx.userName);
+  await scheduleGroceryReminder(ctx.groceryWeekday ?? null, ctx.userName);
 }

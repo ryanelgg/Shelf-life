@@ -23,8 +23,11 @@ const DIETS: { id: DietaryPref; label: string }[] = [
 
 const APP_STORE_REVIEW_URL = (import.meta.env.VITE_APP_STORE_REVIEW_URL as string | undefined)?.trim();
 
+// Index 0 = Sunday … 6 = Saturday, matching `groceryDay` in the store.
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 export function SettingsScreen() {
-  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs } = useStore();
+  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, groceryDay, setGroceryDay, pantryItems, wasteLogs } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCancelPro, setShowCancelPro] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
@@ -293,6 +296,44 @@ export function SettingsScreen() {
             />
           </div>
         </Card>
+
+        {/* Grocery day reminder (only meaningful when notifications are on) */}
+        {notificationsEnabled && (
+          <Card>
+            <div style={{ fontSize: '14px', fontWeight: 600 }}>Grocery Day Reminder</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
+              {groceryDay === null
+                ? 'Off — pick a day to get a weekly nudge to check your list before shopping'
+                : `On — Avo nudges you every ${DAY_LABELS[groceryDay]} at 5pm`}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '12px', flexWrap: 'wrap' }}>
+              {DAY_LABELS.map((label, idx) => {
+                const active = groceryDay === idx;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => setGroceryDay(active ? null : idx)}
+                    style={{
+                      flex: '1 1 0',
+                      minWidth: '40px',
+                      padding: '8px 0',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: active ? 'var(--accent)' : 'var(--accent-dim)',
+                      color: active ? '#fff' : 'var(--text-muted)',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      fontFamily: "'Cormorant Garamond', serif",
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        )}
 
         {/* Avo AI privacy */}
         <Card>
