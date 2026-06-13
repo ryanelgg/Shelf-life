@@ -98,6 +98,23 @@
 - Trademark search for "Pantre"
 - App icon: finalize SVG, generate iOS asset catalog (light/dark/tinted)
 - App Store screenshots (6.7" + 6.5") — mockups exist at `app-store-mockups.html`
+- **Apple Health + Samsung Health integration (PLANNED — needs native build)**
+  - Goal: link Pantre to HealthKit (iOS) and Samsung Health / Health Connect (Android).
+  - **Open decision before building — what data flows, and which way?**
+    - *Most likely:* when a user logs eating a food, write its nutrition (dietary
+      energy / calories, maybe macros) to Health so meals show up there. Pantre
+      → Health (write).
+    - *Optional later:* read activity/calorie-burn from Health to tailor recipe
+      portion suggestions. Health → Pantre (read).
+  - **Why it can't be done in a web session:** requires native plugins +
+    capability entitlements + on-device testing.
+    - iOS: `HealthKit` capability + `NSHealthShareUsageDescription` /
+      `NSHealthUpdateUsageDescription` Info.plist keys + a Capacitor HealthKit
+      plugin (e.g. `@perfood/capacitor-healthkit` or a custom Swift bridge).
+    - Android: Health Connect API + a Capacitor plugin/bridge.
+  - **Caveat:** Apple's HealthKit data model is nutrition/biometrics — there's no
+    "food inventory" type, so the realistic link is the *nutrition of meals you
+    log*, not the pantry list itself. Worth confirming this is the intent.
 - **Shared / household pantry (PREMIUM)** — two+ people sync the same pantry.
   Design decision: gated behind Pro, but only ONE member of the household needs
   a Pro subscription for the whole shared pantry to work (the others join free).
