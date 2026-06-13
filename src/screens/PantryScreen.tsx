@@ -5,6 +5,7 @@ import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
+import { bestDinnerForPantry } from '../lib/recipeMatch';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe } from '../types';
@@ -164,30 +165,7 @@ export function PantryScreen() {
   const briefing = useMemo(() => {
     // 2. Best dinner option — the recipe that matches the most pantry items,
     //    preferring ones that use food which is expiring soon.
-    const allRecipes = [...recipes, ...browseRecipes];
-    let bestDinner: { recipe: Recipe; matchCount: number; usesExpiring: boolean } | null = null;
-    for (const r of allRecipes) {
-      let matchCount = 0;
-      let usesExpiring = false;
-      for (const ing of r.ingredients) {
-        const b = ing.name.toLowerCase();
-        const m = pantryItems.find(p => {
-          const a = p.name.toLowerCase();
-          return a.includes(b) || b.includes(a);
-        });
-        if (m) {
-          matchCount++;
-          const s = getFreshnessStatus(m.expirationDate);
-          if (s === 'expiring' || s === 'expiring-soon' || s === 'expired') usesExpiring = true;
-        }
-      }
-      if (matchCount === 0) continue;
-      const better =
-        !bestDinner ||
-        (usesExpiring && !bestDinner.usesExpiring) ||
-        (usesExpiring === bestDinner.usesExpiring && matchCount > bestDinner.matchCount);
-      if (better) bestDinner = { recipe: r, matchCount, usesExpiring };
-    }
+    const bestDinner = bestDinnerForPantry(pantryItems, [...recipes, ...browseRecipes]);
 
     // 3. One item worth freezing — expiring soon, not already frozen, and
     //    freezing actually buys meaningful extra time.

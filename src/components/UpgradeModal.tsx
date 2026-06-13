@@ -43,8 +43,10 @@ const PRO_FEATURES = [
   '20 Avo chats per day',
   "Avo's Daily Briefing",
   'Receipt scanning',
-  'Personalized meal plans',
+  'Auto-built weekly meal plans',
   'Budget-optimized shopping lists',
+  'Early access to new recipe packs',
+  'Weekly impact report',
 ];
 
 export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }: UpgradeModalProps) {

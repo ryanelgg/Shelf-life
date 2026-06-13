@@ -117,11 +117,18 @@ const MONEY_MILESTONES: Record<number, () => { title: string; body: string }> = 
 };
 const MONEY_THRESHOLDS = [25, 50, 100, 250, 500, 1000];
 
-// ── Evening cook nudge — surfaces one at-risk item to use tonight ────────────
-const COOK_NUDGE = [
+// ── Evening cook nudge — fires ~5pm so there's time to cook before the ~6:18pm
+// average US dinner. Names a real recipe when one matches expiring food, else
+// falls back to the single most at-risk item. ───────────────────────────────
+const COOK_NUDGE_ITEM = [
   (u: string, n: string) => ({ title: '🍳 Dinner idea?', body: `${u}, your ${n} would be perfect tonight before it turns. Ask Avo for a recipe!` }),
   (_u: string, n: string) => ({ title: '🥑 Use it tonight', body: `That ${n} is getting close — let's give it a delicious ending.` }),
   (u: string, n: string) => ({ title: '🌿 One to rescue', body: `Hey ${u}, your ${n} could use you tonight. Avo's got ideas in 10 seconds.` }),
+];
+const COOK_NUDGE_RECIPE = [
+  (u: string, r: string) => ({ title: '🍳 Dinner\'s basically sorted', body: `${u}, you've got everything for ${r} — perfect for tonight!` }),
+  (_u: string, r: string) => ({ title: '🥑 Tonight\'s pick', body: `${r} uses what's in your pantry right now. Want the steps?` }),
+  (u: string, r: string) => ({ title: `🌿 ${r} tonight?`, body: `Everything's in your kitchen already, ${u}. Avo can walk you through it.` }),
 ];
 
 // ── Avo chat discovery — nighttime only (local 8pm) ──────────────────────────
@@ -134,6 +141,35 @@ const AVO_CHAT_NIGHT = [
 const GROCERY_DAY = [
   (u: string) => ({ title: '🛒 Grocery day!', body: `Heading to the store, ${u}? Check your Pantre list first so nothing doubles up.` }),
   (_u: string) => ({ title: '🥑 Shopping time', body: 'Before you shop — peek at what\'s already in your pantry to skip the repeats!' }),
+];
+
+// ── Pro-member perks — rewards for people who already pay, never an upsell ───
+const PRO_WEEKLY_REPORT = [
+  (u: string) => ({ title: '📊 Your Pro weekly report', body: `${u}, your full impact breakdown is ready — savings, waste rate, and your best wins this week.` }),
+  (_u: string) => ({ title: '🥑 This week, in detail', body: 'Your Pro impact report just dropped. See exactly where you crushed it 📊' }),
+];
+const PRO_MEALPLAN_READY = [
+  (u: string) => ({ title: '📋 Your week, planned', body: `Morning ${u}! Avo lined up this week's meals around what's in your pantry. Take a look.` }),
+  (_u: string) => ({ title: '🥑 Meal plan ready', body: 'Avo planned your week from your pantry. One less thing to think about 💚' }),
+];
+const PRO_SHOPPING_READY = [
+  (u: string) => ({ title: '🛒 Shopping list, auto-built', body: `${u}, Avo turned your meal plan into a ready-to-go shopping list. Tap to review.` }),
+  (_u: string) => ({ title: '🥑 List\'s ready', body: 'Your Pro shopping list built itself from this week\'s plan 🛒' }),
+];
+const PRO_TOMORROW_PLAN = [
+  (u: string) => ({ title: '🌙 Tomorrow\'s dinner is sorted', body: `Rest easy, ${u} — Avo's already got tomorrow's meal planned from your pantry.` }),
+  (_u: string) => ({ title: '🥑 Tomorrow\'s handled', body: 'Avo lined up tomorrow\'s dinner. Sleep easy 🌙' }),
+];
+const PRO_CHAT_REFILL = [
+  (u: string) => ({ title: '💬 Your 20 Avo chats refreshed', body: `Fresh batch ready, ${u} — ask Avo anything about tonight's cooking.` }),
+  (_u: string) => ({ title: '🥑 Chats topped up', body: 'Your daily Avo chats just reset to 20. Cook away 💬' }),
+];
+const PRO_RECIPE_PACK = (name: string) => [
+  (u: string) => ({ title: '🍳 New recipes — you get them first', body: `${u}, the "${name}" recipe pack just landed for Pro members. Dig in!` }),
+  (_u: string) => ({ title: `🥑 "${name}" is here`, body: 'A fresh recipe pack just dropped — Pro members get early access 🍳' }),
+];
+const PRO_ANNIVERSARY = (years: number) => [
+  (u: string) => ({ title: `🎉 ${years} year${years === 1 ? '' : 's'} of Pantre Pro!`, body: `Thank you for being here, ${u}. Here's to everything you've saved 🥑💚` }),
 ];
 
 function pickRandom<T>(arr: T[]): T {
@@ -182,6 +218,14 @@ const ENGAGEMENT_IDS = {
   groceryReminder: 1_900_000_005,
   avoChatNight: 1_900_000_006,
   cookNudge: 1_900_000_007,
+  // Pro-member perks
+  proWeeklyReport: 1_900_000_008,
+  proMealPlan: 1_900_000_009,
+  proShopping: 1_900_000_010,
+  proTomorrow: 1_900_000_011,
+  proChatRefill: 1_900_000_012,
+  recipePack: 1_900_000_013,
+  proAnniversary: 1_900_000_014,
   // Streak milestones use 1_900_001_000 + streakDays for uniqueness
   milestoneBase: 1_900_001_000,
   // Money milestones use 1_900_002_000 + dollar-threshold for uniqueness
@@ -229,10 +273,17 @@ function eveningTime(hour: number, minute = 0): Date {
 
 // The next upcoming Sunday at 6pm local (never today — always the next one).
 function nextWeeklyDigestTime(): Date {
+  return nextWeekdayTime(0, 18, 0);
+}
+
+// The next upcoming occurrence of a given weekday (0=Sun…6=Sat) at hour:minute,
+// always in the future (never fires "now" if today already matches).
+function nextWeekdayTime(weekday: number, hour: number, minute = 0): Date {
   const t = new Date();
-  const daysUntilSunday = (7 - t.getDay()) % 7 || 7;
-  t.setDate(t.getDate() + daysUntilSunday);
-  t.setHours(18, 0, 0, 0);
+  let delta = (weekday - t.getDay() + 7) % 7;
+  t.setDate(t.getDate() + delta);
+  t.setHours(hour, minute, 0, 0);
+  if (t.getTime() <= Date.now() + 60_000) { t.setDate(t.getDate() + 7); delta += 7; }
   return t;
 }
 
@@ -488,19 +539,101 @@ export async function scheduleWeeklyDigest(ctx: WeeklyDigestContext): Promise<vo
   }
 }
 
-// ── Evening cook nudge — surfaces one at-risk item to use tonight ────────────
+// ── Evening cook nudge — names a real recipe if one matches expiring food,
+// else the single most at-risk item. Fires 5pm so there's time to cook. ──────
 
-export async function scheduleCookNudge(itemName: string | null, userName?: string | null): Promise<void> {
+interface CookNudgeTarget {
+  recipeName?: string | null;
+  itemName?: string | null;
+}
+
+export async function scheduleCookNudge(target: CookNudgeTarget, userName?: string | null): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
     await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.cookNudge }] });
-    if (!itemName) return;
-    const copy = pickRandom(COOK_NUDGE)(firstName(userName), itemName);
+    const u = firstName(userName);
+    let copy: { title: string; body: string } | null = null;
+    if (target.recipeName) {
+      copy = pickRandom(COOK_NUDGE_RECIPE)(u, target.recipeName);
+    } else if (target.itemName) {
+      copy = pickRandom(COOK_NUDGE_ITEM)(u, target.itemName);
+    }
+    if (!copy) return; // nothing at risk → don't nag
     await LocalNotifications.schedule({
-      notifications: [{ id: ENGAGEMENT_IDS.cookNudge, title: copy.title, body: copy.body, schedule: { at: eveningTime(17, 30), allowWhileIdle: true } }],
+      notifications: [{ id: ENGAGEMENT_IDS.cookNudge, title: copy.title, body: copy.body, schedule: { at: eveningTime(17, 0), allowWhileIdle: true } }],
     });
   } catch (e) {
     debug.warn('[notifications] cook nudge failed:', e);
+  }
+}
+
+// ── Pro-member perks — only scheduled for Pro users, never an upsell ─────────
+
+export async function schedulePremiumPerks(isPro: boolean, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const ids = [
+    ENGAGEMENT_IDS.proWeeklyReport,
+    ENGAGEMENT_IDS.proMealPlan,
+    ENGAGEMENT_IDS.proShopping,
+    ENGAGEMENT_IDS.proTomorrow,
+    ENGAGEMENT_IDS.proChatRefill,
+  ];
+  try {
+    // Always clear first so perks vanish immediately if a user downgrades.
+    await LocalNotifications.cancel({ notifications: ids.map(id => ({ id })) });
+    if (!isPro) return;
+    const u = firstName(userName);
+    const report = pickRandom(PRO_WEEKLY_REPORT)(u);
+    const meal = pickRandom(PRO_MEALPLAN_READY)(u);
+    const shop = pickRandom(PRO_SHOPPING_READY)(u);
+    const tomorrow = pickRandom(PRO_TOMORROW_PLAN)(u);
+    const refill = pickRandom(PRO_CHAT_REFILL)(u);
+    await LocalNotifications.schedule({
+      notifications: [
+        // Sunday 9am — weekly impact report
+        { id: ENGAGEMENT_IDS.proWeeklyReport, title: report.title, body: report.body, schedule: { on: { weekday: 1, hour: 9, minute: 0 }, allowWhileIdle: true } },
+        // Monday 9am — the week's meal plan is ready
+        { id: ENGAGEMENT_IDS.proMealPlan, title: meal.title, body: meal.body, schedule: { on: { weekday: 2, hour: 9, minute: 0 }, allowWhileIdle: true } },
+        // Saturday 10am — auto-built shopping list
+        { id: ENGAGEMENT_IDS.proShopping, title: shop.title, body: shop.body, schedule: { on: { weekday: 7, hour: 10, minute: 0 }, allowWhileIdle: true } },
+        // Nightly 8:30pm — tomorrow's dinner is planned
+        { id: ENGAGEMENT_IDS.proTomorrow, title: tomorrow.title, body: tomorrow.body, schedule: { on: { hour: 20, minute: 30 }, allowWhileIdle: true } },
+        // Daily 9am — chats refreshed
+        { id: ENGAGEMENT_IDS.proChatRefill, title: refill.title, body: refill.body, schedule: { on: { hour: 9, minute: 0 }, allowWhileIdle: true } },
+      ],
+    });
+  } catch (e) {
+    debug.warn('[notifications] premium perks failed:', e);
+  }
+}
+
+/**
+ * Fire when a new recipe pack is released to a Pro member (called by the
+ * recipe-drop check on app launch — see `recipe_packs` content system).
+ */
+export async function celebrateRecipePack(packName: string, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const copy = pickRandom(PRO_RECIPE_PACK(packName))(firstName(userName));
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.recipePack, title: copy.title, body: copy.body, schedule: { at: new Date(Date.now() + 30_000), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] recipe pack failed:', e);
+  }
+}
+
+/** Fire on a Pro member's subscription anniversary (needs the Pro-start date). */
+export async function celebrateProAnniversary(years: number, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  if (years < 1) return;
+  try {
+    const copy = pickRandom(PRO_ANNIVERSARY(years))(firstName(userName));
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.proAnniversary, title: copy.title, body: copy.body, schedule: { at: new Date(Date.now() + 30_000), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] pro anniversary failed:', e);
   }
 }
 
@@ -557,9 +690,11 @@ interface RescheduleContext {
   userName?: string | null;
   savedThisWeek?: number;
   expiringNextWeek?: number;
+  cookRecipeName?: string | null;
   cookItemName?: string | null;
   avoChatUnused?: boolean;
   groceryWeekday?: number | null;
+  isPro?: boolean;
 }
 
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
@@ -576,7 +711,8 @@ export async function rescheduleAllNotifications(ctx: RescheduleContext): Promis
     expiringNextWeek: ctx.expiringNextWeek ?? 0,
     userName: ctx.userName,
   });
-  await scheduleCookNudge(ctx.cookItemName ?? null, ctx.userName);
+  await scheduleCookNudge({ recipeName: ctx.cookRecipeName ?? null, itemName: ctx.cookItemName ?? null }, ctx.userName);
   await scheduleAvoChatNight(ctx.avoChatUnused ?? false, ctx.userName);
   await scheduleGroceryReminder(ctx.groceryWeekday ?? null, ctx.userName);
+  await schedulePremiumPerks(ctx.isPro ?? false, ctx.userName);
 }

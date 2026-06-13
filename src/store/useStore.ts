@@ -22,7 +22,9 @@ import {
   scheduleCookNudge,
   scheduleAvoChatNight,
   scheduleGroceryReminder,
+  schedulePremiumPerks,
 } from '../lib/notifications';
+import { bestDinnerForPantry } from '../lib/recipeMatch';
 
 // ── Notification context helpers ───────────────────────────────────────────
 // Total money saved = everything logged that wasn't tossed (matches ImpactScreen).
@@ -49,17 +51,30 @@ function soonestAtRiskItem(items: PantryItem[]): string | null {
     .sort((a, b) => getDaysUntilExpiration(a.expirationDate) - getDaysUntilExpiration(b.expirationDate));
   return atRisk[0]?.name ?? null;
 }
+// What tonight's cook nudge should say: a real recipe that uses expiring food if
+// one matches, otherwise just the most at-risk item. Null/null = nothing at risk.
+function cookNudgeTarget(): { recipeName: string | null; itemName: string | null } {
+  const s = useStore.getState();
+  const itemName = soonestAtRiskItem(s.pantryItems);
+  if (!itemName) return { recipeName: null, itemName: null };
+  const best = bestDinnerForPantry(s.pantryItems, [...s.recipes, ...s.browseRecipes]);
+  const recipeName = best && best.usesExpiring ? best.recipe.name : null;
+  return { recipeName, itemName };
+}
 function buildRescheduleContext() {
   const s = useStore.getState();
+  const cook = cookNudgeTarget();
   return {
     items: s.pantryItems,
     streakDays: s.user?.streakDays ?? 0,
     userName: s.user?.name,
     savedThisWeek: savedInLastDays(s.wasteLogs, 7),
     expiringNextWeek: expiringWithinDays(s.pantryItems, 7),
-    cookItemName: soonestAtRiskItem(s.pantryItems),
+    cookRecipeName: cook.recipeName,
+    cookItemName: cook.itemName,
     avoChatUnused: (s.user?.avoChatCount ?? 0) === 0,
     groceryWeekday: s.groceryDay,
+    isPro: s.user?.subscriptionTier === 'pro',
   };
 }
 
@@ -407,7 +422,7 @@ export const useStore = create<ShelfLifeStore>()(
             expiringNextWeek: expiringWithinDays(pantryItems, 7),
             userName: user?.name,
           });
-          void scheduleCookNudge(soonestAtRiskItem(pantryItems), user?.name);
+          void scheduleCookNudge(cookNudgeTarget(), user?.name);
         }
       },
       updatePantryItem: (id, updates) => {
@@ -494,7 +509,7 @@ export const useStore = create<ShelfLifeStore>()(
             expiringNextWeek: expiringWithinDays(pantryItems, 7),
             userName: user.name,
           });
-          void scheduleCookNudge(soonestAtRiskItem(pantryItems), user.name);
+          void scheduleCookNudge(cookNudgeTarget(), user.name);
         }
       },
 
@@ -525,12 +540,16 @@ export const useStore = create<ShelfLifeStore>()(
       setMealPlan: (plan) => set({ mealPlan: plan }),
 
       setSubscriptionTier: async (tier) => {
-        const { supabaseUserId } = useStore.getState();
+        const { supabaseUserId, notificationsEnabled } = useStore.getState();
         let nextUser: User | null = null;
         set((s) => {
           nextUser = s.user ? { ...s.user, subscriptionTier: tier } : null;
           return { user: nextUser };
         });
+        // Pro-only perk notifications appear on upgrade and vanish on downgrade.
+        if (notificationsEnabled) {
+          void schedulePremiumPerks(tier === 'pro', useStore.getState().user?.name);
+        }
         if (supabaseUserId && nextUser) {
           // Awaited so the cloud write can't be orphaned by a sign-out or
           // navigation that happens immediately after an upgrade/cancel.
