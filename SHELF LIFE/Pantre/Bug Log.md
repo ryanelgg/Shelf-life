@@ -41,6 +41,17 @@
 ### Content
 - **Chicken on "counter" showing 1095 days expiry** — "chicken broth canned" was matching "counter" storage pattern; fixed shelf life lookup logic
 
+## Daily Code Check — 2026-06-13
+
+Automated sweep (typecheck + lint + production build). **No runtime/logic bugs found.** Core flows reviewed clean: store, Supabase sync, auth boot, notification scheduling, and date/freshness math.
+
+Fixed in this pass (lint hygiene, no behavior change):
+- ESLint was scanning the Obsidian vault's vendored plugin JS (`SHELF LIFE/`) → 16 false-positive errors. Added vault + `android`/`ios`/`.vite` to `globalIgnores`.
+- 14× `no-useless-escape` — stray `\'` inside template-literal notification copy (`won\'t`, `Avo\'s`, etc.) → unescaped. Renders identically.
+- `no-unused-vars` on intentional `_u`/`_args` params → added `argsIgnorePattern: '^_'` rule.
+
+Result: `eslint .` → 0 problems · `tsc -b` → clean · `npm run build` → success.
+
 ## Known / Outstanding
 - **Supabase email confirmations rate-limited** (default SMTP ~2-3/hour) — needs custom SMTP via Resend + domain verification (SPF/DKIM for `pantre.app`)
 - **Resend domain `usepantre.me` showed "No activity"** — Supabase SMTP key may not have been saved correctly
