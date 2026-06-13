@@ -8,6 +8,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatLocalDate, getFreshnessStatus } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { exportMealPlanToCalendar } from '../lib/calendarExport';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -634,6 +635,20 @@ export function PlanScreen() {
               PRO
             </div>
           )}
+          <button
+            onClick={() => { void exportMealPlanToCalendar(isPro() ? mealPlan : mealPlan.slice(0, 2)); }}
+            aria-label="Add meal plan to calendar"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              padding: '5px 10px', borderRadius: '10px',
+              border: '1px solid var(--accent)', background: 'transparent',
+              color: 'var(--accent)', fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            <CalendarIcon size={13} color="var(--accent)" />
+            Add to Calendar
+          </button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

@@ -121,6 +121,16 @@
   Builds on the existing Supabase sync layer (add a household/group id to the
   `pantry_items` row scope). Strong word-of-mouth driver.
 
+## ✅ Integrations shipped (2026-06-13)
+- **Food-rescue deep links** — tossing a *still-edible* item now opens a "rescue it
+  instead?" sheet (`RescueModal`) with Olio / Too Good To Go / "offer to a friend"
+  (native share). Rescuing logs it as **shared** (counts toward savings, not waste).
+  Expired items skip straight to toss. Lib: `src/lib/foodRescue.ts`. No API keys —
+  plain universal links + share sheet. Device-verify the deep links open.
+- **Meal plan → Calendar export** — "Add to Calendar" button on the Plan screen
+  builds an `.ics` and shares it (share sheet on native, download on web). Each
+  meal lands on its upcoming weekday at 6pm. Lib: `src/lib/calendarExport.ts`.
+
 ## 🗒️ Notes from daily code check (2026-06-13)
 - **Barcode auto shelf-life** — already implemented. On scan, `AddItemScreen`
   calls `lookupShelfLife(product.name, location)` and pre-fills the expiry

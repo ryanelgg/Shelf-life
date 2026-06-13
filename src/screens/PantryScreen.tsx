@@ -6,6 +6,7 @@ import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
 import { bestDinnerForPantry } from '../lib/recipeMatch';
+import { RescueModal } from '../components/RescueModal';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe } from '../types';
@@ -133,6 +134,7 @@ export function PantryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
+  const [rescueItem, setRescueItem] = useState<PantryItem | null>(null);
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
@@ -186,11 +188,21 @@ export function PantryScreen() {
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
-    if (action === 'eaten') {
-      posthog.capture('pantry_item_eaten', { days_until_expiry: daysLeft, category: item.category });
-    } else if (action === 'tossed') {
+    if (action === 'tossed') {
+      // Intercept still-edible food: offer to rescue it before it hits the bin.
+      if (getFreshnessStatus(item.expirationDate) !== 'expired') {
+        setSwipingItem(null);
+        setRescueItem(item);
+        return;
+      }
       posthog.capture('pantry_item_wasted', { days_past_expiry: -daysLeft, category: item.category, estimated_value: item.estimatedValue });
+    } else if (action === 'eaten') {
+      posthog.capture('pantry_item_eaten', { days_until_expiry: daysLeft, category: item.category });
     }
+    commitAction(item, action);
+  };
+
+  const commitAction = (item: PantryItem, action: WasteAction) => {
     addWasteLog({
       id: createWasteLogId(),
       itemName: item.name,
@@ -202,6 +214,24 @@ export function PantryScreen() {
     });
     removePantryItem(item.id);
     setSwipingItem(null);
+  };
+
+  const handleRescued = () => {
+    if (!rescueItem) return;
+    posthog.capture('food_rescued', { category: rescueItem.category, estimated_value: rescueItem.estimatedValue });
+    commitAction(rescueItem, 'shared');
+    setRescueItem(null);
+  };
+
+  const handleTossAnyway = () => {
+    if (!rescueItem) return;
+    posthog.capture('pantry_item_wasted', {
+      days_past_expiry: -getDaysUntilExpiration(rescueItem.expirationDate),
+      category: rescueItem.category,
+      estimated_value: rescueItem.estimatedValue,
+    });
+    commitAction(rescueItem, 'tossed');
+    setRescueItem(null);
   };
 
   const handleFreezeItem = (item: PantryItem) => {
@@ -897,6 +927,14 @@ export function PantryScreen() {
           item={editingItem}
           onSave={(updates) => { updatePantryItem(editingItem.id, updates); setEditingItem(null); }}
           onClose={() => setEditingItem(null)}
+        />
+      )}
+      {rescueItem && (
+        <RescueModal
+          itemName={rescueItem.name}
+          onRescued={handleRescued}
+          onTossAnyway={handleTossAnyway}
+          onClose={() => setRescueItem(null)}
         />
       )}
       <style>{`
