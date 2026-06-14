@@ -32,6 +32,6 @@ export async function scanReceipt(base64Image: string): Promise<ReceiptItem[]> {
     throw new Error(data.error || `Receipt scan failed (${response.status})`);
   }
 
-  const data = await response.json() as ReceiptOcrResponse;
+  const data = await response.json().catch(() => ({})) as ReceiptOcrResponse;
   return data.items ?? [];
 }

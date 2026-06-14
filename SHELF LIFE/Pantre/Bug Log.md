@@ -41,6 +41,15 @@
 ### Content
 - **Chicken on "counter" showing 1095 days expiry** — "chicken broth canned" was matching "counter" storage pattern; fixed shelf life lookup logic
 
+## Daily Code Check — 2026-06-14
+
+### Fixed this pass (auto-applied + verified: lint, tsc, build all green)
+- **Avo chat counter could render negative** (`CookScreen.tsx`) — free `avoChatCount` keeps climbing past the limit, so the badge showed e.g. "−2/5 free chats"; clamped with `Math.max(0, …)`
+- **Receipt scan crashed on malformed success body** (`receiptApi.ts`) — `response.json()` on a 2xx response had no `.catch`; now falls back to `{}`
+- **Community-product lookups/submits failed silently** (`communityProducts.ts`) — Supabase `error` was discarded, making a network/RLS failure indistinguishable from "no match"; now logged via `debug.warn`
+- **ESLint scanned the Obsidian vault + native folders** — flooded output with bogus errors; added `SHELF LIFE/**`, `android/**`, `ios/**` to ignores and an `argsIgnorePattern: '^_'` rule so intentional unused `_args`/`_u` params stop erroring
+- **14 unnecessary `\'` escapes** in `notifications.ts` template literals — cleaned up
+
 ## Known / Outstanding
 - **Supabase email confirmations rate-limited** (default SMTP ~2-3/hour) — needs custom SMTP via Resend + domain verification (SPF/DKIM for `pantre.app`)
 - **Resend domain `usepantre.me` showed "No activity"** — Supabase SMTP key may not have been saved correctly
@@ -49,3 +58,12 @@
 - **Notifications untested on real iPhone** — web no-ops cleanly but actual firing unconfirmed
 - **RevenueCat not wired** — Pro tier is currently just a local Zustand flag flip
 - **TypeScript build errors** to watch for: `Anthropic.MessageParam` used as namespace type, `plannedRecipes` referenced before declaration
+
+### Found 2026-06-14 — need a manual decision before fixing
+- **Notification ID collisions for heavy users** (`notifications.ts` `hashStringToInt` → `notificationIdsForItem`) — two item IDs hashing to the same mod-1e8 bucket produce identical notification IDs, so adding one item can silently cancel another's reminders. Needs a wider/namespaced ID scheme.
+- **Streak milestone can re-fire on repeat same-day logs** (`useStore.ts` `addWasteLog`/`celebrateStreakMilestone`) — milestone check runs even when `streakDays` didn't increment, re-arming the same notification. Should only celebrate when the streak actually went up this call.
+- **`syncProfileUpdates` has no retry** (`supabaseSync.ts:253`) — unlike `syncWrite`, a transient failure silently drops the streak/last-active cloud write. Route it through `syncWrite` (but it's currently `await`ed by some callers, so the contract change needs review).
+- **BarcodeScanner stream cleanup** (`BarcodeScanner.tsx`) — discards `decodeFromVideoDevice` controls and calls the app-wide `releaseAllStreams()`; async decode callback can also fire post-unmount. Should capture `IScannerControls` and `.stop()` it + guard state updates. Depends on `@zxing/browser` version API.
+- **Freezing an item can shorten its shelf life** (`PantryScreen.tsx` `handleFreezeItem`) — sets expiry to `today + freezerDays` even when the current expiry is later. Should use `max(currentDaysLeft, freezerDays)`.
+- **Negative/garbage "days" accepted on Add Item** (`AddItemScreen.tsx`) — `parseInt('5abc')`→5, `'-3'`→past date. Tighten to `n >= 0`.
+- **Env var crash risk** (`avoApi.ts` / `receiptApi.ts`) — `supabaseUrl.replace(...)` at module load throws if `VITE_SUPABASE_URL` is missing.
