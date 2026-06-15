@@ -3,6 +3,7 @@ import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { getMyHousehold } from './lib/households';
+import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
@@ -169,7 +170,7 @@ function ScreenFallback({ label }: { label: string }) {
 }
 
 export default function App() {
-  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold } = useStore();
+  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId } = useStore();
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -282,6 +283,16 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, [loadCloudData, resetOnboarding, setOAuthNewUser, setSupabaseUserId, setUser, setHousehold]);
+
+  // Live-sync the shared pantry while the user is in a household. Re-subscribes
+  // when the household changes (create/join/leave) and tears down on sign-out.
+  useEffect(() => {
+    if (household?.id && supabaseUserId) {
+      subscribeHousehold(household.id);
+      return () => unsubscribeHousehold();
+    }
+    unsubscribeHousehold();
+  }, [household?.id, supabaseUserId]);
 
   if (!user?.onboardingComplete) {
     return (

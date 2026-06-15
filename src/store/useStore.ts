@@ -56,9 +56,15 @@ interface ShelfLifeStore {
   updatePantryItem: (id: string, updates: Partial<PantryItem>) => void;
   removePantryItem: (id: string) => void;
   clearPantry: () => void;
+  // Realtime: apply a change pushed by another household member. These only
+  // mutate local state (idempotent, no write-back to Supabase) so they never
+  // echo into a sync loop.
+  upsertPantryItemLocal: (item: PantryItem) => void;
+  removePantryItemLocal: (id: string) => void;
 
   // Waste
   addWasteLog: (log: WasteLog) => void;
+  addWasteLogLocal: (log: WasteLog) => void;
 
   // Recipes
   setRecipes: (recipes: Recipe[]) => void;
@@ -379,6 +385,16 @@ export const useStore = create<ShelfLifeStore>()(
         if (supabaseUserId) syncPantryRemove(id);
         void cancelItemNotifications(id);
       },
+      upsertPantryItemLocal: (item) => set((s) => {
+        const idx = s.pantryItems.findIndex(i => i.id === item.id);
+        if (idx === -1) return { pantryItems: [...s.pantryItems, item] };
+        const next = s.pantryItems.slice();
+        next[idx] = item;
+        return { pantryItems: next };
+      }),
+      removePantryItemLocal: (id) => set((s) => ({
+        pantryItems: s.pantryItems.filter(i => i.id !== id),
+      })),
       clearPantry: () => {
         set({ pantryItems: [] });
         void cancelAllNotifications();
@@ -434,6 +450,13 @@ export const useStore = create<ShelfLifeStore>()(
           }
         }
       },
+      addWasteLogLocal: (log) => set((s) => (
+        // Dedupe by id: the originating device already appended this log, and
+        // realtime echoes it back to everyone (including the sender).
+        s.wasteLogs.some(l => l.id === log.id)
+          ? {}
+          : { wasteLogs: [...s.wasteLogs, log] }
+      )),
 
       setRecipes: (recipes) => set({ recipes }),
 

@@ -277,6 +277,35 @@ export async function resetCloudUserData(userId: string) {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 
+// Row → app-type mappers (shared by the initial load and the realtime listener).
+export function rowToPantryItem(r: PantryItemRow): PantryItem {
+  return {
+    id: r.id,
+    name: r.name,
+    category: r.category as PantryItem['category'],
+    location: r.location as PantryItem['location'],
+    quantity: r.quantity,
+    unit: r.unit,
+    addedDate: r.added_date,
+    expirationDate: r.expiration_date,
+    estimatedValue: r.estimated_value,
+    notes: r.notes ?? undefined,
+    frozen: r.frozen,
+  };
+}
+
+export function rowToWasteLog(r: WasteLogRow): WasteLog {
+  return {
+    id: r.id,
+    itemName: r.item_name,
+    category: r.category as WasteLog['category'],
+    action: r.action as WasteLog['action'],
+    date: r.date,
+    estimatedValue: r.estimated_value,
+    quantity: r.quantity,
+  };
+}
+
 export async function loadAllData(userId: string, householdId?: string | null): Promise<{
   pantryItems: PantryItem[];
   wasteLogs: WasteLog[];
@@ -292,29 +321,8 @@ export async function loadAllData(userId: string, householdId?: string | null): 
       : supabase.from('waste_logs').select('*').eq('user_id', userId),
   ]);
 
-  const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => ({
-    id: r.id,
-    name: r.name,
-    category: r.category as PantryItem['category'],
-    location: r.location as PantryItem['location'],
-    quantity: r.quantity,
-    unit: r.unit,
-    addedDate: r.added_date,
-    expirationDate: r.expiration_date,
-    estimatedValue: r.estimated_value,
-    notes: r.notes ?? undefined,
-    frozen: r.frozen,
-  }));
-
-  const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => ({
-    id: r.id,
-    itemName: r.item_name,
-    category: r.category as WasteLog['category'],
-    action: r.action as WasteLog['action'],
-    date: r.date,
-    estimatedValue: r.estimated_value,
-    quantity: r.quantity,
-  }));
+  const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => rowToPantryItem(r));
+  const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => rowToWasteLog(r));
 
   return { pantryItems, wasteLogs };
 }
