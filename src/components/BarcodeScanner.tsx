@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import posthog from 'posthog-js';
-import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
 import type { FoodCategory } from '../types';
 import { lookupCommunityProduct, submitCommunityProduct } from '../lib/communityProducts';
@@ -148,6 +148,12 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     const reader = new BrowserMultiFormatReader();
     if (!videoRef.current) return;
 
+    // Track this scanner's own controls so cleanup stops only *its* camera
+    // stream. (Previously we called the global releaseAllStreams(), which would
+    // also kill any other scanner that happened to be running.)
+    let controls: IScannerControls | undefined;
+    let cancelled = false;
+
     reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
       if (scannedRef.current) return;
       if (err instanceof NotFoundException) return;
@@ -162,6 +168,10 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
         handleNotFound(result.getText());
         setTimeout(() => { scannedRef.current = false; }, 1500);
       }
+    }).then((c) => {
+      // If the component already unmounted before the stream started, stop it now.
+      if (cancelled) c.stop();
+      else controls = c;
     }).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : 'Camera error';
       posthog.capture('barcode_scan_failed', { reason: msg, source: 'camera' });
@@ -169,7 +179,10 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       setStatus('error');
     });
 
-    return () => { BrowserMultiFormatReader.releaseAllStreams(); };
+    return () => {
+      cancelled = true;
+      controls?.stop();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
