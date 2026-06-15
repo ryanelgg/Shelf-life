@@ -235,8 +235,11 @@ export function AddItemScreen() {
   };
 
   const addReceiptItemToPantry = (item: ReceiptListItem) => {
-    const shelfDays = Number.isFinite(parseInt(item.days, 10))
-      ? parseInt(item.days, 10)
+    const parsedDays = parseInt(item.days, 10);
+    // Guard against NaN and negative values (a negative would put the
+    // expiration date in the past). Fall back to the category default.
+    const shelfDays = Number.isFinite(parsedDays)
+      ? Math.max(0, parsedDays)
       : DEFAULT_SHELF_LIFE[item.category];
     const expDate = new Date();
     expDate.setDate(expDate.getDate() + shelfDays);
@@ -279,7 +282,11 @@ export function AddItemScreen() {
     // Use !== '' so that '0' (expires today) is respected and not treated as
     // falsy — both the user-entered value and database suggestions can be 0.
     const resolvedDays = customDays !== '' ? customDays : getSuggestedShelfLifeDays(n, loc, cat);
-    const days = resolvedDays !== '' ? parseInt(resolvedDays, 10) : DEFAULT_SHELF_LIFE[cat];
+    // Guard against malformed input (e.g. '.', '-') which parseInt turns into
+    // NaN, producing an Invalid Date and a "NaN-NaN-NaN" expiration string.
+    // Mirror the clamp used on the receipt path above.
+    const parsedDays = resolvedDays !== '' ? parseInt(resolvedDays, 10) : NaN;
+    const days = Number.isFinite(parsedDays) ? Math.max(0, parsedDays) : DEFAULT_SHELF_LIFE[cat];
     const expDate = new Date();
     expDate.setDate(expDate.getDate() + days);
 

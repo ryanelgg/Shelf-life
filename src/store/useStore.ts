@@ -6,6 +6,7 @@ import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
+import * as debug from '../lib/debug';
 import {
   scheduleItemNotifications,
   cancelItemNotifications,
@@ -408,7 +409,7 @@ export const useStore = create<ShelfLifeStore>()(
           };
         });
         if (supabaseUserId && profileUpdates) {
-          syncProfileUpdates(supabaseUserId, profileUpdates);
+          syncProfileUpdates(supabaseUserId, profileUpdates).catch(debug.error);
         }
 
         // Notifications: streak protection (push out evening reminder),
@@ -482,7 +483,7 @@ export const useStore = create<ShelfLifeStore>()(
             syncProfileUpdates(s.supabaseUserId, {
               avo_chat_count: nextUser.avoChatCount,
               avo_chat_reset_date: nextUser.avoChatResetDate,
-            });
+            }).catch(debug.error);
           }
           return true;
         }
@@ -494,7 +495,7 @@ export const useStore = create<ShelfLifeStore>()(
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
             avo_chat_count: nextUser.avoChatCount,
-          });
+          }).catch(debug.error);
         }
         return true;
       },
@@ -506,7 +507,7 @@ export const useStore = create<ShelfLifeStore>()(
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
             avo_chat_count: nextUser.avoChatCount,
-          });
+          }).catch(debug.error);
         }
       },
       canAddPantryItem: (): boolean => {
