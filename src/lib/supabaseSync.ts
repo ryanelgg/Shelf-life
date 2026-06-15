@@ -277,13 +277,19 @@ export async function resetCloudUserData(userId: string) {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 
-export async function loadAllData(userId: string): Promise<{
+export async function loadAllData(userId: string, householdId?: string | null): Promise<{
   pantryItems: PantryItem[];
   wasteLogs: WasteLog[];
 }> {
+  // In a household, load the shared pantry (every member's items live under the
+  // same household_id). Solo users still load by user_id.
   const [itemsRes, logsRes] = await Promise.all([
-    supabase.from('pantry_items').select('*').eq('user_id', userId),
-    supabase.from('waste_logs').select('*').eq('user_id', userId),
+    householdId
+      ? supabase.from('pantry_items').select('*').eq('household_id', householdId)
+      : supabase.from('pantry_items').select('*').eq('user_id', userId),
+    householdId
+      ? supabase.from('waste_logs').select('*').eq('household_id', householdId)
+      : supabase.from('waste_logs').select('*').eq('user_id', userId),
   ]);
 
   const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => ({
@@ -315,10 +321,11 @@ export async function loadAllData(userId: string): Promise<{
 
 // ── Pantry sync ───────────────────────────────────────────────────────────────
 
-export function syncPantryAdd(item: PantryItem, userId: string) {
+export function syncPantryAdd(item: PantryItem, userId: string, householdId?: string | null) {
   syncWrite(() => supabase.from('pantry_items').insert({
     id: item.id,
     user_id: userId,
+    household_id: householdId ?? null,
     name: item.name,
     category: item.category,
     location: item.location,
@@ -354,10 +361,11 @@ export function syncPantryRemove(id: string) {
 
 // ── Waste log sync ────────────────────────────────────────────────────────────
 
-export function syncWasteLog(log: WasteLog, userId: string) {
+export function syncWasteLog(log: WasteLog, userId: string, householdId?: string | null) {
   syncWrite(() => supabase.from('waste_logs').insert({
     id: log.id,
     user_id: userId,
+    household_id: householdId ?? null,
     item_name: log.itemName,
     category: log.category,
     action: log.action,

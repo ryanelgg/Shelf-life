@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { getMyHousehold } from './lib/households';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
@@ -168,7 +169,7 @@ function ScreenFallback({ label }: { label: string }) {
 }
 
 export default function App() {
-  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser } = useStore();
+  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold } = useStore();
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -245,9 +246,13 @@ export default function App() {
             auth_provider: profile.auth_provider,
           });
           try {
-            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
+            // Resolve the user's household first so we load the SHARED pantry
+            // (every member's items live under the same household_id).
+            const household = await getMyHousehold(sbUser.id);
+            setHousehold(household);
+            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
             loadCloudData(pantryItems, wasteLogs);
-            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
+            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length, household: household?.id ?? null });
           } catch (err) {
             debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
           }
@@ -276,7 +281,7 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-  }, [loadCloudData, resetOnboarding, setOAuthNewUser, setSupabaseUserId, setUser]);
+  }, [loadCloudData, resetOnboarding, setOAuthNewUser, setSupabaseUserId, setUser, setHousehold]);
 
   if (!user?.onboardingComplete) {
     return (

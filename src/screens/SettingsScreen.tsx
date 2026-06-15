@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { CancelProModal } from '../components/CancelProModal';
+import { HouseholdModal } from '../components/HouseholdModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SignOutModal } from '../components/SignOutModal';
 import type { DietaryPref } from '../types';
@@ -24,9 +25,10 @@ const DIETS: { id: DietaryPref; label: string }[] = [
 const APP_STORE_REVIEW_URL = (import.meta.env.VITE_APP_STORE_REVIEW_URL as string | undefined)?.trim();
 
 export function SettingsScreen() {
-  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs } = useStore();
+  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCancelPro, setShowCancelPro] = useState(false);
+  const [showHousehold, setShowHousehold] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
   const [name, setName] = useState(user?.name || '');
@@ -258,6 +260,41 @@ export function SettingsScreen() {
               Manage Subscription in Apple Settings →
             </button>
           )}
+        </Card>
+
+        {/* Household sharing (Pro) */}
+        <Card>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+            Household
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ paddingRight: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>
+                {household ? 'Sharing on' : 'Share your pantry'}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {household
+                  ? `Code ${household.inviteCode} · up to 4 members`
+                  : 'One shared pantry for up to 4 people · Pro'}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                // Pro-gated: free users with no household are sent to upgrade.
+                if (household || user?.subscriptionTier === 'pro') setShowHousehold(true);
+                else setShowUpgrade(true);
+              }}
+              style={{
+                padding: '8px 16px', borderRadius: '10px', border: 'none',
+                background: household ? 'var(--accent)' : 'linear-gradient(135deg, #D4A44A, #B8862D)',
+                color: '#fff',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              {household ? 'Manage' : 'Set up'}
+            </button>
+          </div>
         </Card>
 
         {/* Theme */}
@@ -509,6 +546,10 @@ export function SettingsScreen() {
           onClose={() => setShowCancelPro(false)}
           onConfirm={async () => { await setSubscriptionTier('free'); setShowCancelPro(false); }}
         />
+      )}
+
+      {showHousehold && (
+        <HouseholdModal onClose={() => setShowHousehold(false)} />
       )}
 
       {showDeleteAccount && (

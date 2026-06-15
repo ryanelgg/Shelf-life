@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
-import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider } from '../types';
+import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
@@ -39,6 +39,9 @@ interface ShelfLifeStore {
   supabaseUserId: string | null;
   setSupabaseUserId: (id: string | null) => void;
   loadCloudData: (pantryItems: PantryItem[], wasteLogs: WasteLog[]) => void;
+  // Household sharing (Pro): when set, the pantry is shared with up to 4 members
+  household: Household | null;
+  setHousehold: (household: Household | null) => void;
   // Set after OAuth for new users so onboarding can skip sign-in and pre-fill name
   oauthNewUser: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null;
   setOAuthNewUser: (u: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null) => void;
@@ -296,7 +299,9 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      household: null as Household | null,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
+      setHousehold: (household) => set({ household }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
@@ -320,6 +325,7 @@ export const useStore = create<ShelfLifeStore>()(
         set({
           user: null,
           supabaseUserId: null,
+          household: null,
           oauthNewUser: null,
           pantryItems: [],
           wasteLogs: [],
@@ -345,8 +351,8 @@ export const useStore = create<ShelfLifeStore>()(
           category: item.category,
           has_expiry: !!item.expirationDate,
         });
-        const { supabaseUserId, notificationsEnabled, user } = useStore.getState();
-        if (supabaseUserId) syncPantryAdd(item, supabaseUserId);
+        const { supabaseUserId, notificationsEnabled, user, household } = useStore.getState();
+        if (supabaseUserId) syncPantryAdd(item, supabaseUserId, household?.id);
         if (notificationsEnabled) {
           void scheduleItemNotifications(item, user?.name);
           // Activity in the app — push the re-engagement reminder forward
@@ -379,8 +385,8 @@ export const useStore = create<ShelfLifeStore>()(
       },
 
       addWasteLog: (log) => {
-        const { supabaseUserId } = useStore.getState();
-        if (supabaseUserId) syncWasteLog(log, supabaseUserId);
+        const { supabaseUserId, household } = useStore.getState();
+        if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
@@ -556,6 +562,7 @@ export const useStore = create<ShelfLifeStore>()(
       },
       partialize: (state) => ({
         user: state.user,
+        household: state.household,
         pantryItems: state.pantryItems,
         wasteLogs: state.wasteLogs,
         recipes: state.recipes,
