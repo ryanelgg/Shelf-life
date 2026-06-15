@@ -127,6 +127,24 @@ export async function signInWithEmail(email: string, password: string): Promise<
 }
 
 /**
+ * Give a guest a real (anonymous) Supabase identity so server-side features —
+ * notably the avo-chat quota — can verify them by JWT. Returns the new user id,
+ * or null if anonymous sign-in isn't enabled / fails (caller falls back to a
+ * local-only id, in which case Avo chat will be unavailable for that guest).
+ *
+ * Requires "Anonymous sign-ins" to be enabled in the Supabase dashboard
+ * (Authentication → Sign In / Providers).
+ */
+export async function signInAnonymouslyGuest(): Promise<string | null> {
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    debug.error('signInAnonymouslyGuest error:', error);
+    return null;
+  }
+  return data.user?.id ?? null;
+}
+
+/**
  * Error thrown when signUpWithEmail detects the email is already registered.
  * Supabase returns a 200 with a fake user object in this case (to prevent
  * email enumeration), so we have to sniff it ourselves and surface a real

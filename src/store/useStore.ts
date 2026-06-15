@@ -71,8 +71,9 @@ interface ShelfLifeStore {
 
   // Subscription
   setSubscriptionTier: (tier: SubscriptionTier) => Promise<void>;
-  incrementAvoChat: () => boolean; // returns false if limit hit
+  incrementAvoChat: () => boolean; // optimistic local gate; returns false if limit hit
   decrementAvoChat: () => void;
+  syncAvoChatFromServer: (count: number, resetDate?: string | null) => void;
   canAddPantryItem: () => boolean;
   isPro: () => boolean;
 
@@ -467,6 +468,12 @@ export const useStore = create<ShelfLifeStore>()(
           await syncProfileUpdates(supabaseUserId, { subscription_tier: tier });
         }
       },
+      // NOTE: the avo-chat Edge Function is the source of truth for the chat
+      // count — it verifies the user and writes avo_chat_count server-side so
+      // the limit can't be bypassed by calling the function directly. These
+      // local helpers only drive instant UI feedback (gating + optimistic
+      // count); they no longer write to Supabase. After a successful chat the
+      // UI reconciles to the server's count via syncAvoChatFromServer.
       incrementAvoChat: (): boolean => {
         const s = useStore.getState();
         if (!s.user) return false;
@@ -476,38 +483,26 @@ export const useStore = create<ShelfLifeStore>()(
           // Pro: 20 chats per day, resets daily
           const count = s.user.avoChatResetDate === today ? s.user.avoChatCount : 0;
           if (count >= FREE_LIMITS.proChatPerDay) return false;
-          const nextUser = { ...s.user, avoChatCount: count + 1, avoChatResetDate: today };
-          set({ user: nextUser });
-          if (s.supabaseUserId) {
-            syncProfileUpdates(s.supabaseUserId, {
-              avo_chat_count: nextUser.avoChatCount,
-              avo_chat_reset_date: nextUser.avoChatResetDate,
-            });
-          }
+          set({ user: { ...s.user, avoChatCount: count + 1, avoChatResetDate: today } });
           return true;
         }
 
         // Free: 5 chats total (permanent, never resets)
         if (s.user.avoChatCount >= FREE_LIMITS.avoChatTotal) return false;
-        const nextUser = { ...s.user, avoChatCount: s.user.avoChatCount + 1 };
-        set({ user: nextUser });
-        if (s.supabaseUserId) {
-          syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
-          });
-        }
+        set({ user: { ...s.user, avoChatCount: s.user.avoChatCount + 1 } });
         return true;
       },
       decrementAvoChat: (): void => {
         const s = useStore.getState();
         if (!s.user) return;
-        const nextUser = { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) };
+        set({ user: { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) } });
+      },
+      syncAvoChatFromServer: (count, resetDate): void => {
+        const s = useStore.getState();
+        if (!s.user) return;
+        const nextUser = { ...s.user, avoChatCount: count };
+        if (resetDate) nextUser.avoChatResetDate = resetDate;
         set({ user: nextUser });
-        if (s.supabaseUserId) {
-          syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
-          });
-        }
       },
       canAddPantryItem: (): boolean => {
         const s = useStore.getState();

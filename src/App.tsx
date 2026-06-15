@@ -218,6 +218,14 @@ export default function App() {
       const sbUser = session.user;
       setSupabaseUserId(sbUser.id);
 
+      // Guests sign in anonymously purely so Avo chat can be verified server-side.
+      // Their onboarding is local-first (the onboarding flow writes their profile
+      // row), so skip the OAuth new-user path — which would otherwise hijack the
+      // guest into a sign-in flow — and skip cloud-data loading.
+      if (sbUser.is_anonymous) {
+        return;
+      }
+
       try {
         const profile = await loadProfile(sbUser.id);
         debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });

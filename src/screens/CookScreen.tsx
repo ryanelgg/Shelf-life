@@ -14,7 +14,7 @@ import {
   type AvoChatMessage,
   type AvoDisplayMessage,
 } from '../lib/avoChatSession';
-import { requestAvoChat } from '../lib/avoApi';
+import { requestAvoChat, AvoChatLimitError } from '../lib/avoApi';
 import * as debug from '../lib/debug';
 import { hapticLight } from '../lib/haptics';
 
@@ -27,7 +27,7 @@ const SUGGESTIONS = [
 ];
 
 export function CookScreen() {
-  const { user, pantryItems, incrementAvoChat, decrementAvoChat, isPro, setSubscriptionTier, avoAiConsent, setAvoAiConsent } = useStore();
+  const { user, pantryItems, incrementAvoChat, decrementAvoChat, syncAvoChatFromServer, isPro, setSubscriptionTier, avoAiConsent, setAvoAiConsent } = useStore();
   const sessionOwnerId = user?.id ?? null;
   const [messages, setMessages] = useState<AvoDisplayMessage[]>(() => getAvoSession(sessionOwnerId).messages);
   const [input, setInput] = useState('');
@@ -106,7 +106,13 @@ export function CookScreen() {
     });
 
     try {
-      const fullText = await requestAvoChat(historyRef.current);
+      const result = await requestAvoChat(historyRef.current);
+      const fullText = result.text;
+      // The server owns the chat count — reconcile our optimistic local value
+      // to whatever it reports (keeps us correct across devices/direct calls).
+      if (typeof result.chatCount === 'number') {
+        syncAvoChatFromServer(result.chatCount, result.chatResetDate);
+      }
       setMessages(prev => {
         const next = prev.map(m => m.id === avoMsgId ? { ...m, text: fullText } : m);
         setAvoSessionMessages(next);
@@ -121,8 +127,23 @@ export function CookScreen() {
       setAvoSessionHistory(historyRef.current);
     } catch (err) {
       debug.error('[Avo chat error]', err);
-      // Rollback the chat credit since the request failed
+      // Rollback the optimistic chat credit since the request failed
       decrementAvoChat();
+
+      // The server rejected us because the quota is actually exhausted (e.g.
+      // used up on another device). Show the upgrade path, not a generic error.
+      if (err instanceof AvoChatLimitError) {
+        setMessages(prev => {
+          const next = prev.filter(m => m.id !== avoMsgId);
+          setAvoSessionMessages(next);
+          return next;
+        });
+        setUpgradeReason('chat');
+        setShowUpgrade(true);
+        setIsStreaming(false);
+        return;
+      }
+
       const errorMsg = (err as { status?: number })?.status === 401
         ? "Looks like the API key isn't set up yet."
         : (err as { status?: number })?.status === 429

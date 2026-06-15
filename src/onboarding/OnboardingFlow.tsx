@@ -4,7 +4,7 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { useStore } from '../store/useStore';
 import { formatLocalDate } from '../types';
 import type { DietaryPref, AuthProvider, SubscriptionTier } from '../types';
-import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError, verifyEmailOtp, resendEmailOtp } from '../lib/supabaseSync';
+import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError, verifyEmailOtp, resendEmailOtp, signInAnonymouslyGuest } from '../lib/supabaseSync';
 
 type Step = 'welcome' | 'signin' | 'name' | 'diet' | 'setup' | 'ready';
 
@@ -27,7 +27,7 @@ const DIETS: { id: DietaryPref; label: string; emoji: string }[] = [
 ];
 
 export function OnboardingFlow() {
-  const { setUser, oauthNewUser, setOAuthNewUser } = useStore();
+  const { setUser, oauthNewUser, setOAuthNewUser, setSupabaseUserId } = useStore();
   const [step, setStep] = useState<Step>('welcome');
   const [name, setName] = useState('');
   const [authProvider, setAuthProvider] = useState<AuthProvider>('guest');
@@ -175,8 +175,17 @@ export function OnboardingFlow() {
     });
   };
 
-  const handleComplete = () => {
-    const { supabaseUserId } = useStore.getState();
+  const handleComplete = async () => {
+    let { supabaseUserId } = useStore.getState();
+    // Guests need a real (anonymous) Supabase identity so their Avo chat usage
+    // can be enforced server-side. Other providers already have a session here.
+    if (!supabaseUserId && authProvider === 'guest') {
+      const anonId = await signInAnonymouslyGuest();
+      if (anonId) {
+        supabaseUserId = anonId;
+        setSupabaseUserId(anonId);
+      }
+    }
     const userId = supabaseUserId ?? `u-${Date.now()}`;
     const newUser = {
       id: userId,
