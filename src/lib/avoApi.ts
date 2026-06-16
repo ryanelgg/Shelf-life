@@ -7,8 +7,8 @@ interface AvoChatResponse {
 }
 
 const REQUEST_TIMEOUT_MS = 15000;
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || 'https://placeholder.supabase.co';
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || 'placeholder-key';
 const hostedAvoChatUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/avo-chat`;
 
 async function parseErrorMessage(response: Response) {

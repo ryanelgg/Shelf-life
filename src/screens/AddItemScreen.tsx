@@ -988,7 +988,7 @@ export function AddItemScreen() {
         <UpgradeModal
           feature={mode === 'receipt' ? 'receipt' : 'pantry'}
           onClose={() => setShowUpgrade(false)}
-          onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+          onUpgrade={async () => { await setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
     </div>

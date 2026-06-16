@@ -387,7 +387,7 @@ export function CookScreen() {
         <UpgradeModal
           feature={upgradeReason}
           onClose={() => setShowUpgrade(false)}
-          onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+          onUpgrade={async () => { await setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
 

@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // 'SHELF LIFE' is the Obsidian vault (notes), not app code — don't lint it.
+  globalIgnores(['dist', 'SHELF LIFE/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +19,14 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // Allow intentionally-unused args/vars when prefixed with `_`
+      // (e.g. notification copy variants that ignore the user's name).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
 ])
