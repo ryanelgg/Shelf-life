@@ -12,6 +12,17 @@
 
 Evolved from a "modern/Zova-like" initial look to something more illustrative and grounded.
 
+### Paper-grain texture revamp (2026-06-17)
+Gave the whole app a hand-painted, "naturey" feel inspired by Avo's portrait (soft gouache-on-paper texture).
+- **Tileable fractal-noise grain** (`feTurbulence` SVG, exposed as the `--grain` CSS token in `globals.css`) overlaid via `soft-light` blend on:
+  - the page background (`body::before`, fixed, app-wide)
+  - cards (`.card-component::after`)
+  - the tab bar (`.tab-bar::before`)
+  - Overlays use a stacking-context trick (`isolation: isolate` + `z-index:-1`) so grain sits above each surface's fill but behind its content — keeps text crisp.
+- **Organic color washes:** subtle forest/wheat/lichen radial gradients on `body` for pigment-settling-into-paper depth.
+- **Warmer surfaces:** `--bg-primary` → `#f6f1e7`, `--bg-card`/`--tab-bg` cream `#fcf9f2` (was pure white) so cards read like painted paper.
+- Grain intensity is theme-aware (`--grain-opacity` / `--card-grain-opacity`, dimmed in dark mode).
+
 ## Color Palette
 | Token | Hex | Usage |
 |---|---|---|
