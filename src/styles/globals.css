@@ -26,23 +26,23 @@ input, textarea {
   --amber: #d4860b;
 
   /* Semantic tokens */
-  --bg-primary: #f6f1e7;
-  --bg-card: #fcf9f2;
-  --bg-card-hover: #f5f0e8;
+  --bg-primary: #c39e6d;       /* oak table */
+  --bg-card: #ecd9b6;          /* light board (fallback for flat surfaces) */
+  --bg-card-hover: #e4cfa6;
   --accent: #4a7c59;
   --accent-secondary: #7a8a2e;
-  --accent-dim: rgba(74, 124, 89, 0.08);
+  --accent-dim: rgba(74, 124, 89, 0.10);
   --accent-glow: rgba(74, 124, 89, 0.25);
-  --text-primary: #5a3e28;
-  --text-muted: #9a8a78;
-  --card-border: 1px solid rgba(74, 124, 89, 0.08);
+  --text-primary: #3a2a18;
+  --text-muted: #6f5b41;
+  --card-border: 1px solid rgba(90, 62, 32, 0.14);
   --card-radius: 16px;
-  --tab-bg: #fcf9f2;
-  --tab-border: rgba(74, 124, 89, 0.1);
-  --input-bg: rgba(74, 124, 89, 0.04);
-  --input-border: rgba(74, 124, 89, 0.18);
-  --overlay-bg: rgba(45, 36, 24, 0.08);
-  --tooltip-bg: #fcf9f2;
+  --tab-bg: #b88f5d;           /* oak shelf */
+  --tab-border: rgba(90, 62, 32, 0.25);
+  --input-bg: rgba(90, 62, 32, 0.06);
+  --input-border: rgba(90, 62, 32, 0.22);
+  --overlay-bg: rgba(45, 36, 24, 0.12);
+  --tooltip-bg: #ecd9b6;
 
   /* Freshness colors — muted earthy tones */
   --fresh: #5a8a70;
@@ -51,32 +51,63 @@ input, textarea {
   --expiring: #b06050;
   --expired: #8a4040;
 
-  /* ── Hand-painted paper grain ─────────────────────────────────────────
-     A tileable fractal-noise SVG used as a soft texture overlay across the
-     app, giving surfaces the warm, gouache-on-paper feel of Avo's portrait. */
-  --grain: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='180'%20height='180'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.85'%20numOctaves='2'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='saturate'%20values='0'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");
-  --grain-opacity: 0.6;
-  --card-grain-opacity: 0.5;
+  /* ── Wood grain ───────────────────────────────────────────────────────
+     Two tileable, anisotropic fractal-noise SVGs (grayscale streaks) that,
+     blended over a warm brown gradient via soft-light, read as natural wood
+     grain. Reused across every surface to give the app a real-wood feel. */
+  --wgrain: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'400'%20height%3D'400'%3E%3Cfilter%20id%3D'w'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.009%200.13'%20numOctaves%3D'4'%20seed%3D'7'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20type%3D'saturate'%20values%3D'0'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23w)'%2F%3E%3C%2Fsvg%3E");
+  --wgrain-fine: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'400'%20height%3D'400'%3E%3Cfilter%20id%3D'w'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.02%200.5'%20numOctaves%3D'2'%20seed%3D'4'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20type%3D'saturate'%20values%3D'0'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23w)'%2F%3E%3C%2Fsvg%3E");
 }
 
-/* ===== DARK THEME ===== */
+/* ── Wood surface mixins ───────────────────────────────────────────────
+   Grain SVGs blended over a warm brown gradient = natural wood. Three tones:
+   oak (table/background), board (light cards), walnut (buttons). */
+.wood-oak, .wood-board, .wood-walnut {
+  background-repeat: repeat, repeat, no-repeat;
+  background-size: 240px 240px, 460px 460px, cover;
+  background-blend-mode: soft-light, soft-light, normal;
+}
+.wood-oak {
+  background-color: #c39e6d;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #d8b585, #c39e6d);
+}
+.wood-board {
+  background-color: #e6cfa2;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #f0dcb6, #e6cfa2);
+}
+.wood-walnut {
+  background-color: #5e3a1e;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #7a4f2c, #5e3a1e);
+}
+
+/* ===== DARK THEME — stained / walnut wood ===== */
 [data-theme="dark"] {
-  --bg-primary: #1a1612;
-  --bg-card: #242018;
-  --bg-card-hover: #2c2820;
-  --text-primary: #e8ddd0;
-  --text-muted: #7a6e60;
-  --card-border: 1px solid rgba(74, 124, 89, 0.14);
-  --tab-bg: #1e1b17;
-  --tab-border: rgba(74, 124, 89, 0.14);
-  --input-bg: rgba(74, 124, 89, 0.07);
-  --input-border: rgba(74, 124, 89, 0.22);
-  --overlay-bg: rgba(0, 0, 0, 0.35);
-  --tooltip-bg: #2c2820;
-  --accent-dim: rgba(74, 124, 89, 0.14);
-  /* Grain reads softer on dark surfaces */
-  --grain-opacity: 0.4;
-  --card-grain-opacity: 0.35;
+  --bg-primary: #2a1e12;
+  --bg-card: #3a2a18;
+  --bg-card-hover: #443120;
+  --text-primary: #f0e4d2;
+  --text-muted: #b39d80;
+  --card-border: 1px solid rgba(0, 0, 0, 0.3);
+  --tab-bg: #241a10;
+  --tab-border: rgba(0, 0, 0, 0.4);
+  --input-bg: rgba(0, 0, 0, 0.18);
+  --input-border: rgba(255, 255, 255, 0.12);
+  --overlay-bg: rgba(0, 0, 0, 0.45);
+  --tooltip-bg: #3a2a18;
+  --accent-dim: rgba(122, 160, 110, 0.18);
+}
+/* Dark mode darkens the wood tones to stained walnut */
+[data-theme="dark"] .wood-oak {
+  background-color: #3a2a18;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #46301c, #2f2012);
+}
+[data-theme="dark"] .wood-board {
+  background-color: #3f2d1a;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #4c3620, #382613);
+}
+[data-theme="dark"] .wood-walnut {
+  background-color: #2a1a0e;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #3a2412, #241509);
 }
 
 html, body, #root {
@@ -91,37 +122,25 @@ html, body, #root {
 }
 
 body {
-  background-color: var(--bg-primary);
-  /* Soft, hand-painted color washes — like pigment settling into paper */
-  background-image:
-    radial-gradient(circle at 14% 6%, rgba(74, 124, 89, 0.055), transparent 42%),
-    radial-gradient(circle at 86% 96%, rgba(163, 137, 88, 0.06), transparent 46%),
-    radial-gradient(circle at 92% 10%, rgba(122, 138, 46, 0.04), transparent 40%);
+  /* Oak wood table — the app-wide surface */
+  background-color: #c39e6d;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #d8b585, #c39e6d);
+  background-repeat: repeat, repeat, no-repeat;
+  background-size: 240px 240px, 460px 460px, cover;
+  background-blend-mode: soft-light, soft-light, normal;
   background-attachment: fixed;
   color: var(--text-primary);
   font-family: 'Cormorant Garamond', serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
-  /* Establish a stacking context so the grain (::before, z-index -1) paints
-     above the body wash but below #root content. */
-  isolation: isolate;
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
-/* App-wide paper grain: sits over the page wash, beneath all content */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: var(--grain);
-  background-size: 180px 180px;
-  background-repeat: repeat;
-  opacity: var(--grain-opacity);
-  mix-blend-mode: soft-light;
+[data-theme="dark"] body {
+  background-color: #2f2012;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #46301c, #2f2012);
 }
 
 /* ── Desktop: full-bleed, no white borders ─────────────────────────────
@@ -129,8 +148,7 @@ body::before {
    the html element so anything that escapes the app (overscroll, etc)
    shows the brand color instead of system white. */
 @media (min-width: 768px) {
-  html { background: #1a1612; }
-  body { background: var(--bg-primary); }
+  html { background: #2d2418; }
 }
 
 h1, h2, h3, h4 {
@@ -506,6 +524,51 @@ h1, h2, h3, h4 {
 }
 .btn-icon:disabled { cursor: not-allowed; }
 
+/* ===== WOOD ON BUTTONS ===== */
+/* Primary action buttons become solid walnut wood */
+.btn-solid, .wood-btn {
+  position: relative;
+  isolation: isolate;
+}
+.btn-solid::before, .wood-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-color: #5e3a1e;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #7a4f2c, #5e3a1e);
+  background-repeat: repeat, repeat, no-repeat;
+  background-size: 130px 130px, 260px 260px, cover;
+  background-blend-mode: soft-light, soft-light, normal;
+}
+[data-theme="dark"] .btn-solid::before,
+[data-theme="dark"] .wood-btn::before {
+  background-color: #2a1a0e;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #3a2412, #241509);
+}
+
+/* Secondary buttons keep their color but gain a wood-grain sheen */
+.btn-pill, .btn-toggle, .btn-icon, .btn-outline {
+  position: relative;
+  isolation: isolate;
+}
+.btn-pill::before, .btn-toggle::before, .btn-icon::before, .btn-outline::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--wgrain-fine), var(--wgrain);
+  background-repeat: repeat, repeat;
+  background-size: 130px 130px, 260px 260px;
+  background-blend-mode: soft-light;
+  opacity: 0.55;
+  mix-blend-mode: soft-light;
+}
+
 .btn-tab {
   transition: color 0.2s ease, transform 0.15s ease !important;
 }
@@ -523,18 +586,18 @@ h1, h2, h3, h4 {
 
 /* ===== CARD SHADOWS ===== */
 .card-component {
-  box-shadow: 0 2px 8px rgba(45, 36, 24, 0.04), 0 0 0 1px rgba(74, 124, 89, 0.05);
+  box-shadow: 0 3px 10px rgba(45, 28, 12, 0.18), 0 0 0 1px rgba(90, 62, 32, 0.08);
   border-radius: var(--card-radius);
   transition: box-shadow 0.2s ease;
   position: relative;
-  /* Stacking context so the grain (::after, z-index -1) layers over the
-     card fill but stays behind its content. */
+  /* Stacking context so the wood layer (::after, z-index -1) covers the card
+     fill but stays behind its content. */
   isolation: isolate;
 }
 .card-component:hover {
-  box-shadow: 0 4px 16px rgba(45, 36, 24, 0.06), 0 0 0 1px rgba(74, 124, 89, 0.08);
+  box-shadow: 0 6px 18px rgba(45, 28, 12, 0.22), 0 0 0 1px rgba(90, 62, 32, 0.12);
 }
-/* Painted-paper grain on cards */
+/* Light-wood board surface on cards */
 .card-component::after {
   content: '';
   position: absolute;
@@ -542,14 +605,18 @@ h1, h2, h3, h4 {
   z-index: -1;
   border-radius: inherit;
   pointer-events: none;
-  background-image: var(--grain);
-  background-size: 160px 160px;
-  background-repeat: repeat;
-  opacity: var(--card-grain-opacity);
-  mix-blend-mode: soft-light;
+  background-color: #e6cfa2;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #f0dcb6, #e6cfa2);
+  background-repeat: repeat, repeat, no-repeat;
+  background-size: 200px 200px, 380px 380px, cover;
+  background-blend-mode: soft-light, soft-light, normal;
+}
+[data-theme="dark"] .card-component::after {
+  background-color: #3f2d1a;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #4c3620, #382613);
 }
 
-/* ===== TAB BAR ===== */
+/* ===== TAB BAR — oak shelf ===== */
 .tab-bar {
   position: relative;
   isolation: isolate;
@@ -560,11 +627,15 @@ h1, h2, h3, h4 {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: var(--grain);
-  background-size: 160px 160px;
-  background-repeat: repeat;
-  opacity: var(--card-grain-opacity);
-  mix-blend-mode: soft-light;
+  background-color: #b88f5d;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #c8a06a, #b08755);
+  background-repeat: repeat, repeat, no-repeat;
+  background-size: 220px 220px, 420px 420px, cover;
+  background-blend-mode: soft-light, soft-light, normal;
+}
+[data-theme="dark"] .tab-bar::before {
+  background-color: #241a10;
+  background-image: var(--wgrain-fine), var(--wgrain), linear-gradient(175deg, #2e2014, #1e150c);
 }
 
 /* ===== RECHARTS TOOLTIP ===== */

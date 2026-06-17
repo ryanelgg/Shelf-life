@@ -88,6 +88,7 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
           }}
         >
           <button
+            className="wood-btn"
             onClick={opt.action}
             style={{
               width: '48px',
@@ -121,6 +122,7 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
       ))}
 
       <button
+        className="wood-btn"
         onClick={() => setOpen(o => !o)}
         style={{
           position: 'fixed',

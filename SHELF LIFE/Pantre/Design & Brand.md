@@ -12,16 +12,17 @@
 
 Evolved from a "modern/Zova-like" initial look to something more illustrative and grounded.
 
-### Paper-grain texture revamp (2026-06-17)
-Gave the whole app a hand-painted, "naturey" feel inspired by Avo's portrait (soft gouache-on-paper texture).
-- **Tileable fractal-noise grain** (`feTurbulence` SVG, exposed as the `--grain` CSS token in `globals.css`) overlaid via `soft-light` blend on:
-  - the page background (`body::before`, fixed, app-wide)
-  - cards (`.card-component::after`)
-  - the tab bar (`.tab-bar::before`)
-  - Overlays use a stacking-context trick (`isolation: isolate` + `z-index:-1`) so grain sits above each surface's fill but behind its content — keeps text crisp.
-- **Organic color washes:** subtle forest/wheat/lichen radial gradients on `body` for pigment-settling-into-paper depth.
-- **Warmer surfaces:** `--bg-primary` → `#f6f1e7`, `--bg-card`/`--tab-bg` cream `#fcf9f2` (was pure white) so cards read like painted paper.
-- Grain intensity is theme-aware (`--grain-opacity` / `--card-grain-opacity`, dimmed in dark mode).
+### Wood-texture revamp (2026-06-17)
+Gave the whole app a natural **real-wood** look (replacing an initial paper-grain attempt that read too "grainy").
+- **Wood grain = SVG noise over a brown gradient.** Two anisotropic `feTurbulence` SVGs (grayscale streaks, tokens `--wgrain` + `--wgrain-fine` in `globals.css`) are blended via `soft-light` over a warm brown `linear-gradient` to read as wood.
+- **Three wood tones** (`.wood-oak` / `.wood-board` / `.wood-walnut` mixins):
+  - **Oak** — app background / "table" (`body`) and tab bar shelf (`.tab-bar::before`)
+  - **Light board** — cards (`.card-component::after`), like a cutting board
+  - **Walnut** — primary buttons (`.btn-solid::before`) and the FAB (`.wood-btn`)
+- **Buttons & everything:** primary CTAs are solid walnut; secondary buttons (pills/toggles/icon/outline) keep their color but get a wood-grain *sheen* via a `soft-light` `::before` so state colors still read.
+- Surface overlays use the `isolation: isolate` + `z-index:-1` trick so the wood covers each surface's fill but stays behind content — text stays crisp.
+- **Palette shifted to wood:** `--bg-primary` oak `#c39e6d`, `--bg-card` board `#ecd9b6`, `--tab-bg` `#b88f5d`; text darkened (`--text-primary #3a2a18`, `--text-muted #6f5b41`) for contrast on wood.
+- **Dark mode** = stained walnut (darker wood gradients + cream text).
 
 ## Color Palette
 | Token | Hex | Usage |
