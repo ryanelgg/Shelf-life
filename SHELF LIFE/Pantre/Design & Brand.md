@@ -12,13 +12,13 @@
 
 Evolved from a "modern/Zova-like" initial look to something more illustrative and grounded.
 
-### Light-wood outline (2026-06-17)
-Final direction: **keep the original farmer's-market colors** and add a thin **light-wood outline/frame** around UI elements (not a full wood recolor — earlier attempts at paper grain, then full wood surfaces, were both rejected).
-- **Light-wood texture** = two anisotropic `feTurbulence` grain SVGs (`--wgrain` + `--wgrain-fine`) blended `soft-light` over a light-oak gradient. Exposed as reusable tokens: `--wood-frame-color/-image/-size/-blend` and `--wood-frame-w` (frame width, 3px) in `globals.css`.
-- **Framing technique:** a `::before` fills the element box with wood, then a `mask` (content-box exclude) punches out the center, leaving only the ring. `border-radius: inherit` makes one rule frame any shape — cards (16px), buttons, the round FAB.
-- **Applied to:** cards (`.card-component::before`), primary buttons (`.btn-solid`), the FAB (`.wood-btn`). Tab bar gets a thin wood lip strip along its top (`.tab-bar::before`).
-- **Outline colors:** `--card-border`, `--tab-border`, `--input-border` recolored to light-wood tones so 1px borders (pills, inputs, chips) read as wood too.
-- All original palette tokens (`--bg-primary`, `--bg-card`, `--accent`, text, freshness) are **unchanged**; works in light + dark.
+### Wooden-table grain texture (2026-06-17)
+Final direction: **keep all the original farmer's-market colors** and overlay a **wooden-table wood-grain texture** on the backgrounds and buttons (earlier attempts — paper grain, full wood recolor, and a light-wood outline — were all rejected).
+- **Texture** = a single tileable grayscale SVG (`--wgrain` in `globals.css`): horizontal grain lines warped by `feTurbulence` + `feDisplacementMap` into flowing "table" waves.
+- **Color-preserving overlay:** applied as a `::before`/`::after` that blends with the surface beneath via `mix-blend-mode`, so green stays green, cream stays cream — only grain is added. Uses the `isolation: isolate` + `z-index:-1` trick to blend with the element's own fill and stay behind content.
+- **Per-theme blend** (`--wood-blend` / `--wood-op`): light theme `multiply @ 0.14` (visible grain on cream/white); dark theme `soft-light @ 0.5` (lightens grain on dark). Buttons override to `soft-light @ 0.9` since the saturated green reads as real wood grain.
+- **Applied to:** background (`body::before`, fixed), cards (`.card-component::after`), all buttons (`.btn-solid` / `.wood-btn` / `.btn-pill` / `.btn-toggle` / `.btn-icon` / `.btn-outline`), and the tab bar (`.tab-bar::before`).
+- All palette tokens (`--bg-primary`, `--bg-card`, `--accent`, text, borders, freshness) are back to their **original** values; works in light + dark.
 
 ## Color Palette
 | Token | Hex | Usage |
