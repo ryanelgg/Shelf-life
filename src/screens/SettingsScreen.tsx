@@ -7,7 +7,7 @@ import { CancelProModal } from '../components/CancelProModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SignOutModal } from '../components/SignOutModal';
 import type { DietaryPref } from '../types';
-import { deleteAccount, resetCloudUserData, signOut, syncProfileUpdates } from '../lib/supabaseSync';
+import { deleteAccount, signOut, syncProfileUpdates } from '../lib/supabaseSync';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { exportUserData } from '../lib/dataExport';
 import * as debug from '../lib/debug';
@@ -94,10 +94,8 @@ export function SettingsScreen() {
   };
 
   const handleSignOut = async () => {
-    const isPro = user?.subscriptionTier === 'pro';
-    if (!isPro && supabaseUserId) {
-      await resetCloudUserData(supabaseUserId);
-    }
+    // Sign-out only ends the session. Cloud data is preserved so the user keeps
+    // their pantry on next login. Permanent deletion lives in handleDeleteAccount.
     await signOut();
     resetOnboarding();
   };
