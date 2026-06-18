@@ -89,6 +89,7 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
         >
           <button
             onClick={opt.action}
+            aria-label={opt.label}
             style={{
               width: '48px',
               height: '48px',
@@ -122,6 +123,8 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
 
       <button
         onClick={() => setOpen(o => !o)}
+        aria-label={open ? 'Close add menu' : 'Add item'}
+        aria-expanded={open}
         style={{
           position: 'fixed',
           bottom: '86px',

@@ -85,6 +85,8 @@ export function TabBar() {
             key={id}
             className="btn-tab"
             onClick={() => setActiveTab(id)}
+            aria-label={label}
+            aria-current={isActive ? 'page' : undefined}
             style={{
               flex: 1,
               display: 'flex',

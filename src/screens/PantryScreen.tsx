@@ -307,6 +307,7 @@ export function PantryScreen() {
         </div>
         <button
           className="btn-icon"
+          aria-label="Settings"
           onClick={() => setShowSettings(true)}
           style={{
             width: 38, height: 38, borderRadius: '50%',
@@ -582,7 +583,7 @@ export function PantryScreen() {
           }}
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '16px', lineHeight: 1 }}>×</button>
+          <button aria-label="Clear search" onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '16px', lineHeight: 1 }}>×</button>
         )}
       </div>
 
@@ -979,7 +980,7 @@ function EditItemModal({ item, onSave, onClose }: {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: '17px', fontWeight: 700 }}>Edit Item</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '20px' }}>✕</button>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '20px' }}>✕</button>
         </div>
 
         {[

@@ -1622,6 +1622,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               width: 34, height: 34,
               borderRadius: '50%',

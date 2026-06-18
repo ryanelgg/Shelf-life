@@ -215,6 +215,7 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
         <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={onClose}
+            aria-label="Close scanner"
             style={{
               width: 40, height: 40, borderRadius: '50%',
               background: 'rgba(26,22,18,0.55)',
