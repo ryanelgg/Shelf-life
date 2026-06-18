@@ -7,7 +7,7 @@ import { lookupShelfLife } from '../data/shelfLife';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS } from '../types';
+import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS, getDefaultDateType } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -15,7 +15,7 @@ import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
-import type { FoodCategory, StorageLocation } from '../types';
+import type { FoodCategory, StorageLocation, DateLabelType } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt';
 type ReceiptListItem = {
@@ -132,6 +132,9 @@ export function AddItemScreen() {
   const [unit, setUnit] = useState('pcs');
   const [value, setValue] = useState('');
   const [customDays, setCustomDays] = useState('');
+  // null = follow the category's safety-first default; set = user override.
+  const [dateTypeOverride, setDateTypeOverride] = useState<DateLabelType | null>(null);
+  const effectiveDateType = dateTypeOverride ?? getDefaultDateType(category);
   useEffect(() => {
     void preloadCoreDatabase();
   }, []);
@@ -296,6 +299,7 @@ export function AddItemScreen() {
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
       estimatedValue: itemVal || parseFloat(value) || 2.99,
+      dateType: dateTypeOverride ?? getDefaultDateType(cat),
     }, method);
 
     // Reset form
@@ -303,6 +307,7 @@ export function AddItemScreen() {
     setQuantity('1');
     setValue('');
     setCustomDays('');
+    setDateTypeOverride(null);
     setSuccessName(n);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
@@ -693,6 +698,37 @@ export function AddItemScreen() {
               />
             </Card>
           </div>
+
+          <Card className="card-enter stagger-6">
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+              Date Label
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {([
+                { type: 'best-by' as DateLabelType, label: 'Best if used by', hint: 'Quality' },
+                { type: 'use-by' as DateLabelType, label: 'Use by', hint: 'Safety' },
+              ]).map(opt => {
+                const active = effectiveDateType === opt.type;
+                return (
+                  <button
+                    key={opt.type}
+                    onClick={() => setDateTypeOverride(opt.type)}
+                    aria-pressed={active}
+                    style={{
+                      flex: 1, padding: '8px 6px', borderRadius: '10px',
+                      border: active ? '1.5px solid var(--accent)' : '1px solid var(--input-border)',
+                      background: active ? 'var(--accent-dim)' : 'transparent',
+                      cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+                      fontFamily: "'Cormorant Garamond', serif",
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-primary)' }}>{opt.label}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>{opt.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
 
           {/* Add button */}
           <button

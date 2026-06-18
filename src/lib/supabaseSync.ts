@@ -348,6 +348,7 @@ export async function loadAllData(userId: string): Promise<{
     estimatedValue: r.estimated_value,
     notes: r.notes ?? undefined,
     frozen: r.frozen,
+    dateType: (r.date_type as PantryItem['dateType']) ?? undefined,
   }));
 
   const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => ({
@@ -379,6 +380,7 @@ export function syncPantryAdd(item: PantryItem, userId: string) {
     estimated_value: item.estimatedValue,
     notes: item.notes ?? null,
     frozen: item.frozen ?? false,
+    date_type: item.dateType ?? null,
   }), 'pantryAdd');
 }
 
@@ -394,6 +396,7 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
   if (updates.estimatedValue !== undefined)  row.estimated_value = updates.estimatedValue;
   if (updates.notes !== undefined)           row.notes = updates.notes ?? null;
   if (updates.frozen !== undefined)          row.frozen = updates.frozen;
+  if (updates.dateType !== undefined)        row.date_type = updates.dateType ?? null;
 
   syncWrite(() => supabase.from('pantry_items').update(row).eq('id', id), 'pantryUpdate');
 }

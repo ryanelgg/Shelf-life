@@ -46,6 +46,12 @@ export type StorageLocation = 'fridge' | 'freezer' | 'pantry' | 'counter';
 
 export type FreshnessStatus = 'fresh' | 'good' | 'expiring-soon' | 'expiring' | 'expired';
 
+// AB 660-aligned date semantics. "Use by" = a safety date (don't eat after);
+// "Best if used by" = a quality date (fine after, just degraded). Stored
+// per-item; optional so items created before this field fall back to the
+// category default via resolveDateType().
+export type DateLabelType = 'use-by' | 'best-by';
+
 export interface PantryItem {
   id: string;
   name: string;
@@ -58,6 +64,7 @@ export interface PantryItem {
   estimatedValue: number;
   notes?: string;
   frozen?: boolean;
+  dateType?: DateLabelType;
 }
 
 export type WasteAction = 'eaten' | 'tossed' | 'composted' | 'donated' | 'shared';
@@ -228,3 +235,41 @@ export const DEFAULT_SHELF_LIFE: Record<FoodCategory, number> = {
   Deli: 5,
   Other: 30,
 };
+
+// Safety-first defaults: animal/prepared products that pose a real safety
+// risk past their date default to "Use by"; everything else is a quality
+// ("Best if used by") date. Users can override per item.
+export const DEFAULT_DATE_TYPE: Record<FoodCategory, DateLabelType> = {
+  Produce: 'best-by',
+  Dairy: 'use-by',
+  Meat: 'use-by',
+  Seafood: 'use-by',
+  Grains: 'best-by',
+  Frozen: 'best-by',
+  Canned: 'best-by',
+  Snacks: 'best-by',
+  Beverages: 'best-by',
+  Condiments: 'best-by',
+  Bakery: 'best-by',
+  Deli: 'use-by',
+  Other: 'best-by',
+};
+
+export function getDefaultDateType(category: FoodCategory): DateLabelType {
+  return DEFAULT_DATE_TYPE[category];
+}
+
+/** An item's date type, defaulting from its category when unset (older items). */
+export function resolveDateType(item: { dateType?: DateLabelType; category: FoodCategory }): DateLabelType {
+  return item.dateType ?? getDefaultDateType(item.category);
+}
+
+/** Full AB 660 phrasing for prominent display. */
+export function dateTypeLabel(t: DateLabelType): string {
+  return t === 'use-by' ? 'Use by' : 'Best if used by';
+}
+
+/** Compact phrasing for tight list rows. */
+export function dateTypeShortLabel(t: DateLabelType): string {
+  return t === 'use-by' ? 'Use by' : 'Best by';
+}
