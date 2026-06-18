@@ -95,6 +95,10 @@ export interface WasteLog {
   date: string;
   estimatedValue: number;
   quantity: number;
+  // Who logged it. Used to attribute entries to members in a shared household
+  // (the "Saved Together" leaderboard). Optional: logs created before this
+  // field, or by a solo user, simply go unattributed.
+  userId?: string;
 }
 
 export interface Recipe {
