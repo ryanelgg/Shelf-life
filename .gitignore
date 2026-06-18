@@ -34,3 +34,6 @@ scripts/sr-legacy.zip
 scripts/survey.zip
 scripts/usda-raw.zip
 .env
+
+# Supabase CLI scratch files (should never be committed)
+supabase/.temp/
