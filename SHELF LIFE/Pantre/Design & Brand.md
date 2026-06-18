@@ -12,17 +12,13 @@
 
 Evolved from a "modern/Zova-like" initial look to something more illustrative and grounded.
 
-### Wood-texture revamp (2026-06-17)
-Gave the whole app a natural **real-wood** look (replacing an initial paper-grain attempt that read too "grainy").
-- **Wood grain = SVG noise over a brown gradient.** Two anisotropic `feTurbulence` SVGs (grayscale streaks, tokens `--wgrain` + `--wgrain-fine` in `globals.css`) are blended via `soft-light` over a warm brown `linear-gradient` to read as wood.
-- **Three wood tones** (`.wood-oak` / `.wood-board` / `.wood-walnut` mixins):
-  - **Oak** — app background / "table" (`body`) and tab bar shelf (`.tab-bar::before`)
-  - **Light board** — cards (`.card-component::after`), like a cutting board
-  - **Walnut** — primary buttons (`.btn-solid::before`) and the FAB (`.wood-btn`)
-- **Buttons & everything:** primary CTAs are solid walnut; secondary buttons (pills/toggles/icon/outline) keep their color but get a wood-grain *sheen* via a `soft-light` `::before` so state colors still read.
-- Surface overlays use the `isolation: isolate` + `z-index:-1` trick so the wood covers each surface's fill but stays behind content — text stays crisp.
-- **Palette shifted to wood:** `--bg-primary` oak `#c39e6d`, `--bg-card` board `#ecd9b6`, `--tab-bg` `#b88f5d`; text darkened (`--text-primary #3a2a18`, `--text-muted #6f5b41`) for contrast on wood.
-- **Dark mode** = stained walnut (darker wood gradients + cream text).
+### Light-wood outline (2026-06-17)
+Final direction: **keep the original farmer's-market colors** and add a thin **light-wood outline/frame** around UI elements (not a full wood recolor — earlier attempts at paper grain, then full wood surfaces, were both rejected).
+- **Light-wood texture** = two anisotropic `feTurbulence` grain SVGs (`--wgrain` + `--wgrain-fine`) blended `soft-light` over a light-oak gradient. Exposed as reusable tokens: `--wood-frame-color/-image/-size/-blend` and `--wood-frame-w` (frame width, 3px) in `globals.css`.
+- **Framing technique:** a `::before` fills the element box with wood, then a `mask` (content-box exclude) punches out the center, leaving only the ring. `border-radius: inherit` makes one rule frame any shape — cards (16px), buttons, the round FAB.
+- **Applied to:** cards (`.card-component::before`), primary buttons (`.btn-solid`), the FAB (`.wood-btn`). Tab bar gets a thin wood lip strip along its top (`.tab-bar::before`).
+- **Outline colors:** `--card-border`, `--tab-border`, `--input-border` recolored to light-wood tones so 1px borders (pills, inputs, chips) read as wood too.
+- All original palette tokens (`--bg-primary`, `--bg-card`, `--accent`, text, freshness) are **unchanged**; works in light + dark.
 
 ## Color Palette
 | Token | Hex | Usage |
