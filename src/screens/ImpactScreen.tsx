@@ -1,10 +1,34 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
+import { getHouseholdMembers } from '../lib/households';
+import { formatLocalDate } from '../types';
+import type { WasteLog } from '../types';
+
+/** Consecutive days (ending today or yesterday) with at least one "save"
+ * (any non-toss action) anywhere in the household. Computed from the shared
+ * waste logs so it stays in sync without extra server state. */
+function computeSharedStreak(logs: WasteLog[]): number {
+  const saveDays = new Set(logs.filter(l => l.action !== 'tossed').map(l => l.date));
+  if (saveDays.size === 0) return 0;
+  const cursor = new Date();
+  // Allow today OR yesterday as the anchor so the streak doesn't read 0 before
+  // anyone logs today.
+  if (!saveDays.has(formatLocalDate(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!saveDays.has(formatLocalDate(cursor))) return 0;
+  }
+  let streak = 0;
+  while (saveDays.has(formatLocalDate(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
 
 function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string; size?: number; color?: string }) {
   const s = { width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 as const };
@@ -61,7 +85,20 @@ function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string;
 }
 
 export function ImpactScreen() {
-  const { wasteLogs, user } = useStore();
+  const { wasteLogs, user, household } = useStore();
+
+  // Member count for the "Saved Together" card. Only fetched when in a household.
+  const [memberCount, setMemberCount] = useState(0);
+  useEffect(() => {
+    // Only fetch when in a household; the card that uses this is gated on
+    // `household` too, so a stale count while solo is never shown.
+    if (!household) return;
+    let cancelled = false;
+    getHouseholdMembers().then(members => { if (!cancelled) setMemberCount(members.length); });
+    return () => { cancelled = true; };
+  }, [household]);
+
+  const sharedStreak = useMemo(() => computeSharedStreak(wasteLogs), [wasteLogs]);
 
   const stats = useMemo(() => {
     const eaten = wasteLogs.filter(w => w.action === 'eaten');
@@ -254,6 +291,57 @@ export function ImpactScreen() {
           Keep it up! No food tossed in {streakDays} days.
         </div>
       </Card>
+
+      {/* Saved Together — household shared tally + joint streak (FREE).
+          wasteLogs is already household-wide when in a household (loaded by
+          household_id + realtime), so these totals reflect the whole crew. */}
+      {household && (
+        <Card className="card-enter stagger-6" style={{
+          background: 'rgba(74, 124, 89, 0.06)',
+          border: '1px solid rgba(74, 124, 89, 0.16)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+            <ImpactIcon type="streak" size={24} color="var(--accent)" />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>Saved Together</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {memberCount > 0 ? `Your household of ${memberCount}` : 'Your household'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div className="mono" style={{ fontSize: '26px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
+                {stats.itemsSaved}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>
+                Items saved
+              </div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div className="mono" style={{ fontSize: '26px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
+                ${stats.moneySaved.toFixed(0)}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>
+                Saved
+              </div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div className="mono" style={{ fontSize: '26px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
+                {sharedStreak}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>
+                Day streak
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '12px', textAlign: 'center' }}>
+            {sharedStreak > 0
+              ? `${sharedStreak} day${sharedStreak === 1 ? '' : 's'} running — keep the household streak alive!`
+              : 'Log a save today to start your household streak.'}
+          </div>
+        </Card>
+      )}
 
       {/* Weekly Challenge */}
       <Card className="card-enter stagger-6" style={{

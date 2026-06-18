@@ -22,9 +22,17 @@ export interface ProfileRow {
   created_at: string;
 }
 
+export interface HouseholdRow {
+  id: string;
+  owner_id: string;
+  invite_code: string;
+  created_at: string;
+}
+
 export interface PantryItemRow {
   id: string;
   user_id: string;
+  household_id: string | null;
   name: string;
   category: string;
   location: string;
@@ -35,11 +43,13 @@ export interface PantryItemRow {
   estimated_value: number;
   notes: string | null;
   frozen: boolean;
+  date_type: string | null;
 }
 
 export interface WasteLogRow {
   id: string;
   user_id: string;
+  household_id: string | null;
   item_name: string;
   category: string;
   action: string;

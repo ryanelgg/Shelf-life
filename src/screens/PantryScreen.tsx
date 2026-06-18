@@ -3,11 +3,11 @@ import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate } from '../types';
+import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
-import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe } from '../types';
+import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe, DateLabelType } from '../types';
 
 const LOCATIONS: StorageLocation[] = ['fridge', 'freezer', 'pantry', 'counter'];
 const LOCATION_LABELS: Record<StorageLocation, string> = {
@@ -307,6 +307,7 @@ export function PantryScreen() {
         </div>
         <button
           className="btn-icon"
+          aria-label="Settings"
           onClick={() => setShowSettings(true)}
           style={{
             width: 38, height: 38, borderRadius: '50%',
@@ -582,7 +583,7 @@ export function PantryScreen() {
           }}
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '16px', lineHeight: 1 }}>×</button>
+          <button aria-label="Clear search" onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '16px', lineHeight: 1 }}>×</button>
         )}
       </div>
 
@@ -870,6 +871,9 @@ export function PantryScreen() {
                       {item.quantity} {item.unit}
                     </span>
                     <StorageLocationIcon location={item.location} size={13} color="var(--text-muted)" />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      · {dateTypeShortLabel(resolveDateType(item))}
+                    </span>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -955,6 +959,7 @@ function EditItemModal({ item, onSave, onClose }: {
   const [expDate, setExpDate] = useState(item.expirationDate);
   const [value, setValue] = useState(String(item.estimatedValue));
   const [location, setLocation] = useState<StorageLocation>(item.location);
+  const [dateType, setDateType] = useState<DateLabelType>(resolveDateType(item));
 
   const LOCATIONS: StorageLocation[] = ['fridge', 'freezer', 'pantry', 'counter'];
   const LOCATION_LABELS: Record<StorageLocation, string> = { fridge: 'Fridge', freezer: 'Freezer', pantry: 'Pantry', counter: 'Counter' };
@@ -979,7 +984,7 @@ function EditItemModal({ item, onSave, onClose }: {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: '17px', fontWeight: 700 }}>Edit Item</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '20px' }}>✕</button>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '20px' }}>✕</button>
         </div>
 
         {[
@@ -1002,6 +1007,25 @@ function EditItemModal({ item, onSave, onClose }: {
         ))}
 
         <div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Date Label</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {([
+              { type: 'best-by' as DateLabelType, label: 'Best if used by' },
+              { type: 'use-by' as DateLabelType, label: 'Use by' },
+            ]).map(opt => (
+              <button key={opt.type} onClick={() => setDateType(opt.type)} aria-pressed={dateType === opt.type} style={{
+                flex: 1, padding: '8px 6px', borderRadius: '10px',
+                border: dateType === opt.type ? '1.5px solid var(--accent)' : '1px solid var(--input-border)',
+                background: dateType === opt.type ? 'var(--accent-dim)' : 'transparent',
+                cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '13px', fontWeight: 700,
+                color: dateType === opt.type ? 'var(--accent)' : 'var(--text-primary)',
+              }}>{opt.label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Location</div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {LOCATIONS.map(loc => (
@@ -1019,7 +1043,7 @@ function EditItemModal({ item, onSave, onClose }: {
         </div>
 
         <button
-          onClick={() => onSave({ name: name.trim(), quantity: parseFloat(quantity) || 1, unit, expirationDate: expDate, estimatedValue: parseFloat(value) || item.estimatedValue, location })}
+          onClick={() => onSave({ name: name.trim(), quantity: parseFloat(quantity) || 1, unit, expirationDate: expDate, estimatedValue: parseFloat(value) || item.estimatedValue, location, dateType })}
           style={{
             width: '100%', padding: '14px', background: 'var(--accent)', border: 'none',
             borderRadius: '12px', color: '#fff', fontFamily: "'Cormorant Garamond', serif",

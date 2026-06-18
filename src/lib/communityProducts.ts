@@ -28,11 +28,13 @@ export async function submitCommunityProduct(
   product: { name: string; brand: string; category: FoodCategory },
 ): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
+  // onConflict: 'barcode' targets the community_products_pkey so a re-scan of
+  // a known barcode updates the existing row instead of inserting a duplicate.
   await supabase.from('community_products').upsert({
     barcode,
     name: product.name.trim(),
     brand: product.brand.trim() || null,
     category: product.category,
     submitted_by: user?.id ?? null,
-  });
+  }, { onConflict: 'barcode' });
 }
