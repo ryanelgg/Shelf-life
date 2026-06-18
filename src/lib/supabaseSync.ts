@@ -321,22 +321,9 @@ export async function resetCloudUserData(userId: string) {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 
-export async function loadAllData(userId: string): Promise<{
-  pantryItems: PantryItem[];
-  wasteLogs: WasteLog[];
-}> {
-  const [itemsRes, logsRes] = await Promise.all([
-    supabase.from('pantry_items').select('*').eq('user_id', userId),
-    supabase.from('waste_logs').select('*').eq('user_id', userId),
-  ]);
-
-  // Throw on error rather than coercing to []. A failed read must not look
-  // identical to "this user owns 0 items" — otherwise the caller would
-  // overwrite a populated local pantry with a blank one on a network blip.
-  if (itemsRes.error) throw itemsRes.error;
-  if (logsRes.error) throw logsRes.error;
-
-  const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => ({
+// Row → app-type mappers (shared by the initial load and the realtime listener).
+export function rowToPantryItem(r: PantryItemRow): PantryItem {
+  return {
     id: r.id,
     name: r.name,
     category: r.category as PantryItem['category'],
@@ -349,9 +336,11 @@ export async function loadAllData(userId: string): Promise<{
     notes: r.notes ?? undefined,
     frozen: r.frozen,
     dateType: (r.date_type as PantryItem['dateType']) ?? undefined,
-  }));
+  };
+}
 
-  const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => ({
+export function rowToWasteLog(r: WasteLogRow): WasteLog {
+  return {
     id: r.id,
     itemName: r.item_name,
     category: r.category as WasteLog['category'],
@@ -359,17 +348,43 @@ export async function loadAllData(userId: string): Promise<{
     date: r.date,
     estimatedValue: r.estimated_value,
     quantity: r.quantity,
-  }));
+  };
+}
+
+export async function loadAllData(userId: string, householdId?: string | null): Promise<{
+  pantryItems: PantryItem[];
+  wasteLogs: WasteLog[];
+}> {
+  // In a household, load the shared pantry (every member's items live under the
+  // same household_id). Solo users still load by user_id.
+  const [itemsRes, logsRes] = await Promise.all([
+    householdId
+      ? supabase.from('pantry_items').select('*').eq('household_id', householdId)
+      : supabase.from('pantry_items').select('*').eq('user_id', userId),
+    householdId
+      ? supabase.from('waste_logs').select('*').eq('household_id', householdId)
+      : supabase.from('waste_logs').select('*').eq('user_id', userId),
+  ]);
+
+  // Throw on error rather than coercing to []. A failed read must not look
+  // identical to "0 items" — otherwise the caller would overwrite a populated
+  // local pantry with a blank one on a network blip.
+  if (itemsRes.error) throw itemsRes.error;
+  if (logsRes.error) throw logsRes.error;
+
+  const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => rowToPantryItem(r));
+  const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => rowToWasteLog(r));
 
   return { pantryItems, wasteLogs };
 }
 
 // ── Pantry sync ───────────────────────────────────────────────────────────────
 
-export function syncPantryAdd(item: PantryItem, userId: string) {
+export function syncPantryAdd(item: PantryItem, userId: string, householdId?: string | null) {
   syncWrite(() => supabase.from('pantry_items').insert({
     id: item.id,
     user_id: userId,
+    household_id: householdId ?? null,
     name: item.name,
     category: item.category,
     location: item.location,
@@ -407,10 +422,11 @@ export function syncPantryRemove(id: string) {
 
 // ── Waste log sync ────────────────────────────────────────────────────────────
 
-export function syncWasteLog(log: WasteLog, userId: string) {
+export function syncWasteLog(log: WasteLog, userId: string, householdId?: string | null) {
   syncWrite(() => supabase.from('waste_logs').insert({
     id: log.id,
     user_id: userId,
+    household_id: householdId ?? null,
     item_name: log.itemName,
     category: log.category,
     action: log.action,

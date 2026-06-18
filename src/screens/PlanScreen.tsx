@@ -1587,7 +1587,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   const [finale, setFinale] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const [usedIds, setUsedIds] = useState<string[]>(() => matchedItems.map(item => item.id));
-  const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / recipe.steps.length) * 100;
+  const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / Math.max(1, recipe.steps.length)) * 100;
   const activeStep = recipe.steps[currentStep] ?? recipe.steps[0] ?? 'Cook and enjoy.';
 
   const goNext = () => {

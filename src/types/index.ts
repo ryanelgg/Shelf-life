@@ -52,6 +52,24 @@ export type FreshnessStatus = 'fresh' | 'good' | 'expiring-soon' | 'expiring' | 
 // category default via resolveDateType().
 export type DateLabelType = 'use-by' | 'best-by';
 
+// ── Household sharing (Pro feature, up to 4 members) ─────────────────────────
+export type HouseholdRole = 'owner' | 'member';
+
+export const HOUSEHOLD_MAX_MEMBERS = 4;
+
+export interface Household {
+  id: string;
+  inviteCode: string;
+  ownerId: string;
+  role: HouseholdRole;
+}
+
+export interface HouseholdMember {
+  userId: string;
+  name: string | null;
+  role: HouseholdRole;
+}
+
 export interface PantryItem {
   id: string;
   name: string;

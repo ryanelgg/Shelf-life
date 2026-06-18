@@ -156,6 +156,76 @@ export default defineConfig(({ mode }) => {
           })
         },
       },
+      {
+        name: 'fridge-scan-dev-endpoint',
+        configureServer(server) {
+          server.middlewares.use('/api/fridge-scan', async (request, response) => {
+            if (request.method !== 'POST') {
+              sendJson(response, 405, { error: 'Method not allowed' })
+              return
+            }
+
+            const anthropicKey = env.VITE_ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY
+            if (!anthropicKey) {
+              sendJson(response, 500, { error: 'Missing ANTHROPIC_API_KEY for local fridge scan' })
+              return
+            }
+
+            try {
+              const body = await readJsonBody(request)
+              const image = body.image as string | undefined
+              if (!image) {
+                sendJson(response, 400, { error: 'No image provided' })
+                return
+              }
+
+              const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': anthropicKey,
+                  'anthropic-version': '2023-06-01',
+                },
+                body: JSON.stringify({
+                  model: 'claude-sonnet-4-20250514',
+                  max_tokens: 1024,
+                  messages: [{
+                    role: 'user',
+                    content: [
+                      {
+                        type: 'image',
+                        source: { type: 'base64', media_type: 'image/jpeg', data: image },
+                      },
+                      {
+                        type: 'text',
+                        text: 'List the distinct food/drink items in this fridge/shelf photo. Return ONLY a JSON array like [{"name":"Milk","quantity":1}]. Skip non-food objects. If no food, return [].',
+                      },
+                    ],
+                  }],
+                }),
+              })
+
+              if (!anthropicResponse.ok) {
+                const errorText = await anthropicResponse.text()
+                sendJson(response, anthropicResponse.status, { error: errorText || 'Anthropic request failed' })
+                return
+              }
+
+              const result = await anthropicResponse.json() as {
+                content?: Array<{ type: string; text?: string }>
+              }
+              const text = result.content?.find((b: { type: string }) => b.type === 'text')?.text?.trim() ?? '[]'
+              const jsonMatch = text.match(/\[[\s\S]*\]/)
+              const items = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+
+              sendJson(response, 200, { items })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Unexpected error'
+              sendJson(response, 500, { error: message })
+            }
+          })
+        },
+      },
     ],
     build: {
       rollupOptions: {

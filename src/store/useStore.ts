@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
-import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider } from '../types';
+import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
+import * as debug from '../lib/debug';
 import {
   scheduleItemNotifications,
   cancelItemNotifications,
@@ -38,6 +39,9 @@ interface ShelfLifeStore {
   supabaseUserId: string | null;
   setSupabaseUserId: (id: string | null) => void;
   loadCloudData: (pantryItems: PantryItem[], wasteLogs: WasteLog[]) => void;
+  // Household sharing (Pro): when set, the pantry is shared with up to 4 members
+  household: Household | null;
+  setHousehold: (household: Household | null) => void;
   // Set after OAuth for new users so onboarding can skip sign-in and pre-fill name
   oauthNewUser: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null;
   setOAuthNewUser: (u: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null) => void;
@@ -52,9 +56,15 @@ interface ShelfLifeStore {
   updatePantryItem: (id: string, updates: Partial<PantryItem>) => void;
   removePantryItem: (id: string) => void;
   clearPantry: () => void;
+  // Realtime: apply a change pushed by another household member. These only
+  // mutate local state (idempotent, no write-back to Supabase) so they never
+  // echo into a sync loop.
+  upsertPantryItemLocal: (item: PantryItem) => void;
+  removePantryItemLocal: (id: string) => void;
 
   // Waste
   addWasteLog: (log: WasteLog) => void;
+  addWasteLogLocal: (log: WasteLog) => void;
 
   // Recipes
   setRecipes: (recipes: Recipe[]) => void;
@@ -295,7 +305,9 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      household: null as Household | null,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
+      setHousehold: (household) => set({ household }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
@@ -319,6 +331,7 @@ export const useStore = create<ShelfLifeStore>()(
         set({
           user: null,
           supabaseUserId: null,
+          household: null,
           oauthNewUser: null,
           pantryItems: [],
           wasteLogs: [],
@@ -344,8 +357,8 @@ export const useStore = create<ShelfLifeStore>()(
           category: item.category,
           has_expiry: !!item.expirationDate,
         });
-        const { supabaseUserId, notificationsEnabled, user } = useStore.getState();
-        if (supabaseUserId) syncPantryAdd(item, supabaseUserId);
+        const { supabaseUserId, notificationsEnabled, user, household } = useStore.getState();
+        if (supabaseUserId) syncPantryAdd(item, supabaseUserId, household?.id);
         if (notificationsEnabled) {
           void scheduleItemNotifications(item, user?.name);
           // Activity in the app — push the re-engagement reminder forward
@@ -372,14 +385,24 @@ export const useStore = create<ShelfLifeStore>()(
         if (supabaseUserId) syncPantryRemove(id);
         void cancelItemNotifications(id);
       },
+      upsertPantryItemLocal: (item) => set((s) => {
+        const idx = s.pantryItems.findIndex(i => i.id === item.id);
+        if (idx === -1) return { pantryItems: [...s.pantryItems, item] };
+        const next = s.pantryItems.slice();
+        next[idx] = item;
+        return { pantryItems: next };
+      }),
+      removePantryItemLocal: (id) => set((s) => ({
+        pantryItems: s.pantryItems.filter(i => i.id !== id),
+      })),
       clearPantry: () => {
         set({ pantryItems: [] });
         void cancelAllNotifications();
       },
 
       addWasteLog: (log) => {
-        const { supabaseUserId } = useStore.getState();
-        if (supabaseUserId) syncWasteLog(log, supabaseUserId);
+        const { supabaseUserId, household } = useStore.getState();
+        if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
@@ -408,7 +431,7 @@ export const useStore = create<ShelfLifeStore>()(
           };
         });
         if (supabaseUserId && profileUpdates) {
-          syncProfileUpdates(supabaseUserId, profileUpdates);
+          syncProfileUpdates(supabaseUserId, profileUpdates).catch(debug.error);
         }
 
         // Notifications: streak protection (push out evening reminder),
@@ -427,6 +450,13 @@ export const useStore = create<ShelfLifeStore>()(
           }
         }
       },
+      addWasteLogLocal: (log) => set((s) => (
+        // Dedupe by id: the originating device already appended this log, and
+        // realtime echoes it back to everyone (including the sender).
+        s.wasteLogs.some(l => l.id === log.id)
+          ? {}
+          : { wasteLogs: [...s.wasteLogs, log] }
+      )),
 
       setRecipes: (recipes) => set({ recipes }),
 
@@ -482,7 +512,7 @@ export const useStore = create<ShelfLifeStore>()(
             syncProfileUpdates(s.supabaseUserId, {
               avo_chat_count: nextUser.avoChatCount,
               avo_chat_reset_date: nextUser.avoChatResetDate,
-            });
+            }).catch(debug.error);
           }
           return true;
         }
@@ -494,7 +524,7 @@ export const useStore = create<ShelfLifeStore>()(
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
             avo_chat_count: nextUser.avoChatCount,
-          });
+          }).catch(debug.error);
         }
         return true;
       },
@@ -506,7 +536,7 @@ export const useStore = create<ShelfLifeStore>()(
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
             avo_chat_count: nextUser.avoChatCount,
-          });
+          }).catch(debug.error);
         }
       },
       canAddPantryItem: (): boolean => {
@@ -555,6 +585,7 @@ export const useStore = create<ShelfLifeStore>()(
       },
       partialize: (state) => ({
         user: state.user,
+        household: state.household,
         pantryItems: state.pantryItems,
         wasteLogs: state.wasteLogs,
         recipes: state.recipes,

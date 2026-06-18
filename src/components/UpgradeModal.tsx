@@ -4,7 +4,7 @@ import { Card } from './Card';
 import { hapticSuccess } from '../lib/haptics';
 
 interface UpgradeModalProps {
-  feature: 'pantry' | 'chat' | 'receipt' | 'mealplan' | 'briefing' | 'onboarding';
+  feature: 'pantry' | 'chat' | 'receipt' | 'fridge' | 'mealplan' | 'briefing' | 'onboarding';
   onClose: () => void;
   onUpgrade: () => void;
   /** Delay in ms before the close button appears. 0 = immediate. */
@@ -23,6 +23,10 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
   receipt: {
     title: 'Receipt scanning is a Pro feature',
     description: 'Snap a photo of your grocery receipt and auto-add items to your pantry.',
+  },
+  fridge: {
+    title: 'Snap Your Fridge is a Pro feature',
+    description: 'Take one photo of your fridge or shelf and let Avo add everything to your pantry in seconds.',
   },
   mealplan: {
     title: 'Advanced meal planning is Pro',

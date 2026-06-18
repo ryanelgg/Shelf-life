@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.receipt-ocr]
 verify_jwt = false
+
+[functions.fridge-scan]
+verify_jwt = false

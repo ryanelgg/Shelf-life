@@ -193,7 +193,9 @@ export function OnboardingFlow() {
       avoChatResetDate: formatLocalDate(new Date()),
     };
     setUser(newUser);
-    if (supabaseUserId) upsertProfile(newUser, supabaseUserId);
+    // Fire-and-forget: the user proceeds regardless, but swallow rejections so
+    // a failed upsert doesn't surface as an unhandled promise rejection.
+    if (supabaseUserId) upsertProfile(newUser, supabaseUserId).catch(() => {});
   };
 
   return (
