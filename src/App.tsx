@@ -200,7 +200,14 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    // Monotonic token: each auth event claims a number, and any async work
+    // checks it's still the latest before applying state. This stops two
+    // overlapping events (e.g. rapid SIGNED_IN/TOKEN_REFRESHED) from loading
+    // profile/data out of order and clobbering each other.
+    let authSeq = 0;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const mySeq = ++authSeq;
       debug.log('[auth] state change:', event, 'userId:', session?.user?.id);
       if (event === 'SIGNED_OUT') {
         if (wasSignOutUserInitiated()) {
@@ -218,55 +225,59 @@ export default function App() {
       const sbUser = session.user;
       setSupabaseUserId(sbUser.id);
 
+      // loadProfile throws only on a real error. A null result means the row
+      // genuinely doesn't exist (a new user). So a thrown error here is a
+      // transient failure — bail WITHOUT routing the user into onboarding, so a
+      // returning user keeps their locally-persisted session instead of being
+      // forced to re-onboard on a network blip.
+      let profile;
       try {
-        const profile = await loadProfile(sbUser.id);
-        debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
-        if (profile?.onboarding_complete) {
-          // Transition to main app BEFORE loading pantry/waste data — a failed
-          // data load must not leave the user stranded on the sign-in screen.
-          setUser({
-            id: sbUser.id,
-            name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
-            email: profile.email ?? sbUser.email,
-            authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
-            dietaryPreferences: (profile.dietary_preferences ?? []) as never,
-            createdAt: profile.created_at,
-            onboardingComplete: true,
-            streakDays: profile.streak_days,
-            lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
-            subscriptionTier: profile.subscription_tier as 'free' | 'pro',
-            avoChatCount: profile.avo_chat_count,
-            avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
-          });
-          debug.log('[auth] setUser called — transitioning to main app');
-          posthog.identify(sbUser.id, {
-            email: sbUser.email,
-            tier: profile.subscription_tier,
-            auth_provider: profile.auth_provider,
-          });
-          try {
-            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
-            loadCloudData(pantryItems, wasteLogs);
-            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
-          } catch (err) {
-            debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
-          }
-        } else {
-          const rawProvider = sbUser.app_metadata?.provider;
-          const provider: 'apple' | 'google' | 'email' =
-            rawProvider === 'apple' ? 'apple' :
-            rawProvider === 'google' ? 'google' :
-            'email';
-          debug.log('[auth] no onboarding — calling setOAuthNewUser, provider:', provider);
-          setOAuthNewUser({
-            name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
-            email: sbUser.email ?? '',
-            provider,
-          });
-        }
+        profile = await loadProfile(sbUser.id);
       } catch (err) {
-        debug.error('[auth] handler threw — user will be stranded unless we recover:', err);
-        const provider = sbUser.app_metadata?.provider === 'apple' ? 'apple' : 'google';
+        debug.error('[auth] loadProfile failed (transient) — not routing to onboarding:', err);
+        return;
+      }
+      if (mySeq !== authSeq) return; // superseded by a newer auth event
+
+      debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
+      if (profile?.onboarding_complete) {
+        // Transition to main app BEFORE loading pantry/waste data — a failed
+        // data load must not leave the user stranded on the sign-in screen.
+        setUser({
+          id: sbUser.id,
+          name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
+          email: profile.email ?? sbUser.email,
+          authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
+          dietaryPreferences: (profile.dietary_preferences ?? []) as never,
+          createdAt: profile.created_at,
+          onboardingComplete: true,
+          streakDays: profile.streak_days,
+          lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
+          subscriptionTier: profile.subscription_tier as 'free' | 'pro',
+          avoChatCount: profile.avo_chat_count,
+          avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
+        });
+        debug.log('[auth] setUser called — transitioning to main app');
+        posthog.identify(sbUser.id, {
+          email: sbUser.email,
+          tier: profile.subscription_tier,
+          auth_provider: profile.auth_provider,
+        });
+        try {
+          const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
+          if (mySeq !== authSeq) return; // superseded while loading
+          loadCloudData(pantryItems, wasteLogs);
+          debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
+        } catch (err) {
+          debug.warn('[auth] loadAllData failed, keeping local data:', err);
+        }
+      } else {
+        const rawProvider = sbUser.app_metadata?.provider;
+        const provider: 'apple' | 'google' | 'email' =
+          rawProvider === 'apple' ? 'apple' :
+          rawProvider === 'google' ? 'google' :
+          'email';
+        debug.log('[auth] no onboarding — calling setOAuthNewUser, provider:', provider);
         setOAuthNewUser({
           name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
           email: sbUser.email ?? '',

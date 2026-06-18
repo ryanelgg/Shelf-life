@@ -29,6 +29,31 @@ function syncWrite(
   })();
 }
 
+/**
+ * Awaitable Supabase write with retry + visible error logging.
+ * Unlike syncWrite (fire-and-forget), this resolves only after the write
+ * succeeds or all retries are exhausted, so callers that `await` it (e.g. a
+ * subscription-tier change) get a settled result. Failures are logged rather
+ * than thrown — a transient blip must never crash the caller — but they are no
+ * longer silently swallowed. Returns true on success, false if all retries fail.
+ */
+async function awaitableWrite(
+  fn: () => PromiseLike<{ error: { message: string } | null }>,
+  label: string,
+  maxRetries = 2,
+  delayMs = 1000,
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
+    const { error } = await fn();
+    if (!error) return true;
+    if (attempt === maxRetries) {
+      debug.error(`[sync] ${label} failed after ${maxRetries + 1} attempts:`, error.message);
+    }
+  }
+  return false;
+}
+
 async function sha256hex(str: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -67,21 +92,31 @@ export async function signInWithGoogle() {
       });
       if (error) throw error;
       if (data.url) {
+        // Clear the in-flight guard when the in-app browser is actually
+        // dismissed (success deep-link OR user cancel), not on a fixed timer.
+        // A real OAuth flow can take far longer than the old 2s reset, which
+        // let a second tap start a duplicate flow.
+        const handle = await Browser.addListener('browserFinished', () => {
+          googleSignInInFlight = false;
+          void handle.remove();
+        });
         await Browser.open({ url: data.url, presentationStyle: 'popover' });
+      } else {
+        googleSignInInFlight = false;
       }
     } else {
+      // Web: the page navigates away to the provider, tearing down this JS
+      // context, so the guard resets naturally on redirect.
       await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: window.location.origin },
       });
     }
   } catch (e) {
+    googleSignInInFlight = false;
     if (!isCancelledAuthError(e)) {
       debug.error('signInWithGoogle error:', e);
     }
-  } finally {
-    // Reset after a short delay so the iOS deep-link callback can close the browser first
-    setTimeout(() => { googleSignInInFlight = false; }, 2000);
   }
 }
 
@@ -231,11 +266,17 @@ export async function loadProfile(userId: string): Promise<ProfileRow | null> {
     .eq('id', userId)
     .maybeSingle();
   debug.log('[loadProfile] result:', { hasData: !!data, errorCode: error?.code, errorMsg: error?.message });
+  // Throw on a real DB/network error so callers can tell it apart from a
+  // genuinely missing row (null). A returning user must NOT be treated as new
+  // — and pushed back into onboarding — just because the network blipped.
+  if (error) throw error;
   return data ?? null;
 }
 
 export async function upsertProfile(user: User, supabaseUserId: string) {
-  await supabase.from('profiles').upsert({
+  // Retried + logged: a dropped profile upsert here means onboarding_complete
+  // never lands, which sends the user back through onboarding next launch.
+  await awaitableWrite(() => supabase.from('profiles').upsert({
     id: supabaseUserId,
     name: user.name,
     email: user.email ?? null,
@@ -247,14 +288,17 @@ export async function upsertProfile(user: User, supabaseUserId: string) {
     avo_chat_count: user.avoChatCount,
     avo_chat_reset_date: user.avoChatResetDate,
     onboarding_complete: user.onboardingComplete,
-  });
+  }), 'upsertProfile');
 }
 
 export async function syncProfileUpdates(
   supabaseUserId: string,
   updates: Partial<ProfileRow>
 ) {
-  await supabase.from('profiles').update(updates).eq('id', supabaseUserId);
+  await awaitableWrite(
+    () => supabase.from('profiles').update(updates).eq('id', supabaseUserId),
+    'syncProfileUpdates',
+  );
 }
 
 export async function resetCloudUserData(userId: string) {
@@ -285,6 +329,12 @@ export async function loadAllData(userId: string): Promise<{
     supabase.from('pantry_items').select('*').eq('user_id', userId),
     supabase.from('waste_logs').select('*').eq('user_id', userId),
   ]);
+
+  // Throw on error rather than coercing to []. A failed read must not look
+  // identical to "this user owns 0 items" — otherwise the caller would
+  // overwrite a populated local pantry with a blank one on a network blip.
+  if (itemsRes.error) throw itemsRes.error;
+  if (logsRes.error) throw logsRes.error;
 
   const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => ({
     id: r.id,
