@@ -44,7 +44,7 @@ export function CookScreen() {
     ? (user?.avoChatResetDate === today ? (user?.avoChatCount ?? 0) : 0)
     : (user?.avoChatCount ?? 0);
   const chatLimit = isProUser ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
-  const chatsRemaining = chatLimit - chatsUsed;
+  const chatsRemaining = Math.max(0, chatLimit - chatsUsed);
 
   // Reset chat state when the signed-in user changes (prevents history leaking between accounts)
   useEffect(() => {

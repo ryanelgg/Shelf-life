@@ -339,12 +339,10 @@ export function AddItemScreen() {
   const addReceiptItem = (item: ReceiptListItem) => {
     if (!canAddPantryItem()) { setShowUpgrade(true); return; }
     addReceiptItemToPantry(item);
-    // Filter by object identity, not name — avoids dropping every row when
-    // a receipt contains two lines with the same product name.
-    setReceiptItems(prev => {
-      const idx = prev.indexOf(item);
-      return prev.filter((_, i) => i !== idx);
-    });
+    // Filter by stable id, not object identity — editing a row (onBlur re-resolve)
+    // replaces the object, so indexOf would return -1 and drop nothing, letting the
+    // user re-add the same line as a duplicate.
+    setReceiptItems(prev => prev.filter(row => row.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
