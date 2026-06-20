@@ -738,6 +738,7 @@ export function PantryScreen() {
           </div>
           <button
             onClick={handleDismissAlert}
+            aria-label="Dismiss expiring items alert"
             style={{
               position: 'absolute', top: 8, right: 10,
               background: 'none', border: 'none', cursor: 'pointer',
@@ -828,6 +829,7 @@ export function PantryScreen() {
                   </button>
                   <button
                     onClick={() => setSwipingItem(null)}
+                    aria-label="Close item menu"
                     style={{
                       position: 'absolute', top: 6, right: 8,
                       background: 'none', border: 'none', cursor: 'pointer',

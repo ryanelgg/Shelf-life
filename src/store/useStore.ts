@@ -498,35 +498,42 @@ export const useStore = create<ShelfLifeStore>()(
         }
       },
       incrementAvoChat: (): boolean => {
-        const s = useStore.getState();
-        if (!s.user) return false;
-        const today = formatLocalDate(new Date());
+        // Compute and apply inside a single set() updater so two rapid sends
+        // can't both read the same count and lose an increment (read-modify-write race).
+        let allowed = false;
+        let synced: Record<string, unknown> | null = null;
+        set((s) => {
+          if (!s.user) return {};
+          const today = formatLocalDate(new Date());
 
-        if (s.user.subscriptionTier === 'pro') {
-          // Pro: 20 chats per day, resets daily
-          const count = s.user.avoChatResetDate === today ? s.user.avoChatCount : 0;
-          if (count >= FREE_LIMITS.proChatPerDay) return false;
-          const nextUser = { ...s.user, avoChatCount: count + 1, avoChatResetDate: today };
-          set({ user: nextUser });
-          if (s.supabaseUserId) {
-            syncProfileUpdates(s.supabaseUserId, {
+          if (s.user.subscriptionTier === 'pro') {
+            // Pro: 20 chats per day, resets daily
+            const count = s.user.avoChatResetDate === today ? s.user.avoChatCount : 0;
+            if (count >= FREE_LIMITS.proChatPerDay) return {};
+            const nextUser = { ...s.user, avoChatCount: count + 1, avoChatResetDate: today };
+            allowed = true;
+            synced = {
               avo_chat_count: nextUser.avoChatCount,
               avo_chat_reset_date: nextUser.avoChatResetDate,
-            }).catch(debug.error);
+            };
+            return { user: nextUser };
           }
-          return true;
-        }
 
-        // Free: 5 chats total (permanent, never resets)
-        if (s.user.avoChatCount >= FREE_LIMITS.avoChatTotal) return false;
-        const nextUser = { ...s.user, avoChatCount: s.user.avoChatCount + 1 };
-        set({ user: nextUser });
-        if (s.supabaseUserId) {
-          syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
-          }).catch(debug.error);
+          // Free: 5 chats total (permanent, never resets)
+          if (s.user.avoChatCount >= FREE_LIMITS.avoChatTotal) return {};
+          const nextUser = { ...s.user, avoChatCount: s.user.avoChatCount + 1 };
+          allowed = true;
+          synced = { avo_chat_count: nextUser.avoChatCount };
+          return { user: nextUser };
+        });
+
+        if (allowed && synced) {
+          const supabaseUserId = useStore.getState().supabaseUserId;
+          if (supabaseUserId) {
+            syncProfileUpdates(supabaseUserId, synced).catch(debug.error);
+          }
         }
-        return true;
+        return allowed;
       },
       decrementAvoChat: (): void => {
         const s = useStore.getState();

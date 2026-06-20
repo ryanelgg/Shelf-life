@@ -33,7 +33,12 @@ function loadLocalDB() {
   localDBPromise = fetch('/barcodeDB.json')
     .then(r => r.json())
     .then(data => { localDB = data; })
-    .catch(() => { localDB = {}; });
+    .catch(() => {
+      // Keep localDB null and clear the cached promise so a later call retries
+      // (e.g. if the device was offline at launch) instead of permanently
+      // disabling local barcode lookups for the whole session.
+      localDBPromise = null;
+    });
   return localDBPromise;
 }
 loadLocalDB();
