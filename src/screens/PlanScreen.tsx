@@ -392,12 +392,53 @@ function getIngredientStatus(
   return { status: 'have', pantryQty: match.quantity, pantryUnit: match.unit };
 }
 
+// Words that are modifiers, not the food itself — ignored when matching.
+const FOOD_MATCH_STOP_WORDS = new Set([
+  'and', 'with', 'the', 'for', 'fresh', 'frozen', 'organic', 'natural',
+  'large', 'small', 'medium', 'whole', 'raw', 'cooked', 'of', 'a',
+]);
+
+// Generate the set of normalized forms for a single word so simple plurals
+// match their singular (eggs↔egg, tomatoes↔tomato, berries↔berry) without
+// matching unrelated words that merely share a prefix (egg ≠ eggplant).
+function wordForms(word: string): Set<string> {
+  const forms = new Set<string>([word]);
+  if (word.length > 4 && word.endsWith('ies')) forms.add(word.slice(0, -3) + 'y');
+  if (word.length > 3 && word.endsWith('es')) forms.add(word.slice(0, -2));
+  if (word.length > 3 && word.endsWith('s')) forms.add(word.slice(0, -1));
+  return forms;
+}
+
+// Split a food name into meaningful, lowercased content words.
+function foodWords(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length > 1 && !FOOD_MATCH_STOP_WORDS.has(w));
+}
+
+// Two words match if any of their normalized (plural-folded) forms overlap.
+function wordsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const fa = wordForms(a);
+  for (const f of wordForms(b)) if (fa.has(f)) return true;
+  return false;
+}
+
+// A pantry item satisfies an ingredient when every content word of the more
+// general name appears (by whole word, plurals folded) in the other name.
+// Whole-word matching replaces the old substring match so "egg" no longer
+// matches "eggplant" while still matching "large eggs" / "cherry tomatoes".
+function pantryItemMatchesIngredient(itemName: string, ingredientName: string): boolean {
+  const iw = foodWords(ingredientName);
+  const pw = foodWords(itemName);
+  if (iw.length === 0 || pw.length === 0) return false;
+  const subset = (a: string[], b: string[]) => a.every(wa => b.some(wb => wordsMatch(wa, wb)));
+  return subset(iw, pw) || subset(pw, iw);
+}
+
 function findPantryMatch(ingredientName: string, pantryItems: PantryItem[]): PantryItem | undefined {
-  const nameL = ingredientName.toLowerCase();
-  return pantryItems.find(item => {
-    const itemL = item.name.toLowerCase();
-    return itemL.includes(nameL) || nameL.includes(itemL);
-  });
+  return pantryItems.find(item => pantryItemMatchesIngredient(item.name, ingredientName));
 }
 
 function matchedPantryItemsForRecipe(recipe: Recipe, pantryItems: PantryItem[]): PantryItem[] {
@@ -453,7 +494,7 @@ export function PlanScreen() {
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
-      const item = pantryItems.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
+      const item = findPantryMatch(ing.name, pantryItems);
       if (!item) return false;
       const s = getFreshnessStatus(item.expirationDate);
       return s === 'expiring' || s === 'expiring-soon';
