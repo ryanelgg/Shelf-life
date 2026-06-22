@@ -12,6 +12,14 @@ export function Card({ children, className = '', style, onClick }: CardProps) {
     <div
       className={`card-component ${className}`}
       onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      } : undefined}
       style={{
         background: 'var(--bg-card)',
         border: 'var(--card-border)',

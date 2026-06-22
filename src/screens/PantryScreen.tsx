@@ -1122,7 +1122,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const qBtnStyle: React.CSSProperties = {
-  width: 36, height: 36, borderRadius: '10px', border: '1px solid var(--input-border)',
+  width: 44, height: 44, borderRadius: '10px', border: '1px solid var(--input-border)',
   background: 'var(--input-bg)', color: 'var(--text-primary)', cursor: 'pointer',
   fontFamily: "'Cormorant Garamond', serif", fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center',
 };

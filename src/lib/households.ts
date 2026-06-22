@@ -17,13 +17,18 @@ export async function getMyHousehold(userId: string): Promise<Household | null> 
     .select('household_id, role')
     .eq('user_id', userId)
     .maybeSingle();
-  if (error || !member) return null;
+  // Only a missing row means "solo". A real query error (e.g. a network blip)
+  // must throw so the caller keeps existing local data instead of overwriting
+  // it with a solo subset of the shared pantry.
+  if (error) throw new Error(error.message);
+  if (!member) return null;
 
-  const { data: hh } = await supabase
+  const { data: hh, error: hhError } = await supabase
     .from('households')
     .select('id, owner_id, invite_code, created_at')
     .eq('id', member.household_id)
     .maybeSingle();
+  if (hhError) throw new Error(hhError.message);
   if (!hh) return null;
 
   return toHousehold(hh as HouseholdRow, member.role as HouseholdRole);
