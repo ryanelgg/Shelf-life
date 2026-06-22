@@ -1,7 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import type { PantryItemRow, WasteLogRow } from './supabase';
-import { rowToPantryItem, rowToWasteLog } from './supabaseSync';
+import { rowToPantryItem, rowToWasteLog, loadAllData } from './supabaseSync';
 import { useStore } from '../store/useStore';
 import * as debug from './debug';
 
@@ -48,7 +48,32 @@ export function subscribeHousehold(householdId: string): void {
     )
     .subscribe((status) => {
       debug.log('[household] realtime status:', status, householdId);
+      if (status === 'SUBSCRIBED') {
+        // Catch-up reconcile (2A): re-fetch once when the channel goes live so
+        // any change a member made in the gap between the initial data load and
+        // this subscription is pulled in. After this, live events keep us in sync.
+        void reconcileHousehold(householdId);
+      }
     });
+}
+
+// Re-fetch the shared pantry + waste logs and fold them into the store. Guarded
+// so a load that finishes after the user leaves/switches households is ignored,
+// and failures keep local data rather than wiping it.
+async function reconcileHousehold(householdId: string): Promise<void> {
+  if (activeHouseholdId !== householdId) return;
+  const userId = useStore.getState().supabaseUserId;
+  if (!userId) return;
+  try {
+    const { pantryItems, wasteLogs } = await loadAllData(userId, householdId);
+    if (activeHouseholdId !== householdId) return; // household changed while loading
+    useStore.getState().loadCloudData(pantryItems, wasteLogs);
+    debug.log('[household] reconciled on subscribe:', {
+      pantryCount: pantryItems.length, wasteCount: wasteLogs.length, householdId,
+    });
+  } catch (err) {
+    debug.warn('[household] reconcile failed (keeping local data):', err);
+  }
 }
 
 export function unsubscribeHousehold(): void {
