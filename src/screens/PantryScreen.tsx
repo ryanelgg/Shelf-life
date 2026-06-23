@@ -3,7 +3,7 @@ import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
+import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel, ingredientMatchesItem } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
@@ -170,11 +170,7 @@ export function PantryScreen() {
       let matchCount = 0;
       let usesExpiring = false;
       for (const ing of r.ingredients) {
-        const b = ing.name.toLowerCase();
-        const m = pantryItems.find(p => {
-          const a = p.name.toLowerCase();
-          return a.includes(b) || b.includes(a);
-        });
+        const m = pantryItems.find(p => ingredientMatchesItem(ing.name, p.name));
         if (m) {
           matchCount++;
           const s = getFreshnessStatus(m.expirationDate);
