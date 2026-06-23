@@ -13,6 +13,8 @@ import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
 import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
+import { VoiceAddModal } from '../components/VoiceAddModal';
+import type { ParsedVoiceItem } from '../lib/voiceParse';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
 import { scanFridge } from '../lib/fridgeApi';
@@ -162,6 +164,7 @@ export function AddItemScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [successName, setSuccessName] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
   const addSourceRef = useRef<'manual' | 'barcode'>('manual');
 
   // Category-based freezer fallback days (used when no specific entry found)
@@ -397,6 +400,45 @@ export function AddItemScreen() {
     setTimeout(() => setShowSuccess(false), 2000);
   };
 
+  // Add one or more items parsed from a spoken/typed phrase. Each item's
+  // category + location come from the food database; expiry uses the spoken
+  // date when given, otherwise the smart shelf-life default.
+  const handleVoiceAdd = (items: ParsedVoiceItem[]) => {
+    let added = 0;
+    let hitLimit = false;
+    for (const it of items) {
+      if (!canAddPantryItem()) { hitLimit = true; break; }
+      const { category: cat, location: loc } = resolveReceiptItem(it.name);
+      let expirationDate = it.expirationDate;
+      if (!expirationDate) {
+        const days = lookupShelfLife(it.name, loc) ?? DEFAULT_SHELF_LIFE[cat];
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        expirationDate = formatLocalDate(d);
+      }
+      addPantryItem({
+        id: generateItemId(),
+        name: it.name,
+        category: cat,
+        location: loc,
+        quantity: it.quantity > 0 ? it.quantity : 1,
+        unit: it.unit || 'pcs',
+        addedDate: formatLocalDate(new Date()),
+        expirationDate,
+        estimatedValue: 2.99,
+        dateType: getDefaultDateType(cat),
+      }, 'voice');
+      added++;
+    }
+    if (added > 0) {
+      hapticMedium();
+      setSuccessName(added === 1 ? items[0].name : `${added} items`);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 2000);
+    }
+    if (hitLimit) setShowUpgrade(true);
+  };
+
   return (
     <div className="screen-enter" style={{
       flex: 1,
@@ -554,6 +596,21 @@ export function AddItemScreen() {
 
       {mode === 'manual' && (
         <>
+          {/* Speak to add */}
+          <button
+            onClick={() => { hapticLight(); setShowVoice(true); }}
+            className="card-enter stagger-2"
+            aria-label="Speak to add items"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              width: '100%', padding: '12px', borderRadius: '12px', cursor: 'pointer',
+              background: 'var(--accent-dim)', border: '1px dashed var(--accent)',
+              color: 'var(--accent)', fontWeight: 700, fontSize: '14px',
+            }}
+          >
+            🎤 Speak to add — “add 2 milks expiring Friday”
+          </button>
+
           {/* Name input */}
           <Card className="card-enter stagger-3" style={{ position: 'relative', zIndex: 10 }}>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
@@ -1179,6 +1236,13 @@ export function AddItemScreen() {
           feature={mode === 'receipt' ? 'receipt' : mode === 'fridge' ? 'fridge' : 'pantry'}
           onClose={() => setShowUpgrade(false)}
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+        />
+      )}
+
+      {showVoice && (
+        <VoiceAddModal
+          onClose={() => setShowVoice(false)}
+          onConfirm={handleVoiceAdd}
         />
       )}
     </div>
