@@ -116,6 +116,7 @@ export async function signInWithGoogle() {
     googleSignInInFlight = false;
     if (!isCancelledAuthError(e)) {
       debug.error('signInWithGoogle error:', e);
+      throw e;
     }
   }
 }

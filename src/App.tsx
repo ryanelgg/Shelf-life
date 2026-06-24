@@ -186,12 +186,18 @@ export default function App() {
       debug.log('[oauth] deep link received, closing browser');
       await Browser.close();
       const hashParams = new URLSearchParams(url.split('#')[1] ?? '');
+      const queryParams = new URLSearchParams((url.split('?')[1] ?? '').split('#')[0]);
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
-      debug.log('[oauth] tokens present:', { access: !!accessToken, refresh: !!refreshToken });
+      const code = queryParams.get('code');
+      debug.log('[oauth] tokens present:', { access: !!accessToken, refresh: !!refreshToken, code: !!code });
       if (accessToken && refreshToken) {
         const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
         debug.log('[oauth] setSession result:', { user: data.session?.user.id, error: error?.message });
+      } else if (code) {
+        debug.log('[oauth] PKCE code received, exchanging for session');
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        debug.log('[oauth] exchangeCode result:', { user: data.session?.user?.id, error: error?.message });
       } else {
         debug.warn('[oauth] missing tokens — URL was:', url);
       }
