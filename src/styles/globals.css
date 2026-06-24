@@ -600,3 +600,16 @@ select {
   0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); }
   50% { box-shadow: 0 0 8px 0 rgba(192, 57, 43, 0.15); }
 }
+
+/* ===== REDUCED MOTION =====
+   Respect the OS "Reduce Motion" setting. Avo's looping drift/wiggle/dance,
+   entrance slides, and the barcode breathing pulse all collapse to near-instant
+   so motion-sensitive users aren't bothered, while the UI stays fully usable. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

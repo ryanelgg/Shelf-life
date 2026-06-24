@@ -240,7 +240,7 @@ export function SettingsScreen() {
           </div>
           {user?.subscriptionTier === 'pro' && (
             <button
-              onClick={() => window.open('https://apps.apple.com/account/subscriptions', '_blank')}
+              onClick={() => window.open('https://apps.apple.com/account/subscriptions', '_blank', 'noopener,noreferrer')}
               style={{
                 marginTop: '12px',
                 width: '100%',
@@ -436,16 +436,16 @@ export function SettingsScreen() {
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <SettingsLink
               label="Contact Support"
-              onClick={() => window.open('mailto:support@usepantre.me?subject=Pantre%20Support', '_blank')}
+              onClick={() => window.open('mailto:support@usepantre.me?subject=Pantre%20Support', '_blank', 'noopener,noreferrer')}
             />
             <SettingsLink
               label="Send Feedback"
-              onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank')}
+              onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank', 'noopener,noreferrer')}
             />
             {APP_STORE_REVIEW_URL && (
               <SettingsLink
                 label="Rate Pantre"
-                onClick={() => window.open(APP_STORE_REVIEW_URL, '_blank')}
+                onClick={() => window.open(APP_STORE_REVIEW_URL, '_blank', 'noopener,noreferrer')}
               />
             )}
             <SettingsLink
@@ -454,11 +454,11 @@ export function SettingsScreen() {
             />
             <SettingsLink
               label="Privacy Policy"
-              onClick={() => window.open('https://www.usepantre.me/privacy', '_blank')}
+              onClick={() => window.open('https://www.usepantre.me/privacy', '_blank', 'noopener,noreferrer')}
             />
             <SettingsLink
               label="Terms of Service"
-              onClick={() => window.open('https://www.usepantre.me/terms', '_blank')}
+              onClick={() => window.open('https://www.usepantre.me/terms', '_blank', 'noopener,noreferrer')}
               hideBorder
             />
           </div>

@@ -912,8 +912,11 @@ export function AddItemScreen() {
             setCategory(product.category);
             const loc = mapCategoryToLocation(product.category) as StorageLocation;
             setLocation(loc);
-            const days = lookupShelfLife(product.name, loc);
-            if (days !== null) setCustomDays(String(days));
+            // Instant shelf-life: try the specific food first, then fall back to the
+            // category default so every barcode scan lands a sensible expiry estimate
+            // (branded names like "Skippy Peanut Butter" often miss the exact lookup).
+            const days = lookupShelfLife(product.name, loc) ?? DEFAULT_SHELF_LIFE[product.category];
+            if (days != null) setCustomDays(String(days));
             setMode('manual');
           }}
         />
@@ -1121,9 +1124,9 @@ export function AddItemScreen() {
                   <button
                     onClick={() => setReceiptItems(prev => prev.filter(row => row.id !== item.id))}
                     style={{
-                      marginTop: '21px',
-                      width: 32,
-                      height: 32,
+                      marginTop: '13px',
+                      width: 40,
+                      height: 40,
                       borderRadius: '10px',
                       border: '1px solid var(--tab-border)',
                       background: 'transparent',

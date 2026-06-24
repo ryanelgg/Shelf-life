@@ -880,7 +880,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           <button
             onClick={() => {
               const query = suggestions.map(s => s.name).join(' ');
-              window.open(`https://www.instacart.com/store/s?k=${encodeURIComponent(query)}`, '_blank');
+              window.open(`https://www.instacart.com/store/s?k=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer');
             }}
             style={{
               marginTop: '12px',
@@ -1708,7 +1708,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
             onClick={onClose}
             aria-label="Close"
             style={{
-              width: 34, height: 34,
+              width: 40, height: 40,
               borderRadius: '50%',
               border: '1px solid var(--tab-border)',
               background: 'transparent',

@@ -166,7 +166,7 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
           {[['Privacy Policy', 'https://www.usepantre.me/privacy'], ['Terms of Use', 'https://www.usepantre.me/terms']].map(([label, url]) => (
             <button
               key={label}
-              onClick={() => window.open(url, '_blank')}
+              onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
               style={{
                 background: 'none',
                 border: 'none',
