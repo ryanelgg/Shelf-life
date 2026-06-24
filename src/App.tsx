@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase';
 import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
+import { publishWidgetData } from './lib/widget';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
@@ -203,6 +204,12 @@ export default function App() {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme === 'dark' ? '#1a1612' : '#faf7f2');
   }, [theme]);
+
+  // Keep the iOS home-screen widget in sync with the pantry (no-op off iOS).
+  const pantryItems = useStore(s => s.pantryItems);
+  useEffect(() => {
+    void publishWidgetData(pantryItems);
+  }, [pantryItems]);
 
   useEffect(() => {
     // Monotonic token: each auth event claims a number, and any async work

@@ -5,7 +5,7 @@ import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
-import { formatLocalDate, getFreshnessStatus } from '../types';
+import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref } from '../types';
@@ -393,11 +393,7 @@ function getIngredientStatus(
 }
 
 function findPantryMatch(ingredientName: string, pantryItems: PantryItem[]): PantryItem | undefined {
-  const nameL = ingredientName.toLowerCase();
-  return pantryItems.find(item => {
-    const itemL = item.name.toLowerCase();
-    return itemL.includes(nameL) || nameL.includes(itemL);
-  });
+  return pantryItems.find(item => ingredientMatchesItem(ingredientName, item.name));
 }
 
 function matchedPantryItemsForRecipe(recipe: Recipe, pantryItems: PantryItem[]): PantryItem[] {

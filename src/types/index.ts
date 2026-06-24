@@ -238,6 +238,33 @@ export function getDaysUntilExpiration(expirationDate: string): number {
   return Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// Fold a simple English plural to its singular form so "eggs" matches "egg"
+// and "tomatoes" matches "tomato". Intentionally conservative.
+function foldPlural(word: string): string {
+  if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y';
+  if (word.length > 3 && word.endsWith('es')) return word.slice(0, -2);
+  if (word.length > 2 && word.endsWith('s')) return word.slice(0, -1);
+  return word;
+}
+
+function ingredientWords(name: string): string[] {
+  return name.toLowerCase().split(/[^a-z]+/).filter(Boolean).map(foldPlural);
+}
+
+// Word-level matcher between a recipe ingredient name and a pantry item name.
+// Replaces loose substring matching (which made "egg" match "eggplant" and
+// "milk" match "buttermilk"). A match means one name's words are fully
+// contained in the other's — so "egg" ↔ "free-range eggs" and
+// "chicken" ↔ "chicken breast" still match, but unrelated words don't.
+export function ingredientMatchesItem(ingredientName: string, itemName: string): boolean {
+  const ing = ingredientWords(ingredientName);
+  const item = ingredientWords(itemName);
+  if (ing.length === 0 || item.length === 0) return false;
+  const ingSet = new Set(ing);
+  const itemSet = new Set(item);
+  return ing.every(w => itemSet.has(w)) || item.every(w => ingSet.has(w));
+}
+
 export const DEFAULT_SHELF_LIFE: Record<FoodCategory, number> = {
   Produce: 7,
   Dairy: 14,

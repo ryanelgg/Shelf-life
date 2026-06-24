@@ -52,7 +52,7 @@ interface ShelfLifeStore {
   resetOnboarding: () => void;
 
   // Pantry
-  addPantryItem: (item: PantryItem, method?: 'barcode' | 'manual' | 'receipt') => void;
+  addPantryItem: (item: PantryItem, method?: 'barcode' | 'manual' | 'receipt' | 'voice') => void;
   updatePantryItem: (id: string, updates: Partial<PantryItem>) => void;
   removePantryItem: (id: string) => void;
   clearPantry: () => void;
