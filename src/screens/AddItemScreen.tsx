@@ -157,36 +157,9 @@ export function AddItemScreen() {
   // null = follow the category's safety-first default; set = user override.
   const [dateTypeOverride, setDateTypeOverride] = useState<DateLabelType | null>(null);
   const effectiveDateType = dateTypeOverride ?? getDefaultDateType(category);
-  const [isListening, setIsListening] = useState(false);
   useEffect(() => {
     void preloadCoreDatabase();
   }, []);
-
-  const handleVoiceInput = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!SR) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recognition = new SR() as any;
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    setIsListening(true);
-    recognition.start();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
-      const transcript = (event.results?.[0]?.[0]?.transcript as string | undefined)?.trim() ?? '';
-      if (transcript) {
-        setName(transcript);
-        setCustomDays('');
-        applySuggestedShelfLifeDays(transcript, location, category);
-      }
-      setIsListening(false);
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-  };
 
   const [showSuccess, setShowSuccess] = useState(false);
   const [successName, setSuccessName] = useState('');
@@ -668,7 +641,7 @@ export function AddItemScreen() {
                   background: 'var(--input-bg)',
                   border: '1px solid var(--input-border)',
                   borderRadius: showSuggestions && foodSuggestions.length > 0 ? '10px 10px 0 0' : '10px',
-                  padding: '12px 44px 12px 14px',
+                  padding: '12px 14px',
                   color: 'var(--text-primary)',
                   fontFamily: "'Cormorant Garamond', serif",
                   fontSize: '14px',
@@ -676,33 +649,6 @@ export function AddItemScreen() {
                   boxSizing: 'border-box',
                 }}
               />
-              <button
-                type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={handleVoiceInput}
-                aria-label={isListening ? 'Listening…' : 'Add by voice'}
-                style={{
-                  position: 'absolute',
-                  right: '8px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--input-border)',
-                  background: isListening ? 'var(--accent)' : 'var(--bg-secondary)',
-                  color: isListening ? '#fff' : 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  transition: 'all 0.2s',
-                  flexShrink: 0,
-                }}
-              >
-                🎤
-              </button>
               {showSuggestions && foodSuggestions.length > 0 && (
                 <div style={{
                   position: 'absolute',
