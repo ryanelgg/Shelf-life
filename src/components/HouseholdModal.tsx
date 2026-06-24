@@ -12,6 +12,8 @@ import {
 import { loadAllData } from '../lib/supabaseSync';
 import * as debug from '../lib/debug';
 
+type StreakChoice = 'personal' | 'household';
+
 interface HouseholdModalProps {
   onClose: () => void;
 }
@@ -43,12 +45,14 @@ const primaryBtn: React.CSSProperties = {
 };
 
 export function HouseholdModal({ onClose }: HouseholdModalProps) {
-  const { household, setHousehold, supabaseUserId, loadCloudData } = useStore();
+  const { household, setHousehold, supabaseUserId, loadCloudData, setHouseholdStreakEnabled } = useStore();
   const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Streak prompt state: shown before create/join to let the user choose
+  const [streakPromptPending, setStreakPromptPending] = useState<'create' | 'join' | null>(null);
 
   const refreshMembers = useCallback(async () => {
     if (!household) return;
@@ -72,9 +76,9 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     }
   };
 
-  const handleCreate = async () => {
-    if (busy) return;
+  const doCreate = async (streakChoice: StreakChoice) => {
     setBusy(true); setError(null);
+    setHouseholdStreakEnabled(streakChoice === 'household');
     try {
       const hh = await createHousehold();
       setHousehold(hh);
@@ -86,9 +90,10 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     }
   };
 
-  const handleJoin = async () => {
-    if (busy || !code.trim()) return;
+  const doJoin = async (streakChoice: StreakChoice) => {
+    if (!code.trim()) return;
     setBusy(true); setError(null);
+    setHouseholdStreakEnabled(streakChoice === 'household');
     try {
       const hh = await joinHousehold(code.trim());
       setHousehold(hh);
@@ -98,6 +103,16 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleCreate = () => { if (!busy) setStreakPromptPending('create'); };
+  const handleJoin = () => { if (!busy && code.trim()) setStreakPromptPending('join'); };
+
+  const handleStreakChoice = (choice: StreakChoice) => {
+    const action = streakPromptPending;
+    setStreakPromptPending(null);
+    if (action === 'create') void doCreate(choice);
+    else if (action === 'join') void doJoin(choice);
   };
 
   const handleLeave = async () => {
@@ -206,6 +221,61 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
           Done
         </button>
       </div>
+
+      {/* Streak choice prompt — shown before create/join */}
+      {streakPromptPending && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 300,
+          background: 'rgba(0,0,0,0.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '24px',
+          animation: 'upgradeFadeIn 0.2s ease-out',
+        }}>
+          <div style={{
+            background: 'var(--bg-primary)',
+            borderRadius: '20px',
+            padding: '28px 24px',
+            maxWidth: '340px',
+            width: '100%',
+            display: 'flex', flexDirection: 'column', gap: '16px',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '36px' }}>🔥</div>
+            <div>
+              <div style={{ fontSize: '19px', fontWeight: 800, fontFamily: "'Cormorant Garamond', serif", marginBottom: '8px' }}>
+                Start a Household Streak?
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Everyone in the household shares one streak. Log food you used to keep it alive.
+              </div>
+            </div>
+            <div style={{
+              background: 'rgba(205, 92, 92, 0.08)',
+              border: '1px solid rgba(205, 92, 92, 0.2)',
+              borderRadius: '12px',
+              padding: '12px',
+              fontSize: '12px',
+              color: 'var(--expired)',
+              lineHeight: 1.5,
+              textAlign: 'left',
+            }}>
+              ⚠️ <strong>Heads up:</strong> If <em>any</em> member tosses food, the streak resets for <em>everyone</em>. Your personal streak will be replaced by the shared one.
+            </div>
+            <button
+              onClick={() => handleStreakChoice('household')}
+              style={{ ...primaryBtn, width: '100%' }}
+            >
+              Yes — share our streak 🔥
+            </button>
+            <button
+              onClick={() => handleStreakChoice('personal')}
+              style={{ ...primaryBtn, width: '100%', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              No thanks, keep personal streaks
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes upgradeFadeIn { from { opacity: 0; } to { opacity: 1; } }

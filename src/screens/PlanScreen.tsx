@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import type { JSX } from 'react';
+import { requestAvoChat } from '../lib/avoApi';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
@@ -8,7 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
-import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref } from '../types';
+import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
 
@@ -428,7 +429,7 @@ export function PlanScreen() {
   const {
     mealPlan, recipes, pantryItems, browseRecipes, user,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
-    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem,
+    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -436,6 +437,8 @@ export function PlanScreen() {
   const [newItemName, setNewItemName] = useState('');
   const [addingToList, setAddingToList] = useState<string | null>(null);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [avoMealPlanLoading, setAvoMealPlanLoading] = useState(false);
+  const [avoMealPlanError, setAvoMealPlanError] = useState<string | null>(null);
   const [recipeFilter, setRecipeFilter] = useState('all');
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => recipeSearchSeed ?? '');
@@ -446,6 +449,58 @@ export function PlanScreen() {
     if (!recipeSearchSeed) return;
     setRecipeSearchSeed(null);
   }, [recipeSearchSeed, setRecipeSearchSeed]);
+
+  const generateAvoMealPlan = useCallback(async () => {
+    if (avoMealPlanLoading) return;
+    setAvoMealPlanLoading(true);
+    setAvoMealPlanError(null);
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    try {
+      const expiringItems = pantryItems
+        .slice()
+        .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate))
+        .slice(0, 15)
+        .map(i => `${i.name} (expires ${i.expirationDate})`);
+      const prefs = user?.dietaryPreferences?.filter(p => p !== 'none').join(', ') || 'none';
+
+      const prompt = `You are Avo, Pantre's friendly AI food assistant. Generate a creative 7-day meal plan that uses the user's expiring pantry items.
+
+Pantry items (sorted by soonest expiry):
+${expiringItems.join('\n')}
+
+Dietary preferences: ${prefs}
+
+Reply with ONLY a valid JSON array of 7 objects, no other text. Format exactly:
+[{"day":"Mon","meal":"Meal Name Here","pantryItems":3,"toBuy":1},{"day":"Tue","meal":"Meal Name Here","pantryItems":2,"toBuy":2},{"day":"Wed","meal":"Meal Name Here","pantryItems":4,"toBuy":0},{"day":"Thu","meal":"Meal Name Here","pantryItems":3,"toBuy":1},{"day":"Fri","meal":"Meal Name Here","pantryItems":5,"toBuy":0},{"day":"Sat","meal":"Meal Name Here","pantryItems":2,"toBuy":3},{"day":"Sun","meal":"Meal Name Here","pantryItems":3,"toBuy":1}]
+
+Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, toBuy = extra items needed. Keep it practical and tasty.`;
+
+      const response = await requestAvoChat([{ role: 'user', content: prompt }]);
+
+      // Extract JSON from response (Avo might wrap it in text)
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('Could not parse Avo\'s response');
+
+      const parsed = JSON.parse(jsonMatch[0]) as Array<{ day: string; meal: string; pantryItems: number; toBuy: number }>;
+      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Invalid plan format');
+
+      const newPlan: MealPlanDay[] = DAYS.map((day, i) => {
+        const entry = parsed.find(p => p.day === day) ?? parsed[i];
+        return {
+          day,
+          meal: entry?.meal ?? 'Flexible night',
+          pantryItems: Math.max(0, entry?.pantryItems ?? 0),
+          toBuy: Math.max(0, entry?.toBuy ?? 0),
+        };
+      });
+
+      setMealPlan(newPlan);
+    } catch (e) {
+      setAvoMealPlanError(e instanceof Error ? e.message : 'Avo couldn\'t generate a plan. Try again!');
+    } finally {
+      setAvoMealPlanLoading(false);
+    }
+  }, [avoMealPlanLoading, pantryItems, user, setMealPlan]);
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
@@ -631,6 +686,39 @@ export function PlanScreen() {
             </div>
           )}
         </div>
+
+        {isPro() && (
+          <div style={{ marginBottom: '10px' }}>
+            <button
+              onClick={() => void generateAvoMealPlan()}
+              disabled={avoMealPlanLoading}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '12px',
+                border: '1.5px solid rgba(74, 124, 89, 0.3)',
+                background: avoMealPlanLoading ? 'var(--accent-dim)' : 'transparent',
+                color: 'var(--accent)',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: avoMealPlanLoading ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                opacity: avoMealPlanLoading ? 0.7 : 1,
+              }}
+            >
+              {avoMealPlanLoading ? '🥑 Avo is planning…' : '✨ Generate with Avo'}
+            </button>
+            {avoMealPlanError && (
+              <div style={{ fontSize: '11px', color: 'var(--expired)', marginTop: '6px', textAlign: 'center' }}>
+                {avoMealPlanError}
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {(isPro() ? mealPlan : mealPlan.slice(0, 2)).map((day) => {

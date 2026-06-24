@@ -98,6 +98,11 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+
+  // Household streak: if true, the whole household shares one streak.
+  // Opted in per-device when creating/joining a household.
+  householdStreakEnabled: boolean;
+  setHouseholdStreakEnabled: (enabled: boolean) => void;
 }
 
 
@@ -306,8 +311,10 @@ export const useStore = create<ShelfLifeStore>()(
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
       household: null as Household | null,
+      householdStreakEnabled: false,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       setHousehold: (household) => set({ household }),
+      setHouseholdStreakEnabled: (enabled) => set({ householdStreakEnabled: enabled }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
@@ -586,6 +593,7 @@ export const useStore = create<ShelfLifeStore>()(
       partialize: (state) => ({
         user: state.user,
         household: state.household,
+        householdStreakEnabled: state.householdStreakEnabled,
         pantryItems: state.pantryItems,
         wasteLogs: state.wasteLogs,
         recipes: state.recipes,

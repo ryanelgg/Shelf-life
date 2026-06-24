@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { checkPantryForRecalls } from '../lib/recallApi';
+import type { RecallMatch } from '../lib/recallApi';
 import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -132,6 +134,16 @@ export function PantryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
+  const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
+  const [recallDismissed, setRecallDismissed] = useState(false);
+
+  useEffect(() => {
+    if (pantryItems.length === 0) return;
+    const names = pantryItems.map(i => i.name);
+    checkPantryForRecalls(names).then(matches => {
+      setRecallMatches(matches);
+    }).catch(() => {/* silently ignore - recall check is best-effort */});
+  }, [pantryItems]);
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
@@ -319,6 +331,52 @@ export function PantryScreen() {
           </svg>
         </button>
       </div>
+
+      {/* FDA Recall Alert Banner */}
+      {recallMatches.length > 0 && !recallDismissed && (
+        <div style={{
+          background: 'rgba(205,92,92,0.08)',
+          border: '1.5px solid rgba(205,92,92,0.3)',
+          borderRadius: '14px',
+          padding: '12px 14px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '10px',
+          animation: 'card-enter 0.3s ease-out',
+        }}>
+          <span style={{ fontSize: '20px', flexShrink: 0, marginTop: '1px' }}>🚨</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expired)', marginBottom: '4px' }}>
+              FDA Recall Alert
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              {recallMatches.length === 1
+                ? `<strong>${recallMatches[0]!.matchedItem}</strong> may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`
+                : `${recallMatches.length} items in your pantry may be affected by active FDA recalls.`
+              }
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+              {recallMatches.slice(0, 3).map(m => (
+                <span key={m.id} style={{
+                  fontSize: '10px', fontWeight: 600,
+                  padding: '2px 8px', borderRadius: '8px',
+                  background: 'rgba(205,92,92,0.12)',
+                  color: 'var(--expired)',
+                }}>{m.matchedItem}</span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => setRecallDismissed(true)}
+            aria-label="Dismiss recall alert"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: '16px', flexShrink: 0,
+              padding: '2px', lineHeight: 1,
+            }}
+          >✕</button>
+        </div>
+      )}
 
       {/* Stats row — tappable as filters */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
