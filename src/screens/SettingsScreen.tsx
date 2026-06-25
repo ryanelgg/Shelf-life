@@ -11,6 +11,7 @@ import type { DietaryPref } from '../types';
 import { deleteAccount, signOut, syncProfileUpdates } from '../lib/supabaseSync';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { exportUserData } from '../lib/dataExport';
+import { openAppStoreReview } from '../lib/appReview';
 import * as debug from '../lib/debug';
 
 const DIETS: { id: DietaryPref; label: string }[] = [
@@ -21,8 +22,6 @@ const DIETS: { id: DietaryPref; label: string }[] = [
   { id: 'dairy-free', label: 'Dairy-free' },
   { id: 'nut-free', label: 'Nut-free' },
 ];
-
-const APP_STORE_REVIEW_URL = (import.meta.env.VITE_APP_STORE_REVIEW_URL as string | undefined)?.trim();
 
 export function SettingsScreen() {
   const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household } = useStore();
@@ -442,12 +441,10 @@ export function SettingsScreen() {
               label="Send Feedback"
               onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank')}
             />
-            {APP_STORE_REVIEW_URL && (
-              <SettingsLink
-                label="Rate Pantre"
-                onClick={() => window.open(APP_STORE_REVIEW_URL, '_blank')}
-              />
-            )}
+            <SettingsLink
+              label="⭐ Rate Pantre"
+              onClick={() => { void openAppStoreReview(); }}
+            />
             <SettingsLink
               label="Download My Data"
               onClick={() => { void handleExportData(); }}

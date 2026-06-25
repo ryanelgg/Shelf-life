@@ -18,6 +18,7 @@ import {
   scheduleRecipeNudge,
   celebrateStreakMilestone,
 } from '../lib/notifications';
+import { requestInAppReview } from '../lib/appReview';
 
 interface ShelfLifeStore {
   // State
@@ -98,6 +99,9 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+  // Whether we've already shown the App Store rating prompt (ask at most once).
+  reviewPrompted: boolean;
+  setReviewPrompted: () => void;
 }
 
 
@@ -305,6 +309,7 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      reviewPrompted: false,
       household: null as Household | null,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       setHousehold: (household) => set({ household }),
@@ -452,6 +457,15 @@ export const useStore = create<ShelfLifeStore>()(
             void scheduleRecipeNudge(user.name);
           }
         }
+
+        // Ask for an App Store rating at a genuine high point: the first time
+        // they hit a meaningful zero-waste streak milestone. Once only (the OS
+        // also rate-limits), and independent of notification permission.
+        const after = useStore.getState();
+        if (!after.reviewPrompted && after.user && [7, 14, 30, 50, 100, 365].includes(after.user.streakDays)) {
+          after.setReviewPrompted();
+          void requestInAppReview();
+        }
       },
       addWasteLogLocal: (log) => set((s) => (
         // Dedupe by id: the originating device already appended this log, and
@@ -559,6 +573,7 @@ export const useStore = create<ShelfLifeStore>()(
       setTheme: (theme: ThemeMode) => set({ theme }),
       setShowSettings: (show: boolean) => set({ showSettings: show }),
       setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),
+      setReviewPrompted: () => set({ reviewPrompted: true }),
       setNotificationsEnabled: (enabled) => {
         set({ notificationsEnabled: enabled });
         const { pantryItems, user } = useStore.getState();
@@ -596,6 +611,7 @@ export const useStore = create<ShelfLifeStore>()(
         mealPlan: state.mealPlan,
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
+        reviewPrompted: state.reviewPrompted,
         notificationsEnabled: state.notificationsEnabled,
       }),
     }
