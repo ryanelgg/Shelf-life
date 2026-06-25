@@ -281,6 +281,19 @@ function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   return true;
 }
 
+// Same blocklist, applied to a single item name — used to keep the auto-built
+// shopping list from suggesting anything that violates the user's diet.
+function nameAllowedByDiet(name: string, diets: DietaryPref[]): boolean {
+  const active = diets.filter(d => d !== 'none');
+  if (active.length === 0) return true;
+  const lower = name.toLowerCase();
+  for (const diet of active) {
+    const blocked = DIET_BLOCKLIST[diet] ?? [];
+    if (blocked.some(b => lower.includes(b))) return false;
+  }
+  return true;
+}
+
 const DIET_LABEL: Record<string, string> = {
   vegetarian: 'Vegetarian',
   vegan: 'Vegan',
@@ -415,6 +428,15 @@ function createWasteLogId() {
   return `w-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Module-level helpers so the impure id/date calls aren't made inline during
+// render (keeps react-hooks/purity happy in the auto-build handler).
+function genId(prefix: string) {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
+}
+function todayStr() {
+  return formatLocalDate(new Date());
+}
+
 const RECIPE_SEARCH_STOP_WORDS = new Set([
   'and', 'with', 'the', 'for', 'fresh', 'frozen', 'organic', 'natural',
   'pack', 'count', 'ct', 'oz', 'lb', 'lbs', 'lite', 'large', 'small',
@@ -439,6 +461,7 @@ export function PlanScreen() {
   const [newListName, setNewListName] = useState('');
   const [newItemName, setNewItemName] = useState('');
   const [addingToList, setAddingToList] = useState<string | null>(null);
+  const [autoBuildNote, setAutoBuildNote] = useState<string | null>(null);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [recipeFilter, setRecipeFilter] = useState('all');
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
@@ -524,6 +547,53 @@ export function PlanScreen() {
     });
     setNewListName('');
     setShowNewForm(false);
+  };
+
+  // Auto-build a shopping list from two sources, hard-filtered by dietary prefs:
+  //  1. Meal-plan gaps — ingredients your planned recipes need but you lack.
+  //  2. Expiring/expired pantry staples worth restocking.
+  const handleAutoBuild = () => {
+    if (!isPro()) { setShowUpgrade(true); return; }
+    const gapItems = plannedRecipes.flatMap(r =>
+      r.missingIngredients.map(name => ({ name, category: 'Other' as FoodCategory, fromRecipe: r.name as string | undefined }))
+    );
+    const staleItems = pantryItems
+      .filter(p => {
+        const s = getFreshnessStatus(p.expirationDate);
+        return s === 'expiring' || s === 'expiring-soon' || s === 'expired';
+      })
+      .map(p => ({ name: p.name, category: p.category, fromRecipe: undefined as string | undefined }));
+
+    const seen = new Set<string>();
+    const items: ShoppingItem[] = [];
+    for (const cand of [...gapItems, ...staleItems]) {
+      const key = cand.name.toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      if (!nameAllowedByDiet(cand.name, activeDiets)) continue; // hard dietary filter
+      seen.add(key);
+      items.push({
+        id: genId('si'),
+        name: cand.name,
+        category: cand.category,
+        quantity: 1,
+        unit: 'pcs',
+        checked: false,
+        fromRecipe: cand.fromRecipe,
+      });
+    }
+
+    if (items.length === 0) {
+      setAutoBuildNote("Nothing to add right now — your plan's covered and nothing's expiring.");
+      return;
+    }
+
+    addShoppingList({
+      id: genId('sl'),
+      name: `Auto list · ${todayStr().slice(5)}`,
+      items,
+      createdDate: todayStr(),
+    });
+    setAutoBuildNote(`Added ${items.length} item${items.length === 1 ? '' : 's'}${activeDiets.length ? ', filtered for your diet' : ''}.`);
   };
 
   const handleAddItemToList = (listId: string) => {
@@ -1213,6 +1283,40 @@ export function PlanScreen() {
           + New List
         </button>
       </div>
+
+      {/* Auto-build: one tap to fill a list from meal-plan gaps + expiring
+          staples, hard-filtered by dietary preferences. Pro-gated. */}
+      <button
+        className="card-enter stagger-3"
+        onClick={handleAutoBuild}
+        style={{
+          width: '100%',
+          padding: '12px 14px',
+          background: 'rgba(74, 124, 89, 0.08)',
+          border: '1px solid rgba(74, 124, 89, 0.20)',
+          borderRadius: '12px',
+          color: 'var(--text-primary)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: '18px' }}>✨</span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: 'block', fontSize: '14px', fontWeight: 700 }}>Auto-build a list</span>
+          <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>
+            From your meal plan &amp; expiring items{activeDiets.length > 0 ? ` · ${activeDiets.map(d => DIET_LABEL[d]).join(', ')}` : ''}
+          </span>
+        </span>
+        {!isPro() && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)' }}>PRO</span>}
+      </button>
+      {autoBuildNote && (
+        <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, padding: '0 2px' }}>
+          {autoBuildNote}
+        </div>
+      )}
 
       {/* New list form */}
       {showNewForm && (
