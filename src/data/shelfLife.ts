@@ -2366,16 +2366,44 @@ const shelfLifeMap: Record<string, ShelfLifeEntry> = {
   }
 };
 
+// Split a food name into lowercase word tokens, dropping punctuation. Used for
+// whole-word shelf-life matching so short keywords can't match inside unrelated
+// words ("ice" must not match "rice", "ham" must not match "graham").
+function shelfWords(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+}
+
+// True if the word sequence `needle` appears as a contiguous run inside `hay`.
+function containsWordSeq(hay: string[], needle: string[]): boolean {
+  if (needle.length === 0 || needle.length > hay.length) return false;
+  for (let i = 0; i + needle.length <= hay.length; i++) {
+    let ok = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (hay[i + j] !== needle[j]) { ok = false; break; }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
 export function lookupShelfLife(foodName: string, location: string): number | null {
   const name = foodName.toLowerCase().trim();
-  // Try longest keyword match first for most specific result.
-  // kw.includes(name) direction is only used when the query is ≥50% of the
-  // keyword length — this prevents "chicken" from matching "chicken broth canned".
+  const nameWords = shelfWords(name);
+  if (nameWords.length === 0) return null;
+  // Try longest keyword match first for the most specific result.
   let bestMatch: ShelfLifeEntry | null = null;
   let bestLen = 0;
   for (const [kw, entry] of Object.entries(shelfLifeMap)) {
-    const kwInName  = name.includes(kw);
-    const nameInKw  = kw.includes(name) && name.length >= kw.length * 0.5;
+    const kwWords = shelfWords(kw);
+    // Whole-word matching only, in two accepted directions:
+    //  1. kwInName  — the keyword phrase appears as whole words inside the item
+    //     name ("peanut butter" inside "skippy peanut butter").
+    //  2. nameInKw  — the item name is a whole-word prefix/run of a more
+    //     specific keyword ("yogurt" → "greek yogurt"), still gated to ≥50% of
+    //     the keyword length so a bare "chicken" can't grab "chicken broth
+    //     canned".
+    const kwInName = containsWordSeq(nameWords, kwWords);
+    const nameInKw = containsWordSeq(kwWords, nameWords) && name.length >= kw.length * 0.5;
     if ((kwInName || nameInKw) && kw.length > bestLen) {
       bestMatch = entry;
       bestLen = kw.length;

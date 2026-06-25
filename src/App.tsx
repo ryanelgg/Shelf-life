@@ -250,9 +250,24 @@ export default function App() {
       // forced to re-onboard on a network blip.
       let profile;
       try {
-        profile = await loadProfile(sbUser.id);
+        // Retry a few times before giving up: loadProfile throwing means a real
+        // error (a missing row returns null, not a throw), and a single network
+        // blip during a brand-new sign-up would otherwise strand the user on a
+        // blank sign-in screen instead of routing them to onboarding.
+        let lastErr: unknown;
+        profile = await (async () => {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 800 * attempt));
+            try {
+              return await loadProfile(sbUser.id);
+            } catch (e) {
+              lastErr = e;
+            }
+          }
+          throw lastErr;
+        })();
       } catch (err) {
-        debug.error('[auth] loadProfile failed (transient) — not routing to onboarding:', err);
+        debug.error('[auth] loadProfile failed after retries (transient) — not routing to onboarding:', err);
         return;
       }
       if (mySeq !== authSeq) return; // superseded by a newer auth event

@@ -110,7 +110,11 @@ function hashStringToInt(str: string): number {
     hash = ((hash << 5) - hash) + str.charCodeAt(i);
     hash |= 0;
   }
-  return Math.abs(hash) % 100000000;
+  // Use the full integer space below the reserved engagement band (which starts
+  // at 1_900_000_000). base*10+3 must stay under it, so base < 189_000_000.
+  // Widening from 100M to 189M nearly halves the per-item collision rate while
+  // keeping every notification ID a positive 32-bit int (max 1_889_999_993).
+  return Math.abs(hash) % 189000000;
 }
 
 function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number } {
@@ -183,32 +187,41 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 
 // ── Expiration notifications ────────────────────────────────────────────────
 
+type NotifList = Parameters<typeof LocalNotifications.schedule>[0]['notifications'];
+
+// Build (but don't schedule) the up-to-three expiration notifications for one
+// item. Factored out so a bulk reschedule can collect every item's
+// notifications and issue a single schedule() call.
+function buildItemNotifications(item: PantryItem, userName?: string | null): NotifList {
+  const out: NotifList = [];
+  if (!item.expirationDate) return out;
+  const u = firstName(userName);
+  const ids = notificationIdsForItem(item.id);
+  const twoDayTime = expirationNotificationTime(item.expirationDate, 2);
+  const oneDayTime = expirationNotificationTime(item.expirationDate, 1);
+  const dayOfTime = expirationNotificationTime(item.expirationDate, 0);
+
+  if (twoDayTime) {
+    const copy = pickRandom(TWO_DAYS_BEFORE)(u, item.name);
+    out.push({ id: ids.twoDays, title: copy.title, body: copy.body, schedule: { at: twoDayTime, allowWhileIdle: true } });
+  }
+  if (oneDayTime) {
+    const copy = pickRandom(ONE_DAY_BEFORE)(u, item.name);
+    out.push({ id: ids.oneDay, title: copy.title, body: copy.body, schedule: { at: oneDayTime, allowWhileIdle: true } });
+  }
+  if (dayOfTime) {
+    const copy = pickRandom(DAY_OF)(u, item.name);
+    out.push({ id: ids.dayOf, title: copy.title, body: copy.body, schedule: { at: dayOfTime, allowWhileIdle: true } });
+  }
+  return out;
+}
+
 export async function scheduleItemNotifications(item: PantryItem, userName?: string | null): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   if (!item.expirationDate) return;
 
   try {
-    const u = firstName(userName);
-    const ids = notificationIdsForItem(item.id);
-    const twoDayTime = expirationNotificationTime(item.expirationDate, 2);
-    const oneDayTime = expirationNotificationTime(item.expirationDate, 1);
-    const dayOfTime = expirationNotificationTime(item.expirationDate, 0);
-
-    const toSchedule: Parameters<typeof LocalNotifications.schedule>[0]['notifications'] = [];
-
-    if (twoDayTime) {
-      const copy = pickRandom(TWO_DAYS_BEFORE)(u, item.name);
-      toSchedule.push({ id: ids.twoDays, title: copy.title, body: copy.body, schedule: { at: twoDayTime, allowWhileIdle: true } });
-    }
-    if (oneDayTime) {
-      const copy = pickRandom(ONE_DAY_BEFORE)(u, item.name);
-      toSchedule.push({ id: ids.oneDay, title: copy.title, body: copy.body, schedule: { at: oneDayTime, allowWhileIdle: true } });
-    }
-    if (dayOfTime) {
-      const copy = pickRandom(DAY_OF)(u, item.name);
-      toSchedule.push({ id: ids.dayOf, title: copy.title, body: copy.body, schedule: { at: dayOfTime, allowWhileIdle: true } });
-    }
-
+    const toSchedule = buildItemNotifications(item, userName);
     if (toSchedule.length > 0) {
       await LocalNotifications.schedule({ notifications: toSchedule });
     }
@@ -357,8 +370,17 @@ interface RescheduleContext {
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   await cancelAllNotifications();
+  // Batch every item's notifications into a single schedule() call instead of
+  // awaiting one round-trip per item — for a large pantry the old serial loop
+  // visibly stalled the "notifications enabled" toggle.
+  const all: NotifList = [];
   for (const item of ctx.items) {
-    await scheduleItemNotifications(item, ctx.userName);
+    for (const n of buildItemNotifications(item, ctx.userName)) all.push(n);
+  }
+  try {
+    if (all.length > 0) await LocalNotifications.schedule({ notifications: all });
+  } catch (e) {
+    debug.warn('[notifications] bulk schedule failed:', e);
   }
   await scheduleStreakProtection(ctx.streakDays, ctx.userName);
   await scheduleReEngagement(ctx.userName);

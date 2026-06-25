@@ -14,7 +14,7 @@ import * as debug from './debug';
 function syncWrite(
   fn: () => PromiseLike<{ error: { message: string } | null }>,
   label: string,
-  maxRetries = 2,
+  maxRetries = 4,
   delayMs = 2000,
 ): void {
   void (async () => {
