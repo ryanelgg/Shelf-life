@@ -215,11 +215,20 @@ export function parseLocalDate(dateString: string): Date {
   return new Date(year, (month || 1) - 1, day || 1);
 }
 
-export function getFreshnessStatus(expirationDate: string): FreshnessStatus {
+export function getFreshnessStatus(expirationDate: string, frozen = false): FreshnessStatus {
   const today = new Date();
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const exp = parseLocalDate(expirationDate);
   const daysLeft = Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (frozen) {
+    // Freezing applies a long, flat shelf life, so a frozen item never spoils on
+    // the fridge/pantry timeline. Never alarm it as expiring/expired — show it
+    // as fresh (or "good" if its own freezer date is genuinely near). This keeps
+    // the false "expired" badges and red colours off frozen food even for items
+    // frozen before their date was recomputed.
+    return daysLeft > 7 ? 'fresh' : 'good';
+  }
 
   if (daysLeft < 0) return 'expired';
   if (daysLeft <= 1) return 'expiring';

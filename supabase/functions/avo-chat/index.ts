@@ -1,23 +1,7 @@
 import { AVO_SYSTEM_PROMPT } from '../../../src/lib/avoPrompt.ts';
+import { corsHeaders, json, guardAi } from '../_shared/guard.ts';
 
 type AvoChatMessage = { role: 'user' | 'assistant'; content: string };
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...corsHeaders,
-      ...(init.headers ?? {}),
-    },
-  });
-}
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
@@ -27,6 +11,11 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
+
+  // Require a signed-in user + enforce per-user ceilings. Avo chat is cheap
+  // (Groq) so the caps are generous, but still fatal to a runaway loop.
+  const gate = await guardAi(request, { fn: 'avo-chat', perMinute: 8, perHour: 60, perDay: 100 });
+  if (!gate.ok) return gate.response;
 
   const groqApiKey = Deno.env.get('GROQ_API_KEY');
   if (!groqApiKey) {

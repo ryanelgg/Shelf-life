@@ -8,6 +8,8 @@ interface FridgeScanResponse {
   error?: string;
 }
 
+import { getAccessToken } from './supabase';
+
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || 'https://placeholder.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const hostedUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/fridge-scan`;
@@ -22,8 +24,11 @@ export async function scanFridge(base64Image: string): Promise<FridgeItem[]> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (!import.meta.env.DEV) {
+    // User token so the function can identify + rate-limit the caller; the anon
+    // key fallback is rejected server-side (sign-in required).
+    const token = await getAccessToken();
     headers['apikey'] = supabaseAnonKey;
-    headers['Authorization'] = `Bearer ${supabaseAnonKey}`;
+    headers['Authorization'] = `Bearer ${token ?? supabaseAnonKey}`;
   }
 
   const response = await fetch(url, {

@@ -195,6 +195,9 @@ type NotifList = Parameters<typeof LocalNotifications.schedule>[0]['notification
 function buildItemNotifications(item: PantryItem, userName?: string | null): NotifList {
   const out: NotifList = [];
   if (!item.expirationDate) return out;
+  // Frozen items have a long, flat shelf life — don't fire "expires soon" pushes
+  // for food sitting in the freezer.
+  if (item.frozen) return out;
   const u = firstName(userName);
   const ids = notificationIdsForItem(item.id);
   const twoDayTime = expirationNotificationTime(item.expirationDate, 2);

@@ -1,8 +1,14 @@
+# AI functions now verify the caller's JWT at the gateway (verify_jwt = true)
+# AND re-check inside the function that the bearer is a real signed-in user
+# (a bare anon key is rejected), then enforce per-user minute/hour/day caps via
+# public.check_ai_rate_limit. See supabase/functions/_shared/guard.ts and
+# migration 0003_ai_rate_limit.sql.
+
 [functions.avo-chat]
-verify_jwt = false
+verify_jwt = true
 
 [functions.receipt-ocr]
-verify_jwt = false
+verify_jwt = true
 
 [functions.fridge-scan]
-verify_jwt = false
+verify_jwt = true

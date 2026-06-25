@@ -1,16 +1,5 @@
 import * as Sentry from "https://deno.land/x/sentry/index.mjs";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-function json(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...(init.headers ?? {}) },
-  });
-}
+import { corsHeaders, json, guardAi } from '../_shared/guard.ts';
 
 const FRIDGE_PROMPT = `You are a kitchen-inventory vision system. Look at this photo of an open fridge, freezer, or pantry shelf and list the distinct food/drink items you can see.
 Return ONLY a JSON array of objects with "name" and "quantity" fields. Example:
@@ -33,6 +22,11 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
+  // Require a signed-in user + per-user ceilings. Vision (Claude) is pricier
+  // than chat, so the caps are tighter.
+  const gate = await guardAi(request, { fn: 'fridge-scan', perMinute: 5, perHour: 20, perDay: 40 });
+  if (!gate.ok) return gate.response;
+
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!anthropicKey) {
     return json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });

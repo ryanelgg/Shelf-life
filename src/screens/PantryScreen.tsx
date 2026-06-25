@@ -147,7 +147,7 @@ export function PantryScreen() {
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
-    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expiring' || s === 'expiring-soon'; });
+    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate, i.frozen); return s === 'expiring' || s === 'expiring-soon'; });
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       items = items.filter(i => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
@@ -160,14 +160,14 @@ export function PantryScreen() {
   }, [pantryItems, activeLocation, sortBy, searchQuery, expiringOnly]);
 
   const expiringCount = pantryItems.filter(i => {
-    const status = getFreshnessStatus(i.expirationDate);
+    const status = getFreshnessStatus(i.expirationDate, i.frozen);
     return status === 'expiring' || status === 'expiring-soon';
   }).length;
 
   const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
   const urgentItems = useMemo(() => (
     pantryItems
-      .filter(i => ['expired', 'expiring', 'expiring-soon'].includes(getFreshnessStatus(i.expirationDate)))
+      .filter(i => ['expired', 'expiring', 'expiring-soon'].includes(getFreshnessStatus(i.expirationDate, i.frozen)))
       .sort((a, b) => parseLocalDate(a.expirationDate).getTime() - parseLocalDate(b.expirationDate).getTime())
       .slice(0, 3)
   ), [pantryItems]);
@@ -185,7 +185,7 @@ export function PantryScreen() {
         const m = pantryItems.find(p => ingredientMatchesItem(ing.name, p.name));
         if (m) {
           matchCount++;
-          const s = getFreshnessStatus(m.expirationDate);
+          const s = getFreshnessStatus(m.expirationDate, m.frozen);
           if (s === 'expiring' || s === 'expiring-soon' || s === 'expired') usesExpiring = true;
         }
       }
@@ -550,7 +550,7 @@ export function PantryScreen() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {urgentItems.map((item, index) => {
               const days = getDaysUntilExpiration(item.expirationDate);
-              const color = getFreshnessColor(getFreshnessStatus(item.expirationDate));
+              const color = getFreshnessColor(getFreshnessStatus(item.expirationDate, item.frozen));
               return (
                 <div
                   key={item.id}
@@ -808,7 +808,7 @@ export function PantryScreen() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div key={listAnimKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {filteredItems.map((item, i) => {
-          const status = getFreshnessStatus(item.expirationDate);
+          const status = getFreshnessStatus(item.expirationDate, item.frozen);
           const color = getFreshnessColor(status);
           const days = getDaysUntilExpiration(item.expirationDate);
           const isSwipe = swipingItem === item.id;

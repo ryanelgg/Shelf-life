@@ -1,4 +1,5 @@
 import type { AvoChatMessage } from './avoChatSession';
+import { getAccessToken } from './supabase';
 import * as debug from './debug';
 
 interface AvoChatResponse {
@@ -53,13 +54,17 @@ async function requestFromUrl(url: string, init: RequestInit) {
   return data.text;
 }
 
-function requestFromHostedFunction(messages: AvoChatMessage[]) {
+async function requestFromHostedFunction(messages: AvoChatMessage[]) {
+  // Send the signed-in user's token so the function can identify + rate-limit
+  // them. Falls back to the anon key, which the function will reject with a
+  // "Please sign in" message (guest mode can't use Avo).
+  const token = await getAccessToken();
   return requestFromUrl(hostedAvoChatUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
+      Authorization: `Bearer ${token ?? supabaseAnonKey}`,
     },
     body: JSON.stringify({ messages }),
   });

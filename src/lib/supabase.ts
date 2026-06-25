@@ -5,6 +5,16 @@ const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || 'p
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+/**
+ * The signed-in user's access token, or null if there's no session (e.g. a
+ * local-only "guest"). AI edge functions require this token — a bare anon key
+ * is rejected — so callers send it as the Authorization bearer.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 // ── Typed row shapes (mirrors the SQL tables) ─────────────────────────────────
 
 export interface ProfileRow {
