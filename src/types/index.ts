@@ -204,7 +204,14 @@ export function formatLocalDate(date: Date): string {
 }
 
 export function parseLocalDate(dateString: string): Date {
-  const [year, month, day] = dateString.split('-').map(Number);
+  const [year, month, day] = (dateString || '').split('-').map(Number);
+  if (!Number.isFinite(year)) {
+    // Malformed/empty date (e.g. a bad sync row or unvalidated edge-function
+    // payload). Fall back to today so the item renders as a normal entry
+    // instead of "Invalid Date"/NaN days, which looked broken in the pantry.
+    const t = new Date();
+    return new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  }
   return new Date(year, (month || 1) - 1, day || 1);
 }
 

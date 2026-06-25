@@ -84,6 +84,14 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
 
 let nextId = 0;
 function generateItemId(): string {
+  // Prefer a collision-proof UUID. The old counter reset to 0 on every app
+  // launch, so two items added in the same millisecond across a reload (or in a
+  // tight voice/receipt/fridge-scan batch loop) could collide and clobber each
+  // other's notifications. crypto.randomUUID is available in all our targets;
+  // the counter stays as a defensive fallback for any environment without it.
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `p-${crypto.randomUUID()}`;
+  }
   return `p-${++nextId}-${Date.now().toString(36)}`;
 }
 

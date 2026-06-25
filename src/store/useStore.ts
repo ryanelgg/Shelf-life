@@ -411,6 +411,11 @@ export const useStore = create<ShelfLifeStore>()(
         const { supabaseUserId, household } = useStore.getState();
         if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
+        // Track whether the streak actually advanced on THIS call, so we only
+        // celebrate a milestone once. Logging a second "eaten" item the same day
+        // used to re-fire (and re-arm) the milestone push for a streak already
+        // reached.
+        let streakAdvanced = false;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
           const today = formatLocalDate(new Date());
@@ -425,6 +430,7 @@ export const useStore = create<ShelfLifeStore>()(
           } else {
             if (lastActiveDate !== today) {
               streakDays = lastActiveDate === yesterday ? streakDays + 1 : 1;
+              streakAdvanced = true;
             }
             lastActiveDate = today;
           }
@@ -446,7 +452,7 @@ export const useStore = create<ShelfLifeStore>()(
         const { notificationsEnabled, user } = useStore.getState();
         if (notificationsEnabled && user) {
           void scheduleStreakProtection(user.streakDays, user.name);
-          if ([3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
+          if (streakAdvanced && [3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
             void celebrateStreakMilestone(user.streakDays);
           }
           void scheduleReEngagement(user.name);
