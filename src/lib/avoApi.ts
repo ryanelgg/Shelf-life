@@ -1,4 +1,5 @@
 import type { AvoChatMessage } from './avoChatSession';
+import { getAiAuthHeaders } from './authHeaders';
 import * as debug from './debug';
 
 interface AvoChatResponse {
@@ -53,13 +54,13 @@ async function requestFromUrl(url: string, init: RequestInit) {
   return data.text;
 }
 
-function requestFromHostedFunction(messages: AvoChatMessage[]) {
+async function requestFromHostedFunction(messages: AvoChatMessage[]) {
+  const authHeaders = await getAiAuthHeaders(supabaseAnonKey);
   return requestFromUrl(hostedAvoChatUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
+      ...authHeaders,
     },
     body: JSON.stringify({ messages }),
   });

@@ -1,3 +1,5 @@
+import { getAiAuthHeaders } from './authHeaders';
+
 interface ReceiptItem {
   name: string;
   price: number;
@@ -17,8 +19,7 @@ export async function scanReceipt(base64Image: string): Promise<ReceiptItem[]> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (!import.meta.env.DEV) {
-    headers['apikey'] = supabaseAnonKey;
-    headers['Authorization'] = `Bearer ${supabaseAnonKey}`;
+    Object.assign(headers, await getAiAuthHeaders(supabaseAnonKey));
   }
 
   const response = await fetch(url, {

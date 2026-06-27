@@ -1,3 +1,5 @@
+import { getAiAuthHeaders } from './authHeaders';
+
 interface FridgeItem {
   name: string;
   quantity?: number;
@@ -22,8 +24,7 @@ export async function scanFridge(base64Image: string): Promise<FridgeItem[]> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (!import.meta.env.DEV) {
-    headers['apikey'] = supabaseAnonKey;
-    headers['Authorization'] = `Bearer ${supabaseAnonKey}`;
+    Object.assign(headers, await getAiAuthHeaders(supabaseAnonKey));
   }
 
   const response = await fetch(url, {

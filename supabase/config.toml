@@ -1,8 +1,8 @@
 [functions.avo-chat]
-verify_jwt = false
+verify_jwt = true
 
 [functions.receipt-ocr]
-verify_jwt = false
+verify_jwt = true
 
 [functions.fridge-scan]
-verify_jwt = false
+verify_jwt = true
