@@ -148,6 +148,8 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     const reader = new BrowserMultiFormatReader();
     if (!videoRef.current) return;
 
+    let notFoundTimer: ReturnType<typeof setTimeout> | undefined;
+
     reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
       if (scannedRef.current) return;
       if (err instanceof NotFoundException) return;
@@ -160,7 +162,7 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
         emitScan(product);
       } else {
         handleNotFound(result.getText());
-        setTimeout(() => { scannedRef.current = false; }, 1500);
+        notFoundTimer = setTimeout(() => { scannedRef.current = false; }, 1500);
       }
     }).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : 'Camera error';
@@ -169,7 +171,10 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       setStatus('error');
     });
 
-    return () => { BrowserMultiFormatReader.releaseAllStreams(); };
+    return () => {
+      if (notFoundTimer) clearTimeout(notFoundTimer);
+      BrowserMultiFormatReader.releaseAllStreams();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

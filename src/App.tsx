@@ -265,7 +265,7 @@ export default function App() {
           id: sbUser.id,
           name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
           email: profile.email ?? sbUser.email,
-          authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
+          authProvider: profile.auth_provider as 'google' | 'apple' | 'email' | 'guest',
           dietaryPreferences: (profile.dietary_preferences ?? []) as never,
           createdAt: profile.created_at,
           onboardingComplete: true,

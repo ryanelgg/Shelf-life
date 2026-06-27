@@ -60,8 +60,8 @@ const QUICK_ITEMS = [
 ];
 
 
-function mapCategoryToLocation(category: FoodCategory): string {
-  const map: Record<FoodCategory, string> = {
+function mapCategoryToLocation(category: FoodCategory): StorageLocation {
+  const map: Record<FoodCategory, StorageLocation> = {
     Produce: 'fridge', Dairy: 'fridge', Meat: 'fridge', Seafood: 'fridge',
     Deli: 'fridge', Condiments: 'fridge',
     Grains: 'pantry', Canned: 'pantry', Snacks: 'pantry', Beverages: 'pantry', Other: 'pantry',
