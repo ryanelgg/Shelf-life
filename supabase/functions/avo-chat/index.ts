@@ -1,23 +1,11 @@
 import { AVO_SYSTEM_PROMPT } from '../../../src/lib/avoPrompt.ts';
+import { corsHeaders, json, guardAiRequest } from '../_shared/aiGuard.ts';
 
 type AvoChatMessage = { role: 'user' | 'assistant'; content: string };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...corsHeaders,
-      ...(init.headers ?? {}),
-    },
-  });
-}
+// Per-user daily ceiling. Sits ABOVE the in-app free/Pro chat limits — this is
+// the abuse/cost backstop, not the product paywall.
+const DAILY_LIMIT = 60;
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
@@ -27,6 +15,9 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
+
+  const guard = await guardAiRequest(request, 'avo-chat', DAILY_LIMIT);
+  if (!guard.ok) return guard.response;
 
   const groqApiKey = Deno.env.get('GROQ_API_KEY');
   if (!groqApiKey) {
