@@ -103,6 +103,17 @@ interface ShelfLifeStore {
   // Opted in per-device when creating/joining a household.
   householdStreakEnabled: boolean;
   setHouseholdStreakEnabled: (enabled: boolean) => void;
+
+  // Gamification: weekly Impact Card + nature badges + profile
+  cardTheme: string;                       // selected share-card theme (Pro)
+  setCardTheme: (id: string) => void;
+  lastImpactCardWeek: string | null;       // weekId the card was last shown for
+  setLastImpactCardWeek: (week: string) => void;
+  seenBadgeTierIds: string[];              // badge tiers already celebrated
+  markBadgesSeen: (ids: string[]) => void;
+  setAvatar: (avatar: string) => void;
+  showProfile: boolean;
+  setShowProfile: (show: boolean) => void;
 }
 
 
@@ -312,9 +323,28 @@ export const useStore = create<ShelfLifeStore>()(
       notificationsEnabled: null as boolean | null,
       household: null as Household | null,
       householdStreakEnabled: false,
+      cardTheme: 'classic',
+      lastImpactCardWeek: null as string | null,
+      seenBadgeTierIds: [] as string[],
+      showProfile: false,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       setHousehold: (household) => set({ household }),
       setHouseholdStreakEnabled: (enabled) => set({ householdStreakEnabled: enabled }),
+      setCardTheme: (id) => {
+        set({ cardTheme: id });
+        const { supabaseUserId } = useStore.getState();
+        if (supabaseUserId) syncProfileUpdates(supabaseUserId, { card_theme: id }).catch(debug.error);
+      },
+      setLastImpactCardWeek: (week) => set({ lastImpactCardWeek: week }),
+      markBadgesSeen: (ids) => set((s) => ({
+        seenBadgeTierIds: Array.from(new Set([...s.seenBadgeTierIds, ...ids])),
+      })),
+      setAvatar: (avatar) => {
+        set((s) => ({ user: s.user ? { ...s.user, avatar } : null }));
+        const { supabaseUserId } = useStore.getState();
+        if (supabaseUserId) syncProfileUpdates(supabaseUserId, { avatar }).catch(debug.error);
+      },
+      setShowProfile: (show) => set({ showProfile: show }),
       loadCloudData: (cloudPantry, cloudWaste, prevPantryIds, prevWasteIds) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
@@ -372,6 +402,10 @@ export const useStore = create<ShelfLifeStore>()(
           showSettings: false,
           avoAiConsent: null,
           notificationsEnabled: null,
+          cardTheme: 'classic',
+          lastImpactCardWeek: null,
+          seenBadgeTierIds: [],
+          showProfile: false,
         });
         void cancelAllNotifications();
       },
@@ -429,7 +463,7 @@ export const useStore = create<ShelfLifeStore>()(
       addWasteLog: (log) => {
         const { supabaseUserId, household } = useStore.getState();
         if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
-        let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
+        let profileUpdates: { streak_days: number; last_active_date: string; best_streak: number } | null = null;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
           const today = formatLocalDate(new Date());
@@ -447,13 +481,15 @@ export const useStore = create<ShelfLifeStore>()(
             }
             lastActiveDate = today;
           }
+          const bestStreak = Math.max(s.user.bestStreak ?? 0, streakDays);
           profileUpdates = {
             streak_days: streakDays,
             last_active_date: lastActiveDate,
+            best_streak: bestStreak,
           };
           return {
             wasteLogs: [...s.wasteLogs, log],
-            user: { ...s.user, streakDays, lastActiveDate },
+            user: { ...s.user, streakDays, lastActiveDate, bestStreak },
           };
         });
         if (supabaseUserId && profileUpdates) {
@@ -621,6 +657,9 @@ export const useStore = create<ShelfLifeStore>()(
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
         notificationsEnabled: state.notificationsEnabled,
+        cardTheme: state.cardTheme,
+        lastImpactCardWeek: state.lastImpactCardWeek,
+        seenBadgeTierIds: state.seenBadgeTierIds,
       }),
     }
   )

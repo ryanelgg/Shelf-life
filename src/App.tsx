@@ -9,6 +9,9 @@ import { formatLocalDate, type AuthProvider } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
+import { WeeklyImpactCard } from './components/WeeklyImpactCard';
+import { weekId, logsThisWeek } from './lib/impact';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -174,7 +177,8 @@ function ScreenFallback({ label }: { label: string }) {
 }
 
 export default function App() {
-  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId } = useStore();
+  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId, wasteLogs, lastImpactCardWeek, setLastImpactCardWeek, showProfile, setShowProfile } = useStore();
+  const [showWeeklyCard, setShowWeeklyCard] = useState(false);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -274,6 +278,8 @@ export default function App() {
           subscriptionTier: profile.subscription_tier as 'free' | 'pro',
           avoChatCount: profile.avo_chat_count,
           avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
+          avatar: profile.avatar ?? undefined,
+          bestStreak: profile.best_streak ?? profile.streak_days,
         });
         debug.log('[auth] setUser called — transitioning to main app');
         posthog.identify(sbUser.id, {
@@ -328,6 +334,15 @@ export default function App() {
     unsubscribeHousehold();
   }, [household?.id, supabaseUserId]);
 
+  // Once a week, if there's been activity, surface the weekly Impact Card.
+  useEffect(() => {
+    if (!user?.onboardingComplete) return;
+    const currentWeek = weekId(new Date());
+    if (lastImpactCardWeek === currentWeek) return;
+    if (logsThisWeek(wasteLogs).length === 0) return;
+    setShowWeeklyCard(true);
+  }, [user?.onboardingComplete, wasteLogs, lastImpactCardWeek]);
+
   if (!user?.onboardingComplete) {
     return (
       <div data-theme={theme} style={{
@@ -379,6 +394,15 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      {showProfile && <ProfileScreen onClose={() => setShowProfile(false)} />}
+      {showWeeklyCard && (
+        <WeeklyImpactCard
+          onClose={() => {
+            setLastImpactCardWeek(weekId(new Date()));
+            setShowWeeklyCard(false);
+          }}
+        />
+      )}
       <KeyboardScrollManager />
     </div>
   );

@@ -21,6 +21,8 @@ export interface User {
   subscriptionTier: SubscriptionTier;
   avoChatCount: number;
   avoChatResetDate: string;
+  avatar?: string;       // preset emoji avatar (Profile screen)
+  bestStreak?: number;   // highest streak ever reached (lifetime profile stat)
 }
 
 export type ThemeMode = 'dark' | 'light';
