@@ -287,9 +287,15 @@ export default function App() {
           const household = await getMyHousehold(sbUser.id);
           if (mySeq !== authSeq) return; // superseded while loading
           setHousehold(household);
+          // Snapshot which items exist locally BEFORE the fetch, so loadCloudData
+          // can tell "added during the load window" (keep) from "deleted
+          // elsewhere" (drop) and items added in the first seconds don't vanish.
+          const preLoad = useStore.getState();
+          const prevPantryIds = new Set(preLoad.pantryItems.map((i) => i.id));
+          const prevWasteIds = new Set(preLoad.wasteLogs.map((w) => w.id));
           const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
           if (mySeq !== authSeq) return; // superseded while loading
-          loadCloudData(pantryItems, wasteLogs);
+          loadCloudData(pantryItems, wasteLogs, prevPantryIds, prevWasteIds);
           debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length, household: household?.id ?? null });
         } catch (err) {
           debug.warn('[auth] loadAllData failed, keeping local data:', err);

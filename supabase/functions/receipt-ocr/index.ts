@@ -1,16 +1,8 @@
 import * as Sentry from "https://deno.land/x/sentry/index.mjs";
+import { corsHeaders, json, guardAiRequest } from '../_shared/aiGuard.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-function json(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...(init.headers ?? {}) },
-  });
-}
+const DAILY_LIMIT = 40;
+
 const RECEIPT_PROMPT = `You are a receipt OCR system. Extract grocery/food items and their prices from this receipt image.
 Return ONLY a JSON array of objects with "name" and "price" fields. Example:
 [{"name": "Organic Milk", "price": 5.49}, {"name": "Bananas", "price": 1.29}]
@@ -31,6 +23,9 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
+  const guard = await guardAiRequest(request, 'receipt-ocr', DAILY_LIMIT);
+  if (!guard.ok) return guard.response;
+
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!anthropicKey) {
     return json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
