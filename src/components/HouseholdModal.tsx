@@ -8,6 +8,7 @@ import {
   joinHousehold,
   leaveHousehold,
   getHouseholdMembers,
+  claimItemsIntoHousehold,
 } from '../lib/households';
 import { loadAllData } from '../lib/supabaseSync';
 import * as debug from '../lib/debug';
@@ -82,6 +83,8 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     try {
       const hh = await createHousehold();
       setHousehold(hh);
+      // Pull any items added before this household existed into the shared pantry.
+      try { await claimItemsIntoHousehold(); } catch (e) { debug.error('[household] claim items failed', e); }
       await reloadPantry(hh.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create household');
@@ -97,6 +100,8 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     try {
       const hh = await joinHousehold(code.trim());
       setHousehold(hh);
+      // Pull any items added before joining into the shared pantry.
+      try { await claimItemsIntoHousehold(); } catch (e) { debug.error('[household] claim items failed', e); }
       await reloadPantry(hh.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not join household');

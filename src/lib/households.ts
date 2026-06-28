@@ -70,6 +70,16 @@ export async function leaveHousehold(): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Move the caller's solo items (their own rows that have no household yet) into
+ * the household they currently belong to. Call right after create/join so items
+ * added before joining don't disappear from the shared pantry (bug fix 1a).
+ */
+export async function claimItemsIntoHousehold(): Promise<void> {
+  const { error } = await supabase.rpc('claim_items_into_household');
+  if (error) throw new Error(error.message);
+}
+
 /** List the members of the caller's household, with display names. */
 export async function getHouseholdMembers(): Promise<HouseholdMember[]> {
   const { data, error } = await supabase.rpc('household_members_info');

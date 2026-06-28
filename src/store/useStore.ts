@@ -411,26 +411,29 @@ export const useStore = create<ShelfLifeStore>()(
       },
 
       addPantryItem: (item, method = 'manual') => {
-        set((s) => ({ pantryItems: [...s.pantryItems, item] }));
+        const stamped: PantryItem = { ...item, updatedAt: item.updatedAt ?? new Date().toISOString() };
+        set((s) => ({ pantryItems: [...s.pantryItems, stamped] }));
         posthog.capture('pantry_item_added', {
           method,
-          category: item.category,
-          has_expiry: !!item.expirationDate,
+          category: stamped.category,
+          has_expiry: !!stamped.expirationDate,
         });
         const { supabaseUserId, notificationsEnabled, user, household } = useStore.getState();
-        if (supabaseUserId) syncPantryAdd(item, supabaseUserId, household?.id);
+        if (supabaseUserId) syncPantryAdd(stamped, supabaseUserId, household?.id);
         if (notificationsEnabled) {
-          void scheduleItemNotifications(item, user?.name);
+          void scheduleItemNotifications(stamped, user?.name);
           // Activity in the app — push the re-engagement reminder forward
           void scheduleReEngagement(user?.name);
         }
       },
       updatePantryItem: (id, updates) => {
+        // Stamp the edit so the realtime last-write-wins compare is meaningful.
+        const stampedUpdates = { ...updates, updatedAt: new Date().toISOString() };
         set((s) => ({
-          pantryItems: s.pantryItems.map(i => i.id === id ? { ...i, ...updates } : i),
+          pantryItems: s.pantryItems.map(i => i.id === id ? { ...i, ...stampedUpdates } : i),
         }));
         const { supabaseUserId, notificationsEnabled, pantryItems, user } = useStore.getState();
-        if (supabaseUserId) syncPantryUpdate(id, updates);
+        if (supabaseUserId) syncPantryUpdate(id, stampedUpdates);
         if (notificationsEnabled) {
           if (updates.expirationDate !== undefined) {
             const updated = pantryItems.find(i => i.id === id);
@@ -448,6 +451,12 @@ export const useStore = create<ShelfLifeStore>()(
       upsertPantryItemLocal: (item) => set((s) => {
         const idx = s.pantryItems.findIndex(i => i.id === item.id);
         if (idx === -1) return { pantryItems: [...s.pantryItems, item] };
+        // Last-write-wins: ignore an incoming change that's older than the copy
+        // we already have, so a slow echo can't clobber a newer local edit.
+        const existing = s.pantryItems[idx];
+        if (existing.updatedAt && item.updatedAt && item.updatedAt < existing.updatedAt) {
+          return {};
+        }
         const next = s.pantryItems.slice();
         next[idx] = item;
         return { pantryItems: next };

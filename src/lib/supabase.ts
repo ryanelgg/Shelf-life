@@ -47,6 +47,7 @@ export interface PantryItemRow {
   notes: string | null;
   frozen: boolean;
   date_type: string | null;
+  updated_at?: string;
 }
 
 export interface WasteLogRow {

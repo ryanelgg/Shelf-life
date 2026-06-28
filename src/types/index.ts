@@ -85,6 +85,7 @@ export interface PantryItem {
   notes?: string;
   frozen?: boolean;
   dateType?: DateLabelType;
+  updatedAt?: string;    // client-stamped; drives last-write-wins on shared edits
 }
 
 export type WasteAction = 'eaten' | 'tossed' | 'composted' | 'donated' | 'shared';

@@ -337,6 +337,7 @@ export function rowToPantryItem(r: PantryItemRow): PantryItem {
     notes: r.notes ?? undefined,
     frozen: r.frozen,
     dateType: (r.date_type as PantryItem['dateType']) ?? undefined,
+    updatedAt: r.updated_at ?? undefined,
   };
 }
 
@@ -397,6 +398,7 @@ export function syncPantryAdd(item: PantryItem, userId: string, householdId?: st
     notes: item.notes ?? null,
     frozen: item.frozen ?? false,
     date_type: item.dateType ?? null,
+    updated_at: item.updatedAt ?? new Date().toISOString(),
   }), 'pantryAdd');
 }
 
@@ -413,6 +415,8 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
   if (updates.notes !== undefined)           row.notes = updates.notes ?? null;
   if (updates.frozen !== undefined)          row.frozen = updates.frozen;
   if (updates.dateType !== undefined)        row.date_type = updates.dateType ?? null;
+  // Always bump the timestamp so the realtime last-write-wins compare is meaningful.
+  row.updated_at = updates.updatedAt ?? new Date().toISOString();
 
   syncWrite(() => supabase.from('pantry_items').update(row).eq('id', id), 'pantryUpdate');
 }
