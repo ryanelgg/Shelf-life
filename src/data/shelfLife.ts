@@ -2366,21 +2366,50 @@ const shelfLifeMap: Record<string, ShelfLifeEntry> = {
   }
 };
 
+// Whitespace-pad a food string so we can match on WHOLE words. Non-alphanumeric
+// chars become spaces, runs collapse, and the result is wrapped in spaces — so
+// `" whole milk ".includes(" milk ")` is true but `" milkshake ".includes(" milk ")`
+// is false. This is what stops compound words like "milkshake"→milk or
+// "buttermilk"→butter from grabbing an unrelated (often much shorter) shelf life.
+function padWords(s: string): string {
+  return ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')} `;
+}
+
 export function lookupShelfLife(foodName: string, location: string): number | null {
   const name = foodName.toLowerCase().trim();
-  // Try longest keyword match first for most specific result.
-  // kw.includes(name) direction is only used when the query is ≥50% of the
-  // keyword length — this prevents "chicken" from matching "chicken broth canned".
-  let bestMatch: ShelfLifeEntry | null = null;
-  let bestLen = 0;
+  if (!name) return null;
+
+  const paddedName = padWords(name);
+  const nameWords = paddedName.trim().split(' ');
+  const singleWord = nameWords.length === 1 ? nameWords[0] : null;
+
+  // Forward match: the food name CONTAINS the keyword as whole word(s). Prefer
+  // the longest keyword (most specific), so "whole milk" beats "milk".
+  let forwardMatch: ShelfLifeEntry | null = null;
+  let forwardLen = 0;
+  // Reverse fallback: a single-word query that is the HEAD (last) word of a
+  // multi-word keyword, e.g. "milk"→"whole milk", "rice"→"brown rice". Prefer
+  // the shortest such keyword. Matching only the head word keeps "chicken" from
+  // grabbing "chicken broth canned" (head word there is "canned").
+  let reverseMatch: ShelfLifeEntry | null = null;
+  let reverseLen = Infinity;
+
   for (const [kw, entry] of Object.entries(shelfLifeMap)) {
-    const kwInName  = name.includes(kw);
-    const nameInKw  = kw.includes(name) && name.length >= kw.length * 0.5;
-    if ((kwInName || nameInKw) && kw.length > bestLen) {
-      bestMatch = entry;
-      bestLen = kw.length;
+    const paddedKw = padWords(kw);
+    if (paddedName.includes(paddedKw) && kw.length > forwardLen) {
+      forwardMatch = entry;
+      forwardLen = kw.length;
+    }
+    if (singleWord) {
+      const kwWords = paddedKw.trim().split(' ');
+      if (kwWords.length > 1 && kwWords[kwWords.length - 1] === singleWord && kw.length < reverseLen) {
+        reverseMatch = entry;
+        reverseLen = kw.length;
+      }
     }
   }
+
+  const bestMatch = forwardMatch ?? reverseMatch;
   if (!bestMatch) return null;
   if (location === 'fridge')  return bestMatch.fridgeDays;
   if (location === 'freezer') return bestMatch.freezerDays;

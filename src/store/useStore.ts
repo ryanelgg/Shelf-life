@@ -38,7 +38,7 @@ interface ShelfLifeStore {
   // Supabase user id (set after OAuth, used for sync)
   supabaseUserId: string | null;
   setSupabaseUserId: (id: string | null) => void;
-  loadCloudData: (pantryItems: PantryItem[], wasteLogs: WasteLog[]) => void;
+  loadCloudData: (pantryItems: PantryItem[], wasteLogs: WasteLog[], prevPantryIds?: Set<string>, prevWasteIds?: Set<string>) => void;
   // Household sharing (Pro): when set, the pantry is shared with up to 4 members
   household: Household | null;
   setHousehold: (household: Household | null) => void;
@@ -315,7 +315,7 @@ export const useStore = create<ShelfLifeStore>()(
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       setHousehold: (household) => set({ household }),
       setHouseholdStreakEnabled: (enabled) => set({ householdStreakEnabled: enabled }),
-      loadCloudData: (cloudPantry, cloudWaste) => {
+      loadCloudData: (cloudPantry, cloudWaste, prevPantryIds, prevWasteIds) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
         // array means the user genuinely has no items (intentional deletion,
@@ -324,7 +324,26 @@ export const useStore = create<ShelfLifeStore>()(
         //
         // Network failures throw before reaching here (caught in App.tsx), so
         // an empty array always means a successful empty response.
-        set({ pantryItems: cloudPantry, wasteLogs: cloudWaste });
+        //
+        // One exception: items the user added on THIS device *during* the load
+        // window (present now, but not in the pre-load snapshot and not in the
+        // cloud result) are genuinely new — keep them so a quick add right after
+        // launch doesn't silently vanish. Pre-existing local items missing from
+        // the cloud are still dropped (that's the "deleted elsewhere" case).
+        set((s) => {
+          const cloudPantryIds = new Set(cloudPantry.map((i) => i.id));
+          const cloudWasteIds = new Set(cloudWaste.map((w) => w.id));
+          const freshPantry = prevPantryIds
+            ? s.pantryItems.filter((i) => !prevPantryIds.has(i.id) && !cloudPantryIds.has(i.id))
+            : [];
+          const freshWaste = prevWasteIds
+            ? s.wasteLogs.filter((w) => !prevWasteIds.has(w.id) && !cloudWasteIds.has(w.id))
+            : [];
+          return {
+            pantryItems: [...cloudPantry, ...freshPantry],
+            wasteLogs: [...cloudWaste, ...freshWaste],
+          };
+        });
       },
       setOAuthNewUser: (u) => set({ oauthNewUser: u }),
       setUser: (user) => set({ user }),

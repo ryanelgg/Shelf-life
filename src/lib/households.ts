@@ -10,20 +10,41 @@ function toHousehold(row: HouseholdRow, role: HouseholdRole): Household {
   return { id: row.id, inviteCode: row.invite_code, ownerId: row.owner_id, role };
 }
 
-/** Returns the caller's household, or null if they aren't in one. */
+/**
+ * Returns the caller's household, or null if they genuinely aren't in one.
+ *
+ * A transient DB/network error is NOT the same as "no household": on error we
+ * retry once, and if it still fails we THROW so the caller keeps the last-known
+ * household instead of silently dropping a shared-pantry user to their solo
+ * items. Only an empty result (no membership row) returns null.
+ */
 export async function getMyHousehold(userId: string): Promise<Household | null> {
-  const { data: member, error } = await supabase
-    .from('household_members')
-    .select('household_id, role')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (error || !member) return null;
+  let member: { household_id: string; role: string } | null = null;
+  let lastError: { message?: string } | null = null;
 
-  const { data: hh } = await supabase
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase
+      .from('household_members')
+      .select('household_id, role')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!error) {
+      member = data;
+      lastError = null;
+      break;
+    }
+    lastError = error;
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 300)); // brief backoff before retry
+  }
+  if (lastError) throw new Error(`Failed to load household membership: ${lastError.message ?? 'unknown error'}`);
+  if (!member) return null;
+
+  const { data: hh, error: hhError } = await supabase
     .from('households')
     .select('id, owner_id, invite_code, created_at')
     .eq('id', member.household_id)
     .maybeSingle();
+  if (hhError) throw new Error(`Failed to load household: ${hhError.message ?? 'unknown error'}`);
   if (!hh) return null;
 
   return toHousehold(hh as HouseholdRow, member.role as HouseholdRole);
