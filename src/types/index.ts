@@ -242,8 +242,11 @@ export function getDaysUntilExpiration(expirationDate: string): number {
 // and "tomatoes" matches "tomato". Intentionally conservative.
 function foldPlural(word: string): string {
   if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y';
-  if (word.length > 3 && word.endsWith('es')) return word.slice(0, -2);
-  if (word.length > 2 && word.endsWith('s')) return word.slice(0, -1);
+  // Only true "-es" plurals drop two letters (boxes→box, tomatoes→tomato,
+  // dishes→dish). Other "-es" words are just "-s" plurals (grapes→grape).
+  if (word.length > 4 && /(ches|shes|ses|xes|zes|oes)$/.test(word)) return word.slice(0, -2);
+  // Don't strip the trailing "s" off singular words ending in "ss" (glass, grass).
+  if (word.length > 2 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
   return word;
 }
 

@@ -249,9 +249,11 @@ export function AddItemScreen() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = (reader.result as string).split(',')[1];
+      if (typeof reader.result !== 'string') return;
+      const base64 = reader.result.split(',')[1];
       processReceiptImage(base64);
     };
+    reader.onerror = () => debug.error('Receipt file read failed');
     reader.readAsDataURL(file);
     e.target.value = '';
   };
@@ -304,9 +306,11 @@ export function AddItemScreen() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = (reader.result as string).split(',')[1];
+      if (typeof reader.result !== 'string') return;
+      const base64 = reader.result.split(',')[1];
       processFridgeImage(base64);
     };
+    reader.onerror = () => debug.error('Fridge file read failed');
     reader.readAsDataURL(file);
     e.target.value = '';
   };
@@ -335,6 +339,7 @@ export function AddItemScreen() {
       unit: item.unit || 'pcs',
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
+      dateType: getDefaultDateType(item.category),
       estimatedValue: Number.isFinite(item.price) ? item.price : 0,
     }, 'receipt');
   };

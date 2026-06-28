@@ -5,7 +5,7 @@ import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSi
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { publishWidgetData } from './lib/widget';
-import { formatLocalDate } from './types';
+import { formatLocalDate, type AuthProvider } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -265,7 +265,7 @@ export default function App() {
           id: sbUser.id,
           name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
           email: profile.email ?? sbUser.email,
-          authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
+          authProvider: profile.auth_provider as AuthProvider,
           dietaryPreferences: (profile.dietary_preferences ?? []) as never,
           createdAt: profile.created_at,
           onboardingComplete: true,
