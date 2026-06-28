@@ -458,6 +458,16 @@ export function OnboardingFlow() {
           >
             Continue without an account
           </button>
+
+          {/* Minimum-age notice. Pantre is a general-audience (13+) app — this
+              keeps us out of COPPA's child-directed rules. Pair with a 13+ age
+              rating in App Store Connect. */}
+          <p style={{
+            fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center',
+            lineHeight: 1.4, maxWidth: '280px', marginTop: '8px',
+          }}>
+            You must be 13 or older to use Pantre.
+          </p>
         </div>
       )}
 
