@@ -214,6 +214,9 @@ export function getFreshnessStatus(expirationDate: string): FreshnessStatus {
   const exp = parseLocalDate(expirationDate);
   const daysLeft = Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
+  // Guard a corrupted/unparseable date: surface it as 'expired' so the user
+  // notices and can fix it, rather than silently classifying NaN as 'fresh'.
+  if (Number.isNaN(daysLeft)) return 'expired';
   if (daysLeft < 0) return 'expired';
   if (daysLeft <= 1) return 'expiring';
   if (daysLeft <= 3) return 'expiring-soon';
@@ -235,7 +238,9 @@ export function getDaysUntilExpiration(expirationDate: string): number {
   const today = new Date();
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const exp = parseLocalDate(expirationDate);
-  return Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const days = Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  // A corrupted/unparseable date counts as already expired (-1) instead of NaN.
+  return Number.isNaN(days) ? -1 : days;
 }
 
 // Fold a simple English plural to its singular form so "eggs" matches "egg"

@@ -139,10 +139,12 @@ export function PantryScreen() {
 
   useEffect(() => {
     if (pantryItems.length === 0) return;
+    let cancelled = false;
     const names = pantryItems.map(i => i.name);
     checkPantryForRecalls(names).then(matches => {
-      setRecallMatches(matches);
+      if (!cancelled) setRecallMatches(matches);
     }).catch(() => {/* silently ignore - recall check is best-effort */});
+    return () => { cancelled = true; };
   }, [pantryItems]);
 
   const filteredItems = useMemo(() => {
