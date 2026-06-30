@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { FoodCategory } from '../types';
+import * as debug from './debug';
 
 export interface CommunityProduct {
   barcode: string;
@@ -30,11 +31,14 @@ export async function submitCommunityProduct(
   const { data: { user } } = await supabase.auth.getUser();
   // onConflict: 'barcode' targets the community_products_pkey so a re-scan of
   // a known barcode updates the existing row instead of inserting a duplicate.
-  await supabase.from('community_products').upsert({
+  const { error } = await supabase.from('community_products').upsert({
     barcode,
     name: product.name.trim(),
     brand: product.brand.trim() || null,
     category: product.category,
     submitted_by: user?.id ?? null,
   }, { onConflict: 'barcode' });
+  // Previously the result was discarded, so a rejected write (RLS, NOT NULL on
+  // submitted_by for guests, network) failed completely silently. Surface it.
+  if (error) debug.warn('[communityProducts] submit failed:', error.message);
 }

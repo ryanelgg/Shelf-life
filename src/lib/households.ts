@@ -6,8 +6,17 @@ import type { Household, HouseholdMember, HouseholdRole } from '../types';
 // supabase/migrations/0001_households.sql) so the Pro requirement and the
 // 4-member cap are enforced server-side and can't be bypassed from the client.
 
-function toHousehold(row: HouseholdRow, role: HouseholdRole): Household {
-  return { id: row.id, inviteCode: row.invite_code, ownerId: row.owner_id, role };
+function toHousehold(row: unknown, role: HouseholdRole): Household {
+  // Guard the RPC payload before trusting it. A SECURITY DEFINER RPC can return
+  // null (no row), an array, or a row missing fields if the SQL ever changes;
+  // a blind `as HouseholdRow` cast would then surface as a raw TypeError
+  // ("cannot read id of undefined") and crash the create/join flow. Fail with a
+  // clean, catchable error instead so the UI can show a friendly message.
+  const r = (Array.isArray(row) ? row[0] : row) as Partial<HouseholdRow> | null | undefined;
+  if (!r || typeof r.id !== 'string' || typeof r.invite_code !== 'string' || typeof r.owner_id !== 'string') {
+    throw new Error("Couldn't load your household — please try again.");
+  }
+  return { id: r.id, inviteCode: r.invite_code, ownerId: r.owner_id, role };
 }
 
 /** Returns the caller's household, or null if they aren't in one. */

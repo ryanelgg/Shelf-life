@@ -351,7 +351,7 @@ export function PantryScreen() {
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
               {recallMatches.length === 1
-                ? `<strong>${recallMatches[0]!.matchedItem}</strong> may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`
+                ? <><strong>{recallMatches[0]!.matchedItem}</strong>{` may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`}</>
                 : `${recallMatches.length} items in your pantry may be affected by active FDA recalls.`
               }
             </div>
