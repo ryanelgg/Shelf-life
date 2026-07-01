@@ -79,7 +79,19 @@ Deno.serve(async (request) => {
     if (!jsonMatch) {
       return json({ items: [] });
     }
-    const items = JSON.parse(jsonMatch[0]) as Array<{ name: string; quantity?: number }>;
+    const parsed = JSON.parse(jsonMatch[0]);
+    // The model output is untrusted — keep only well-formed entries and coerce
+    // quantity to a sane, finite, positive integer.
+    const items = (Array.isArray(parsed) ? parsed : [])
+      .filter((it): it is { name: string; quantity?: unknown } =>
+        it && typeof it === 'object' && typeof it.name === 'string' && it.name.trim().length > 0)
+      .map((it) => {
+        const quantity = Math.floor(Number(it.quantity));
+        return {
+          name: it.name.trim().slice(0, 200),
+          quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        };
+      });
     return json({ items });
   } catch (error) {
     Sentry.captureException(error);
