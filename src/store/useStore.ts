@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS } from '../types';
+import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import * as debug from '../lib/debug';
@@ -509,28 +509,50 @@ export const useStore = create<ShelfLifeStore>()(
         if (!s.user) return false;
         const today = formatLocalDate(new Date());
 
-        if (s.user.subscriptionTier === 'pro') {
-          // Pro: 20 chats per day, resets daily
-          const count = s.user.avoChatResetDate === today ? s.user.avoChatCount : 0;
-          if (count >= FREE_LIMITS.proChatPerDay) return false;
-          const nextUser = { ...s.user, avoChatCount: count + 1, avoChatResetDate: today };
+        // Lazily start the 7-day Avo trial on the user's first chat (free users
+        // only). Once started, isAvoTrialActive() grants Pro-level daily access
+        // for 7 days, after which they fall back to the free lifetime allotment.
+        let user = s.user;
+        let startedTrial = false;
+        if (user.subscriptionTier !== 'pro' && !user.avoTrialStartedAt) {
+          user = { ...user, avoTrialStartedAt: today };
+          startedTrial = true;
+        }
+
+        const hasProAccess = user.subscriptionTier === 'pro' || isAvoTrialActive(user);
+
+        if (hasProAccess) {
+          // Pro / active trial: 20 chats per day, resets daily.
+          const count = user.avoChatResetDate === today ? user.avoChatCount : 0;
+          if (count >= FREE_LIMITS.proChatPerDay) {
+            if (startedTrial) {
+              set({ user });
+              if (s.supabaseUserId) {
+                syncProfileUpdates(s.supabaseUserId, { avo_trial_started_at: user.avoTrialStartedAt }).catch(debug.error);
+              }
+            }
+            return false;
+          }
+          const nextUser = { ...user, avoChatCount: count + 1, avoChatResetDate: today };
           set({ user: nextUser });
           if (s.supabaseUserId) {
             syncProfileUpdates(s.supabaseUserId, {
               avo_chat_count: nextUser.avoChatCount,
               avo_chat_reset_date: nextUser.avoChatResetDate,
+              avo_trial_started_at: nextUser.avoTrialStartedAt,
             }).catch(debug.error);
           }
           return true;
         }
 
-        // Free: 5 chats total (permanent, never resets)
-        if (s.user.avoChatCount >= FREE_LIMITS.avoChatTotal) return false;
-        const nextUser = { ...s.user, avoChatCount: s.user.avoChatCount + 1 };
+        // Free tier, trial ended: 5 chats total (permanent, never resets).
+        const freeUsed = user.avoFreeChatsUsed ?? 0;
+        if (freeUsed >= FREE_LIMITS.avoChatTotal) return false;
+        const nextUser = { ...user, avoFreeChatsUsed: freeUsed + 1 };
         set({ user: nextUser });
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
+            avo_free_chats_used: nextUser.avoFreeChatsUsed,
           }).catch(debug.error);
         }
         return true;
@@ -538,12 +560,17 @@ export const useStore = create<ShelfLifeStore>()(
       decrementAvoChat: (): void => {
         const s = useStore.getState();
         if (!s.user) return;
-        const nextUser = { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) };
+        // Refund the counter that was actually charged.
+        const hasProAccess = s.user.subscriptionTier === 'pro' || isAvoTrialActive(s.user);
+        const nextUser = hasProAccess
+          ? { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) }
+          : { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
         set({ user: nextUser });
         if (s.supabaseUserId) {
-          syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
-          }).catch(debug.error);
+          syncProfileUpdates(s.supabaseUserId, hasProAccess
+            ? { avo_chat_count: nextUser.avoChatCount }
+            : { avo_free_chats_used: nextUser.avoFreeChatsUsed },
+          ).catch(debug.error);
         }
       },
       canAddPantryItem: (): boolean => {
@@ -579,8 +606,21 @@ export const useStore = create<ShelfLifeStore>()(
     }),
     {
       name: 'shelf-life-storage-v2',
-      version: 1,
-      migrate: (state) => state,
+      version: 2,
+      migrate: (state, version) => {
+        // v2: introduce the Avo trial fields. For an existing free user, their
+        // old avoChatCount WAS the lifetime free count, so carry it into
+        // avoFreeChatsUsed (mirrors the SQL backfill); trial starts fresh.
+        const s = state as { user?: (User & { avoTrialStartedAt?: string | null; avoFreeChatsUsed?: number }) | null };
+        if (version < 2 && s?.user) {
+          const u = s.user;
+          if (u.avoTrialStartedAt === undefined) u.avoTrialStartedAt = null;
+          if (u.avoFreeChatsUsed === undefined) {
+            u.avoFreeChatsUsed = u.subscriptionTier === 'free' ? (u.avoChatCount ?? 0) : 0;
+          }
+        }
+        return state;
+      },
       merge: (persisted, current) => {
         const p = persisted as Partial<ShelfLifeStore>;
         return {

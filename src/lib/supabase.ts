@@ -16,6 +16,8 @@ export interface ProfileRow {
   last_active_date: string | null;
   avo_chat_count: number;
   avo_chat_reset_date: string | null;
+  avo_trial_started_at: string | null;
+  avo_free_chats_used: number;
   onboarding_complete: boolean;
   auth_provider: string;
   email: string | null;

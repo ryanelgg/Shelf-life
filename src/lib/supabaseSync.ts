@@ -303,6 +303,8 @@ export async function upsertProfile(user: User, supabaseUserId: string) {
     last_active_date: user.lastActiveDate,
     avo_chat_count: user.avoChatCount,
     avo_chat_reset_date: user.avoChatResetDate,
+    avo_trial_started_at: user.avoTrialStartedAt,
+    avo_free_chats_used: user.avoFreeChatsUsed,
     onboarding_complete: user.onboardingComplete,
   }), 'upsertProfile');
 }

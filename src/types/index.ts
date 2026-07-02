@@ -2,8 +2,9 @@ export type SubscriptionTier = 'free' | 'pro';
 
 export const FREE_LIMITS = {
   pantryItems: 20,
-  avoChatTotal: 5,     // free users: 5 chats forever
-  proChatPerDay: 20,   // pro users: 20 chats per day
+  avoChatTotal: 5,     // free users (after any trial): 5 chats forever
+  proChatPerDay: 20,   // pro users AND active-trial users: 20 chats per day
+  avoTrialDays: 7,     // new users get 7 days of Pro-level Avo access
 } as const;
 
 export type AuthProvider = 'apple' | 'google' | 'email' | 'guest';
@@ -19,8 +20,35 @@ export interface User {
   streakDays: number;
   lastActiveDate: string;
   subscriptionTier: SubscriptionTier;
+  // Daily Avo counter — used by Pro users AND users in their active trial.
   avoChatCount: number;
   avoChatResetDate: string;
+  // 7-day Avo trial: the date it started (YYYY-MM-DD), or null if not started.
+  avoTrialStartedAt: string | null;
+  // Lifetime free-tier Avo allotment, counted only AFTER the trial ends. Kept
+  // separate from avoChatCount so a Pro→free or trial→free transition can't
+  // lock the user out with a stale daily count.
+  avoFreeChatsUsed: number;
+}
+
+/** Days remaining in the Avo trial (0 if never started or expired). */
+export function avoTrialDaysLeft(
+  u: { avoTrialStartedAt: string | null },
+  now: Date = new Date(),
+): number {
+  if (!u.avoTrialStartedAt) return 0;
+  const start = parseLocalDate(u.avoTrialStartedAt);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const elapsed = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
+  return Math.max(0, FREE_LIMITS.avoTrialDays - elapsed);
+}
+
+/** True while the user is inside their 7-day Avo trial window. */
+export function isAvoTrialActive(
+  u: { avoTrialStartedAt: string | null },
+  now: Date = new Date(),
+): boolean {
+  return avoTrialDaysLeft(u, now) > 0;
 }
 
 export type ThemeMode = 'dark' | 'light';

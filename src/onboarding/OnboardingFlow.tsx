@@ -215,6 +215,10 @@ export function OnboardingFlow() {
       subscriptionTier: chosenTier,
       avoChatCount: 0,
       avoChatResetDate: formatLocalDate(new Date()),
+      // Trial starts lazily on first Avo chat (see incrementAvoChat), so a user
+      // who never opens Avo doesn't burn their 7 days.
+      avoTrialStartedAt: null,
+      avoFreeChatsUsed: 0,
     };
     setUser(newUser);
     // Fire-and-forget: the user proceeds regardless, but swallow rejections so
