@@ -70,7 +70,11 @@ function extractDateOffset(text: string, today: Date): { offset: number; matched
   // in N days / weeks / months  (N = digit or number word)
   let m = text.match(new RegExp(lead + 'in\\s+(\\d+|[a-z]+)\\s+(day|days|week|weeks|month|months)\\b', 'i'));
   if (m) {
-    const n = parseInt(m[1], 10) || NUMBER_WORDS[m[1].toLowerCase()] || 1;
+    // Handle a literal "0" correctly ("in 0 days" = today): parseInt('0') is
+    // falsy, so the old `|| NUMBER_WORDS[…] || 1` chain wrongly mapped it to 1.
+    const n = /^\d+$/.test(m[1])
+      ? parseInt(m[1], 10)
+      : NUMBER_WORDS[m[1].toLowerCase()] ?? 1;
     const unit = m[2].toLowerCase();
     const mult = unit.startsWith('week') ? 7 : unit.startsWith('month') ? 30 : 1;
     return { offset: n * mult, matched: m[0] };

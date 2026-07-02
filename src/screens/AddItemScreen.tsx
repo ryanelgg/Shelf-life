@@ -391,7 +391,13 @@ export function AddItemScreen() {
       unit: itemUnit || unit,
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
-      estimatedValue: itemVal || parseFloat(value) || 2.99,
+      // Respect an explicit $0 (free/giveaway item) instead of forcing $2.99,
+      // which would inflate the Impact "money saved" stat. A finite itemVal
+      // (incl. 0) from a picked food wins; else a non-empty typed value (incl.
+      // 0) wins; else fall back to the default estimate.
+      estimatedValue: Number.isFinite(itemVal)
+        ? (itemVal as number)
+        : (value.trim() !== '' && Number.isFinite(parseFloat(value)) ? parseFloat(value) : 2.99),
       dateType: dateTypeOverride ?? getDefaultDateType(cat),
     }, method);
 

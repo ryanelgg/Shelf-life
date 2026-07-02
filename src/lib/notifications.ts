@@ -163,6 +163,30 @@ function reEngagementTime(daysFromNow: number, hour = 18): Date {
   return t;
 }
 
+// ── Capacity limits ─────────────────────────────────────────────────────────
+//
+// iOS silently keeps only 64 pending local notifications and drops the rest.
+// Each dated item schedules up to 3 reminders and engagement adds a few fixed
+// ones, so we cap how many items we schedule (soonest-expiring first) and refuse
+// to schedule a single item once we're near the ceiling.
+
+// 18 items × 3 reminders = 54, leaving headroom for engagement notifications.
+export const MAX_SCHEDULED_ITEMS = 18;
+// Hard ceiling for a single-item schedule check (leaves ~4 slots for engagement).
+const MAX_PENDING_NOTIFICATIONS = 60;
+
+/**
+ * Given the pantry, pick the items whose reminders we should actually schedule:
+ * only those with an expiration date, soonest-expiring first, capped at `max`.
+ * Pure + exported so the prioritization is unit-testable.
+ */
+export function selectItemsToSchedule(items: PantryItem[], max: number = MAX_SCHEDULED_ITEMS): PantryItem[] {
+  return items
+    .filter(i => !!i.expirationDate)
+    .sort((a, b) => (a.expirationDate! < b.expirationDate! ? -1 : a.expirationDate! > b.expirationDate! ? 1 : 0))
+    .slice(0, max);
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export async function ensureNotificationPermission(): Promise<boolean> {
@@ -210,6 +234,15 @@ export async function scheduleItemNotifications(item: PantryItem, userName?: str
     }
 
     if (toSchedule.length > 0) {
+      // If we're near iOS's 64-notification ceiling (e.g. a big receipt scan
+      // just added many dated items), skip this item's reminders rather than
+      // letting iOS silently drop an arbitrary subset. rescheduleAllNotifications
+      // reconciles by soonest-expiring, so the most urgent items win.
+      const pending = await LocalNotifications.getPending();
+      if (pending.notifications.length + toSchedule.length > MAX_PENDING_NOTIFICATIONS) {
+        debug.warn(`[notifications] near capacity (${pending.notifications.length} pending) — skipping reminders for "${item.name}"`);
+        return;
+      }
       await LocalNotifications.schedule({ notifications: toSchedule });
     }
   } catch (e) {
@@ -357,7 +390,15 @@ interface RescheduleContext {
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   await cancelAllNotifications();
-  for (const item of ctx.items) {
+  // Only schedule the soonest-expiring items so we stay under iOS's 64-pending
+  // ceiling. Items beyond the cap (further-out expirations) are intentionally
+  // skipped — they'll get reminders once nearer items are consumed and this
+  // reconcile runs again.
+  const toSchedule = selectItemsToSchedule(ctx.items);
+  if (toSchedule.length < ctx.items.filter(i => i.expirationDate).length) {
+    debug.warn(`[notifications] scheduling soonest ${toSchedule.length} dated items (capacity cap)`);
+  }
+  for (const item of toSchedule) {
     await scheduleItemNotifications(item, ctx.userName);
   }
   await scheduleStreakProtection(ctx.streakDays, ctx.userName);
