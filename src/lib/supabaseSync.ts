@@ -5,15 +5,26 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { SignInWithApple } from './appleSignIn';
 import * as debug from './debug';
+import { enqueueOutbox, flushOutbox, outboxPending, type OutboxOp } from './syncOutbox';
+
+// Re-export so callers (App.tsx) can flush queued offline writes on boot from a
+// single sync surface.
+export { flushOutbox } from './syncOutbox';
 
 /**
  * Fire-and-forget Supabase write with automatic retry.
  * Retries up to `maxRetries` times with exponential back-off (2s, 4s).
  * Errors are surfaced via debug.error so they're visible in production logs.
+ *
+ * If `outboxOp` is supplied, a write that exhausts all retries is queued to the
+ * offline outbox and replayed on the next boot with connectivity — so an offline
+ * add/edit/delete is never silently lost or resurrected. On a successful write we
+ * opportunistically drain any backlog (we're clearly online again).
  */
 function syncWrite(
   fn: () => PromiseLike<{ error: { message: string } | null }>,
   label: string,
+  outboxOp?: OutboxOp,
   maxRetries = 2,
   delayMs = 2000,
 ): void {
@@ -21,9 +32,13 @@ function syncWrite(
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
       const { error } = await fn();
-      if (!error) return;
+      if (!error) {
+        if (outboxPending() > 0) void flushOutbox();
+        return;
+      }
       if (attempt === maxRetries) {
         debug.error(`[sync] ${label} failed after ${maxRetries + 1} attempts:`, error.message);
+        if (outboxOp) enqueueOutbox(outboxOp);
       }
     }
   })();
@@ -382,7 +397,7 @@ export async function loadAllData(userId: string, householdId?: string | null): 
 // ── Pantry sync ───────────────────────────────────────────────────────────────
 
 export function syncPantryAdd(item: PantryItem, userId: string, householdId?: string | null) {
-  syncWrite(() => supabase.from('pantry_items').insert({
+  const row = {
     id: item.id,
     user_id: userId,
     household_id: householdId ?? null,
@@ -397,7 +412,8 @@ export function syncPantryAdd(item: PantryItem, userId: string, householdId?: st
     notes: item.notes ?? null,
     frozen: item.frozen ?? false,
     date_type: item.dateType ?? null,
-  }), 'pantryAdd');
+  };
+  syncWrite(() => supabase.from('pantry_items').insert(row), 'pantryAdd', { kind: 'pantryAdd', row });
 }
 
 export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
@@ -414,17 +430,25 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
   if (updates.frozen !== undefined)          row.frozen = updates.frozen;
   if (updates.dateType !== undefined)        row.date_type = updates.dateType ?? null;
 
-  syncWrite(() => supabase.from('pantry_items').update(row).eq('id', id), 'pantryUpdate');
+  syncWrite(
+    () => supabase.from('pantry_items').update(row).eq('id', id),
+    'pantryUpdate',
+    { kind: 'pantryUpdate', id, row },
+  );
 }
 
 export function syncPantryRemove(id: string) {
-  syncWrite(() => supabase.from('pantry_items').delete().eq('id', id), 'pantryRemove');
+  syncWrite(
+    () => supabase.from('pantry_items').delete().eq('id', id),
+    'pantryRemove',
+    { kind: 'pantryRemove', id },
+  );
 }
 
 // ── Waste log sync ────────────────────────────────────────────────────────────
 
 export function syncWasteLog(log: WasteLog, userId: string, householdId?: string | null) {
-  syncWrite(() => supabase.from('waste_logs').insert({
+  const row = {
     id: log.id,
     user_id: userId,
     household_id: householdId ?? null,
@@ -434,5 +458,6 @@ export function syncWasteLog(log: WasteLog, userId: string, householdId?: string
     date: log.date,
     estimated_value: log.estimatedValue,
     quantity: log.quantity,
-  }), 'wasteLogAdd');
+  };
+  syncWrite(() => supabase.from('waste_logs').insert(row), 'wasteLogAdd', { kind: 'wasteLogAdd', row });
 }

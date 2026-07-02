@@ -144,6 +144,21 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
           Upgrade to Pro — $5.99/mo
         </button>
 
+        <p
+          style={{
+            margin: '0 8px',
+            textAlign: 'center',
+            color: 'var(--text-muted)',
+            fontFamily: "'Cormorant Garamond', serif",
+            fontSize: '11px',
+            lineHeight: 1.45,
+          }}
+        >
+          $5.99/month. Auto-renews monthly until canceled. Payment is charged to
+          your Apple ID at confirmation of purchase. Cancel anytime in your Apple
+          ID Settings at least 24 hours before the end of the period.
+        </p>
+
         <button
           onClick={canClose ? onClose : undefined}
           style={{

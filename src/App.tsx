@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
-import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { publishWidgetData } from './lib/widget';
@@ -287,6 +287,10 @@ export default function App() {
           const household = await getMyHousehold(sbUser.id);
           if (mySeq !== authSeq) return; // superseded while loading
           setHousehold(household);
+          // Push any writes that failed to sync while offline UP to the cloud
+          // BEFORE we read it back — otherwise loadAllData would overwrite local
+          // state and silently drop offline adds / resurrect offline deletes.
+          await flushOutbox();
           const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
           if (mySeq !== authSeq) return; // superseded while loading
           loadCloudData(pantryItems, wasteLogs);

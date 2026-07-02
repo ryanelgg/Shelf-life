@@ -234,7 +234,10 @@ export function AddItemScreen() {
         return;
       }
       posthog.capture('receipt_ocr_succeeded', { item_count: items.length });
-      setReceiptItems(items.map(createReceiptListItem));
+      // Drop malformed rows (missing/blank/non-string name) so one bad entry
+      // from the model can't throw and abort the entire scan.
+      const validItems = items.filter(it => it && typeof it.name === 'string' && it.name.trim());
+      setReceiptItems(validItems.map(createReceiptListItem));
       setMode('receipt');
     } catch (err) {
       debug.error('Receipt OCR error:', err);
@@ -289,7 +292,10 @@ export function AddItemScreen() {
         return;
       }
       posthog.capture('fridge_scan_succeeded', { item_count: items.length });
-      setReceiptItems(items.map(createFridgeListItem));
+      // Drop malformed rows (missing/blank/non-string name) so one bad entry
+      // from the model can't throw and abort the entire scan.
+      const validItems = items.filter(it => it && typeof it.name === 'string' && it.name.trim());
+      setReceiptItems(validItems.map(createFridgeListItem));
       setMode('fridge');
     } catch (err) {
       debug.error('Fridge scan error:', err);

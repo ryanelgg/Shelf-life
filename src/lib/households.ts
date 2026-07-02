@@ -19,20 +19,31 @@ function toHousehold(row: unknown, role: HouseholdRole): Household {
   return { id: r.id, inviteCode: r.invite_code, ownerId: r.owner_id, role };
 }
 
-/** Returns the caller's household, or null if they aren't in one. */
+/**
+ * Returns the caller's household, or null if they aren't in one.
+ *
+ * Throws on a real DB/network error so the caller can tell a transient failure
+ * apart from "genuinely not in a household" (null). Collapsing both into null —
+ * as this used to — meant a momentary blip on launch silently dropped a member
+ * into their solo pantry (shared items vanish, realtime turns off, edits save
+ * unlinked) until a restart. App.tsx keeps local data + the persisted household
+ * when this throws, mirroring loadProfile / loadAllData.
+ */
 export async function getMyHousehold(userId: string): Promise<Household | null> {
   const { data: member, error } = await supabase
     .from('household_members')
     .select('household_id, role')
     .eq('user_id', userId)
     .maybeSingle();
-  if (error || !member) return null;
+  if (error) throw error;
+  if (!member) return null;
 
-  const { data: hh } = await supabase
+  const { data: hh, error: hhError } = await supabase
     .from('households')
     .select('id, owner_id, invite_code, created_at')
     .eq('id', member.household_id)
     .maybeSingle();
+  if (hhError) throw hhError;
   if (!hh) return null;
 
   return toHousehold(hh as HouseholdRow, member.role as HouseholdRole);
