@@ -5,8 +5,15 @@ import { useStore } from '../store/useStore';
 import { formatLocalDate } from '../types';
 import type { DietaryPref, AuthProvider, SubscriptionTier } from '../types';
 import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError, verifyEmailOtp, resendEmailOtp } from '../lib/supabaseSync';
+import { meetsMinimumAge, isValidBirthYear } from '../lib/age';
 
-type Step = 'welcome' | 'signin' | 'name' | 'diet' | 'setup' | 'ready';
+type Step = 'welcome' | 'age' | 'under13' | 'signin' | 'name' | 'diet' | 'setup' | 'ready';
+
+// Minimum age. Pantre collects an email + personal food data and includes an AI
+// assistant, so we gate to 13+ (COPPA + App Store age-verification rules). This
+// is a neutral age-screen (ask birth year, don't hint the cutoff) rather than a
+// yes/no toggle, which is the compliant pattern.
+const MIN_AGE = 13;
 
 const SETUP_MESSAGES = [
   'Personalizing your recipes...',
@@ -29,6 +36,8 @@ const DIETS: { id: DietaryPref; label: string; emoji: string }[] = [
 export function OnboardingFlow() {
   const { setUser, oauthNewUser, setOAuthNewUser } = useStore();
   const [step, setStep] = useState<Step>('welcome');
+  const [birthYear, setBirthYear] = useState('');
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [authProvider, setAuthProvider] = useState<AuthProvider>('guest');
   const [email, setEmail] = useState<string | undefined>();
@@ -46,6 +55,21 @@ export function OnboardingFlow() {
   const [codeValue, setCodeValue] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  function handleAgeContinue() {
+    const year = Number(birthYear.trim());
+    const thisYear = new Date().getFullYear();
+    if (!isValidBirthYear(year, thisYear)) {
+      setAgeError('Please enter your 4-digit birth year.');
+      return;
+    }
+    if (!meetsMinimumAge(year, MIN_AGE, thisYear)) {
+      setStep('under13');
+      return;
+    }
+    setAgeError(null);
+    setStep('signin');
+  }
 
   // After OAuth redirect: auto-skip sign-in and advance to the name step.
   // We don't pre-fill the name — the user types it fresh.
@@ -191,6 +215,10 @@ export function OnboardingFlow() {
       subscriptionTier: chosenTier,
       avoChatCount: 0,
       avoChatResetDate: formatLocalDate(new Date()),
+      // Trial starts lazily on first Avo chat (see incrementAvoChat), so a user
+      // who never opens Avo doesn't burn their 7 days.
+      avoTrialStartedAt: null,
+      avoFreeChatsUsed: 0,
     };
     setUser(newUser);
     // Fire-and-forget: the user proceeds regardless, but swallow rejections so
@@ -222,7 +250,7 @@ export function OnboardingFlow() {
           </p>
           <button
             className="btn-solid"
-            onClick={() => setStep('signin')}
+            onClick={() => setStep('age')}
             style={{
               padding: '16px 48px',
               background: 'var(--accent)',
@@ -237,6 +265,81 @@ export function OnboardingFlow() {
             }}
           >
             Let's get started!
+          </button>
+        </div>
+      )}
+
+      {step === 'age' && (
+        <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
+          <AvocadoMascot size={70} />
+          <h2 style={{ fontSize: '22px', fontWeight: 800 }}>What year were you born?</h2>
+          <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.5, maxWidth: '280px' }}>
+            We ask to make sure Pantre is right for you. We don't store this.
+          </p>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={birthYear}
+            onChange={e => { setBirthYear(e.target.value); setAgeError(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') handleAgeContinue(); }}
+            placeholder="YYYY"
+            aria-label="Birth year"
+            style={{
+              width: '160px',
+              padding: '14px',
+              fontSize: '18px',
+              textAlign: 'center',
+              borderRadius: '12px',
+              border: '1.5px solid var(--bg-card-hover)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              fontFamily: "'Cormorant Garamond', serif",
+            }}
+          />
+          {ageError && (
+            <p style={{ fontSize: '13px', color: 'var(--tomato)', margin: 0 }}>{ageError}</p>
+          )}
+          <button
+            className="btn-solid"
+            onClick={handleAgeContinue}
+            style={{
+              padding: '14px 48px',
+              background: 'var(--accent)',
+              border: 'none',
+              borderRadius: '14px',
+              color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      )}
+
+      {step === 'under13' && (
+        <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', maxWidth: '300px' }}>
+          <AvocadoMascot size={70} />
+          <h2 style={{ fontSize: '22px', fontWeight: 800 }}>Thanks for stopping by! 🥑</h2>
+          <p style={{ fontSize: '15px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Pantre is built for ages {MIN_AGE} and up, so you can't create an account just yet. Come back when you're a little older — Avo will be here waiting!
+          </p>
+          <button
+            onClick={() => { setStep('age'); setBirthYear(''); setAgeError(null); }}
+            style={{
+              padding: '12px 32px',
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '14px',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+            }}
+          >
+            I entered the wrong year
           </button>
         </div>
       )}

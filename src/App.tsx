@@ -274,6 +274,8 @@ export default function App() {
           subscriptionTier: profile.subscription_tier as 'free' | 'pro',
           avoChatCount: profile.avo_chat_count,
           avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
+          avoTrialStartedAt: profile.avo_trial_started_at ?? null,
+          avoFreeChatsUsed: profile.avo_free_chats_used ?? 0,
         });
         debug.log('[auth] setUser called — transitioning to main app');
         posthog.identify(sbUser.id, {

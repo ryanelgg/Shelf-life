@@ -4,7 +4,7 @@ import { AvocadoMascot } from '../components/AvocadoMascot';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AvoConsentModal } from '../components/AvoConsentModal';
-import { FREE_LIMITS, formatLocalDate, getDaysUntilExpiration } from '../types';
+import { FREE_LIMITS, formatLocalDate, getDaysUntilExpiration, isAvoTrialActive, avoTrialDaysLeft } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
 import type { Recipe } from '../types';
 import {
@@ -39,11 +39,16 @@ export function CookScreen() {
   const historyRef = useRef<AvoChatMessage[]>(getAvoSession(sessionOwnerId).history);
 
   const isProUser = user?.subscriptionTier === 'pro';
+  const trialActive = user ? isAvoTrialActive(user) : false;
+  const trialDaysLeft = user ? avoTrialDaysLeft(user) : 0;
+  // Pro users and users inside their 7-day trial both get the daily allowance;
+  // free users past the trial fall back to the lifetime allotment.
+  const hasProAccess = isProUser || trialActive;
   const today = formatLocalDate(new Date());
-  const chatsUsed = isProUser
+  const chatsUsed = hasProAccess
     ? (user?.avoChatResetDate === today ? (user?.avoChatCount ?? 0) : 0)
-    : (user?.avoChatCount ?? 0);
-  const chatLimit = isProUser ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
+    : (user?.avoFreeChatsUsed ?? 0);
+  const chatLimit = hasProAccess ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
   const chatsRemaining = chatLimit - chatsUsed;
 
   // Reset chat state when the signed-in user changes (prevents history leaking between accounts)
@@ -190,7 +195,9 @@ export function CookScreen() {
             color: chatsRemaining <= 1 ? 'var(--expiring)' : 'var(--text-muted)',
             fontWeight: 600,
           }}>
-            {chatsRemaining}/{FREE_LIMITS.avoChatTotal} free chats
+            {trialActive
+              ? `✨ Avo trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left · ${chatsRemaining} chats today`
+              : `${chatsRemaining}/${FREE_LIMITS.avoChatTotal} free chats`}
           </div>
           <button
             onClick={() => { setUpgradeReason('chat'); setShowUpgrade(true); }}
