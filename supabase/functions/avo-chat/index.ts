@@ -30,6 +30,21 @@ Deno.serve(async (request) => {
       return json({ error: 'No messages provided' }, { status: 400 });
     }
 
+    // Validate the client payload before forwarding it to Groq. The system
+    // prompt is set server-side only: reject any client-supplied 'system' (or
+    // otherwise malformed) role so a user can't override Avo's instructions,
+    // and cap the count/size so a single request can't run up the token bill.
+    const MAX_MESSAGES = 40;
+    const MAX_CONTENT_CHARS = 4000;
+    const safeMessages: AvoChatMessage[] = [];
+    for (const m of messages) {
+      if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') {
+        return json({ error: 'Invalid message in request' }, { status: 400 });
+      }
+      safeMessages.push({ role: m.role, content: m.content.slice(0, MAX_CONTENT_CHARS) });
+    }
+    const trimmedMessages = safeMessages.slice(-MAX_MESSAGES);
+
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -41,14 +56,16 @@ Deno.serve(async (request) => {
         max_tokens: 200,
         messages: [
           { role: 'system', content: AVO_SYSTEM_PROMPT },
-          ...messages,
+          ...trimmedMessages,
         ],
       }),
     });
 
     if (!groqResponse.ok) {
-      const details = await groqResponse.text();
-      return json({ error: details || `Groq request failed with ${groqResponse.status}` }, { status: groqResponse.status });
+      // Log the upstream detail server-side but return a generic message so we
+      // don't leak provider internals to the client.
+      console.error(`[avo-chat] Groq request failed ${groqResponse.status}:`, await groqResponse.text());
+      return json({ error: 'Avo is having trouble right now. Please try again.' }, { status: 502 });
     }
 
     const payload = await groqResponse.json() as {
