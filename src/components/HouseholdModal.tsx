@@ -78,10 +78,12 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
 
   const doCreate = async (streakChoice: StreakChoice) => {
     setBusy(true); setError(null);
-    setHouseholdStreakEnabled(streakChoice === 'household');
     try {
       const hh = await createHousehold();
       setHousehold(hh);
+      // Only commit the streak preference once the household actually exists,
+      // so a failed create can't leave the flag flipped with no household.
+      setHouseholdStreakEnabled(streakChoice === 'household');
       await reloadPantry(hh.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create household');
@@ -93,10 +95,11 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const doJoin = async (streakChoice: StreakChoice) => {
     if (!code.trim()) return;
     setBusy(true); setError(null);
-    setHouseholdStreakEnabled(streakChoice === 'household');
     try {
       const hh = await joinHousehold(code.trim());
       setHousehold(hh);
+      // Only commit the streak preference once the join actually succeeds.
+      setHouseholdStreakEnabled(streakChoice === 'household');
       await reloadPantry(hh.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not join household');
@@ -121,6 +124,8 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     try {
       await leaveHousehold();
       setHousehold(null);
+      // Back to solo — clear the shared-streak preference so it doesn't linger.
+      setHouseholdStreakEnabled(false);
       await reloadPantry(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not leave household');

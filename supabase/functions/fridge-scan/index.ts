@@ -36,6 +36,11 @@ Deno.serve(async (request) => {
     if (!image) {
       return json({ error: 'No image provided' }, { status: 400 });
     }
+    // Cap payload size so an oversized upload can't spike cost/memory (base64
+    // of a ~7MB image is ~9.5M chars; 12M leaves comfortable headroom).
+    if (image.length > 12_000_000) {
+      return json({ error: 'Image is too large. Please use a smaller photo.' }, { status: 413 });
+    }
     let mediaType = 'image/jpeg';
     let base64Data = image;
     if (image.startsWith('data:')) {
@@ -68,8 +73,10 @@ Deno.serve(async (request) => {
       }),
     });
     if (!response.ok) {
-      const details = await response.text();
-      return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
+      // Log the upstream detail server-side but return a generic message so we
+      // don't leak the provider's raw error body / status to the client.
+      console.error(`[fridge-scan] Anthropic request failed ${response.status}:`, await response.text());
+      return json({ error: 'Could not read the photo right now. Please try again.' }, { status: 502 });
     }
     const result = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
@@ -79,11 +86,19 @@ Deno.serve(async (request) => {
     if (!jsonMatch) {
       return json({ items: [] });
     }
-    const items = JSON.parse(jsonMatch[0]) as Array<{ name: string; quantity?: number }>;
+    // The model can wrap the array in prose; a bad parse must not 500. Fall back
+    // to an empty list so the client shows "no items found" instead of an error.
+    let items: Array<{ name: string; quantity?: number }> = [];
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) items = parsed;
+    } catch {
+      return json({ items: [] });
+    }
     return json({ items });
   } catch (error) {
     Sentry.captureException(error);
-    const message = error instanceof Error ? error.message : 'Unexpected error';
-    return json({ error: message }, { status: 500 });
+    // Keep the detail in Sentry; never return internal error text to the client.
+    return json({ error: 'Something went wrong reading the photo.' }, { status: 500 });
   }
 });
