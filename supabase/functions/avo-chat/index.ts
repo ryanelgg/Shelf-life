@@ -36,6 +36,11 @@ Deno.serve(async (request) => {
     // and cap the count/size so a single request can't run up the token bill.
     const MAX_MESSAGES = 40;
     const MAX_CONTENT_CHARS = 4000;
+    // Reject oversized arrays up front so a single huge payload can't burn
+    // CPU/memory in the validation loop before we would have trimmed it anyway.
+    if (messages.length > MAX_MESSAGES) {
+      return json({ error: 'Too many messages in request' }, { status: 400 });
+    }
     const safeMessages: AvoChatMessage[] = [];
     for (const m of messages) {
       if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') {
