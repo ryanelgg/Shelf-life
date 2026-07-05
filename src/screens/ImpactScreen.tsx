@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
+import posthog from 'posthog-js';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -6,6 +7,9 @@ import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
 import { getHouseholdMembers } from '../lib/households';
+import { shareImpactCard } from '../lib/impactCard';
+import { hapticSuccess } from '../lib/haptics';
+import * as debug from '../lib/debug';
 import { formatLocalDate } from '../types';
 import type { WasteLog } from '../types';
 
@@ -138,6 +142,31 @@ export function ImpactScreen() {
 
   const streakDays = user?.streakDays ?? 0;
 
+  const [sharing, setSharing] = useState(false);
+  const handleShareWrapped = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      hapticSuccess();
+      posthog.capture('impact_card_shared', {
+        money_saved: Math.round(stats.moneySaved),
+        items_saved: stats.itemsSaved,
+        streak_days: streakDays,
+      });
+      await shareImpactCard({
+        moneySaved: stats.moneySaved,
+        itemsSaved: stats.itemsSaved,
+        streakDays,
+        co2Saved: stats.co2Saved,
+        saveRate: stats.saveRate,
+      });
+    } catch (e) {
+      debug.warn('[impact] share failed:', e);
+    } finally {
+      setSharing(false);
+    }
+  };
+
   if (wasteLogs.length === 0) {
     return (
       <EmptyState
@@ -192,6 +221,32 @@ export function ImpactScreen() {
             {stats.saveRate.toFixed(0)}% of tracked food used before expiring
           </div>
         </div>
+        <button
+          onClick={handleShareWrapped}
+          disabled={sharing}
+          aria-label="Share my Pantre Wrapped impact card"
+          style={{
+            marginTop: '16px',
+            width: '100%',
+            padding: '12px',
+            borderRadius: '12px',
+            border: 'none',
+            background: 'var(--accent)',
+            color: '#fff',
+            fontSize: '14px',
+            fontWeight: 700,
+            cursor: sharing ? 'default' : 'pointer',
+            opacity: sharing ? 0.7 : 1,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            transition: 'opacity 0.2s',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+            <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" /><line x1="15.4" y1="6.5" x2="8.6" y2="10.5" />
+          </svg>
+          {sharing ? 'Preparing…' : 'Share my Wrapped'}
+        </button>
       </Card>
 
       {/* Action breakdown */}
