@@ -42,6 +42,21 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // Cleanly exit any household BEFORE deleting the auth user. This reuses the
+    // exact same tested logic as the in-app "Leave household" action: if the
+    // user owns a household that still has other members, ownership transfers to
+    // the longest-standing member; if they're the last one, the household is
+    // disbanded and its shared rows are released. This ordering is critical —
+    // `households.owner_id references auth.users(id) on delete cascade`, so
+    // deleting an owner while they still own a household would cascade-delete
+    // the whole household and silently kick every other member out of the shared
+    // pantry. Run through the caller's own session so leave_household() sees the
+    // right auth.uid().
+    const { error: leaveError } = await userClient.rpc('leave_household');
+    if (leaveError) {
+      return json({ error: `Household cleanup failed: ${leaveError.message}` }, { status: 500 });
+    }
+
     const [pantryRes, wasteRes, profileRes] = await Promise.all([
       admin.from('pantry_items').delete().eq('user_id', userId),
       admin.from('waste_logs').delete().eq('user_id', userId),
