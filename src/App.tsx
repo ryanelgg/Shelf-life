@@ -5,6 +5,7 @@ import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUs
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { publishWidgetData } from './lib/widget';
+import { runRecallGuard } from './lib/recallGuard';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
@@ -215,6 +216,36 @@ export default function App() {
   const pantryItems = useStore(s => s.pantryItems);
   useEffect(() => {
     void publishWidgetData(pantryItems);
+  }, [pantryItems]);
+
+  // Avo Recall Guard — run the dual-feed recall check whenever the pantry
+  // changes (and on boot). The 1-hour cache in recallApi keeps this cheap. It
+  // populates the in-app banner for everyone and, for Pro users with the guard
+  // + notifications on, pushes an immediate alert for any newly-matched recall.
+  useEffect(() => {
+    if (pantryItems.length === 0) {
+      useStore.getState().setRecallMatches([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const s = useStore.getState();
+      try {
+        const { matches, newlyNotifiedIds } = await runRecallGuard({
+          itemNames: pantryItems.map(i => i.name),
+          isPro: s.isPro(),
+          guardEnabled: s.recallGuardEnabled,
+          notificationsEnabled: s.notificationsEnabled,
+          notifiedIds: s.notifiedRecallIds,
+        });
+        if (cancelled) return;
+        useStore.getState().setRecallMatches(matches);
+        if (newlyNotifiedIds.length > 0) useStore.getState().addNotifiedRecallIds(newlyNotifiedIds);
+      } catch (err) {
+        debug.warn('[recallGuard] run failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [pantryItems]);
 
   useEffect(() => {

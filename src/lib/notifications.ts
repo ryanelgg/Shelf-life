@@ -1,6 +1,7 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import type { PantryItem } from '../types';
+import type { RecallMatch } from './recallApi';
 import * as debug from './debug';
 
 // ── Avo's voice — friendly Duolingo energy ──────────────────────────────────
@@ -131,6 +132,10 @@ const ENGAGEMENT_IDS = {
   // Milestones use 1_900_001_000 + streakDays for uniqueness
   milestoneBase: 1_900_001_000,
 } as const;
+
+// Recall Guard alerts sit in their own high range (1_950_000_000 +) so they
+// never collide with item hashes (< 1e9) or the engagement IDs above.
+const RECALL_ID_BASE = 1_950_000_000;
 
 function milestoneId(streakDays: number): number {
   return ENGAGEMENT_IDS.milestoneBase + streakDays;
@@ -362,6 +367,41 @@ export async function scheduleRecipeNudge(userName?: string | null): Promise<voi
     });
   } catch (e) {
     debug.warn('[notifications] recipe nudge failed:', e);
+  }
+}
+
+// ── Avo Recall Guard (Pro) — immediate alert when a recall hits your pantry ──
+//
+// Fires ONE local notification summarizing the newly-matched recalls (a single
+// tap-through rather than one buzz per recall). Scheduled a few seconds out so
+// it lands as a delightful/urgent nudge even if the app is backgrounded right
+// after the check. The caller (recallGuard) decides Pro-gating + de-duping;
+// this just delivers.
+
+export async function scheduleRecallAlert(newMatches: RecallMatch[]): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  if (newMatches.length === 0) return;
+  try {
+    const first = newMatches[0]!;
+    const feeds = new Set(newMatches.map(m => m.source));
+    const feedLabel = feeds.size > 1 ? 'FDA & USDA' : [...feeds][0];
+    const body =
+      newMatches.length === 1
+        ? `Your ${first.matchedItem} may be affected by a ${first.source} recall. Tap to check if it's safe.`
+        : `${newMatches.length} items in your pantry may be affected by active ${feedLabel} recalls. Tap to review.`;
+    // ID derived from the matched recall ids so re-firing the same batch just
+    // replaces the pending one instead of stacking duplicates.
+    const id = RECALL_ID_BASE + (hashStringToInt(newMatches.map(m => m.id).sort().join('|')) % 40_000_000);
+    await LocalNotifications.schedule({
+      notifications: [{
+        id,
+        title: '🚨 Recall Guard alert',
+        body,
+        schedule: { at: new Date(Date.now() + 8_000), allowWhileIdle: true },
+      }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] recall alert failed:', e);
   }
 }
 

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
+import type { RecallMatch } from '../lib/recallApi';
 import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
@@ -103,6 +104,15 @@ interface ShelfLifeStore {
   // Opted in per-device when creating/joining a household.
   householdStreakEnabled: boolean;
   setHouseholdStreakEnabled: (enabled: boolean) => void;
+
+  // Avo Recall Guard (Pro). Live matches drive the in-app banner; notifiedIds
+  // (persisted) stop us re-pushing the same recall; guardEnabled toggles push.
+  recallMatches: RecallMatch[];
+  setRecallMatches: (matches: RecallMatch[]) => void;
+  notifiedRecallIds: string[];
+  addNotifiedRecallIds: (ids: string[]) => void;
+  recallGuardEnabled: boolean;
+  setRecallGuardEnabled: (enabled: boolean) => void;
 }
 
 
@@ -312,9 +322,20 @@ export const useStore = create<ShelfLifeStore>()(
       notificationsEnabled: null as boolean | null,
       household: null as Household | null,
       householdStreakEnabled: false,
+      recallMatches: [] as RecallMatch[],
+      notifiedRecallIds: [] as string[],
+      recallGuardEnabled: true,
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       setHousehold: (household) => set({ household }),
       setHouseholdStreakEnabled: (enabled) => set({ householdStreakEnabled: enabled }),
+      setRecallMatches: (matches) => set({ recallMatches: matches }),
+      addNotifiedRecallIds: (ids) => set((s) => {
+        if (ids.length === 0) return {};
+        // Keep the list bounded so it can't grow forever; newest ids win.
+        const merged = [...s.notifiedRecallIds, ...ids];
+        return { notifiedRecallIds: merged.slice(-200) };
+      }),
+      setRecallGuardEnabled: (enabled) => set({ recallGuardEnabled: enabled }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
@@ -354,6 +375,8 @@ export const useStore = create<ShelfLifeStore>()(
           avoAiConsent: null,
           notificationsEnabled: null,
           householdStreakEnabled: false,
+          recallMatches: [],
+          notifiedRecallIds: [],
         });
         void cancelAllNotifications();
       },
@@ -635,6 +658,8 @@ export const useStore = create<ShelfLifeStore>()(
         user: state.user,
         household: state.household,
         householdStreakEnabled: state.householdStreakEnabled,
+        notifiedRecallIds: state.notifiedRecallIds,
+        recallGuardEnabled: state.recallGuardEnabled,
         pantryItems: state.pantryItems,
         wasteLogs: state.wasteLogs,
         recipes: state.recipes,

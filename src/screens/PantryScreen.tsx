@@ -1,6 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
-import { checkPantryForRecalls } from '../lib/recallApi';
-import type { RecallMatch } from '../lib/recallApi';
+import { useState, useMemo } from 'react';
 import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -120,7 +118,7 @@ function dateDaysAgo(days: number): Date {
 }
 
 export function PantryScreen() {
-  const { user, pantryItems, wasteLogs, recipes, browseRecipes, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
+  const { user, pantryItems, wasteLogs, recipes, browseRecipes, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed, recallMatches } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
@@ -134,16 +132,15 @@ export function PantryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
-  const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [recallDismissed, setRecallDismissed] = useState(false);
-
-  useEffect(() => {
-    if (pantryItems.length === 0) return;
-    const names = pantryItems.map(i => i.name);
-    checkPantryForRecalls(names).then(matches => {
-      setRecallMatches(matches);
-    }).catch(() => {/* silently ignore - recall check is best-effort */});
-  }, [pantryItems]);
+  // recallMatches come from the store (Avo Recall Guard runs the dual-feed
+  // check in App.tsx). Track WHICH set of recalls was dismissed (by id-key) so a
+  // NEW recall re-surfaces the banner even after a prior dismissal — no effect,
+  // no cascading render.
+  const [dismissedRecallKey, setDismissedRecallKey] = useState<string | null>(null);
+  const recallKey = recallMatches.map(m => m.id).join(',');
+  const recallDismissed = dismissedRecallKey === recallKey;
+  const recallFeeds = Array.from(new Set(recallMatches.map(m => m.source)));
+  const recallFeedLabel = recallFeeds.length > 1 ? 'FDA & USDA' : (recallFeeds[0] ?? 'FDA');
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
@@ -332,7 +329,7 @@ export function PantryScreen() {
         </button>
       </div>
 
-      {/* FDA Recall Alert Banner */}
+      {/* Recall Alert Banner (Avo Recall Guard — dual FDA + USDA feed) */}
       {recallMatches.length > 0 && !recallDismissed && (
         <div style={{
           background: 'rgba(205,92,92,0.08)',
@@ -347,12 +344,12 @@ export function PantryScreen() {
           <span style={{ fontSize: '20px', flexShrink: 0, marginTop: '1px' }}>🚨</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expired)', marginBottom: '4px' }}>
-              FDA Recall Alert
+              {recallFeedLabel} Recall Alert
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
               {recallMatches.length === 1
-                ? <><strong>{recallMatches[0]!.matchedItem}</strong>{` may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`}</>
-                : `${recallMatches.length} items in your pantry may be affected by active FDA recalls.`
+                ? <><strong>{recallMatches[0]!.matchedItem}</strong>{` may be affected by an active ${recallMatches[0]!.source} recall: ${recallMatches[0]!.reason.slice(0, 80)}…`}</>
+                : `${recallMatches.length} items in your pantry may be affected by active ${recallFeedLabel} recalls.`
               }
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
@@ -362,12 +359,12 @@ export function PantryScreen() {
                   padding: '2px 8px', borderRadius: '8px',
                   background: 'rgba(205,92,92,0.12)',
                   color: 'var(--expired)',
-                }}>{m.matchedItem}</span>
+                }}>{m.matchedItem} · {m.source}</span>
               ))}
             </div>
           </div>
           <button
-            onClick={() => setRecallDismissed(true)}
+            onClick={() => setDismissedRecallKey(recallKey)}
             aria-label="Dismiss recall alert"
             style={{
               background: 'none', border: 'none', cursor: 'pointer',

@@ -6,3 +6,6 @@ verify_jwt = true
 
 [functions.fridge-scan]
 verify_jwt = true
+
+[functions.recalls]
+verify_jwt = true

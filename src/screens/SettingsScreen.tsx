@@ -25,7 +25,7 @@ const DIETS: { id: DietaryPref; label: string }[] = [
 const APP_STORE_REVIEW_URL = (import.meta.env.VITE_APP_STORE_REVIEW_URL as string | undefined)?.trim();
 
 export function SettingsScreen() {
-  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household } = useStore();
+  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, recallGuardEnabled, setRecallGuardEnabled, pantryItems, wasteLogs, household } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCancelPro, setShowCancelPro] = useState(false);
   const [showHousehold, setShowHousehold] = useState(false);
@@ -325,6 +325,37 @@ export function SettingsScreen() {
             <button
               className={`theme-toggle ${notificationsEnabled ? 'active' : ''}`}
               onClick={() => { void handleToggleNotifications(); }}
+            />
+          </div>
+        </Card>
+
+        {/* Avo Recall Guard (Pro) */}
+        <Card>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ flex: 1, paddingRight: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 600 }}>
+                Avo Recall Guard
+                {user?.subscriptionTier !== 'pro' && (
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', marginLeft: '6px', verticalAlign: 'middle' }}>PRO</span>
+                )}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
+                {user?.subscriptionTier === 'pro'
+                  ? (recallGuardEnabled
+                      ? 'On — get pushed the moment an FDA or USDA recall matches your pantry' + (notificationsEnabled ? '' : ' (turn on Avo Notifications to receive the alert)')
+                      : 'Off — turn on to be alerted the instant a recall hits your pantry')
+                  : 'Pro — instant alerts when an FDA or USDA recall matches your food, even when the app is closed'}
+              </div>
+            </div>
+            <button
+              className={`theme-toggle ${user?.subscriptionTier === 'pro' && recallGuardEnabled ? 'active' : ''}`}
+              onClick={() => {
+                if (user?.subscriptionTier === 'pro') {
+                  setRecallGuardEnabled(!recallGuardEnabled);
+                } else {
+                  showToast('Recall Guard is a Pro feature — upgrade to get instant recall alerts.');
+                }
+              }}
             />
           </div>
         </Card>
