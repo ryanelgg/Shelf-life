@@ -42,6 +42,18 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // Leave the household FIRST, while the caller's JWT is still valid, so the
+    // tested transfer/disband logic runs: ownership is handed to the
+    // longest-standing member (or the household is cleanly disbanded if this was
+    // the last member). Without this, deleting the auth user cascades on
+    // households.owner_id and silently destroys the entire shared household for
+    // every remaining member. leave_household() is idempotent — it returns
+    // early if the caller isn't in a household — so this is safe for solo users.
+    const { error: leaveError } = await userClient.rpc('leave_household');
+    if (leaveError) {
+      return json({ error: `Household handoff failed: ${leaveError.message}` }, { status: 500 });
+    }
+
     const [pantryRes, wasteRes, profileRes] = await Promise.all([
       admin.from('pantry_items').delete().eq('user_id', userId),
       admin.from('waste_logs').delete().eq('user_id', userId),

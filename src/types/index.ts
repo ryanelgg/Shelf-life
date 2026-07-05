@@ -39,7 +39,9 @@ export function avoTrialDaysLeft(
   if (!u.avoTrialStartedAt) return 0;
   const start = parseLocalDate(u.avoTrialStartedAt);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const elapsed = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
+  // Round (not floor) so a daylight-saving transition inside the window — which
+  // makes one "day" 23h or 25h — can't miscount and hand the user an extra day.
+  const elapsed = Math.round((today.getTime() - start.getTime()) / 86_400_000);
   return Math.max(0, FREE_LIMITS.avoTrialDays - elapsed);
 }
 

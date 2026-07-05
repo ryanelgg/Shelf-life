@@ -135,7 +135,11 @@ export function PantryScreen() {
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
   const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [recallDismissed, setRecallDismissed] = useState(false);
+  // Track WHICH set of recalls was dismissed (by a stable signature of the
+  // matched ids) rather than a plain boolean, so dismissing the banner doesn't
+  // permanently hide it — if a newly-recalled item is added later, the changed
+  // signature re-surfaces the alert.
+  const [dismissedRecallKey, setDismissedRecallKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (pantryItems.length === 0) return;
@@ -333,7 +337,7 @@ export function PantryScreen() {
       </div>
 
       {/* FDA Recall Alert Banner */}
-      {recallMatches.length > 0 && !recallDismissed && (
+      {recallMatches.length > 0 && recallMatches.map(m => m.id).sort().join('|') !== dismissedRecallKey && (
         <div style={{
           background: 'rgba(205,92,92,0.08)',
           border: '1.5px solid rgba(205,92,92,0.3)',
@@ -367,7 +371,7 @@ export function PantryScreen() {
             </div>
           </div>
           <button
-            onClick={() => setRecallDismissed(true)}
+            onClick={() => setDismissedRecallKey(recallMatches.map(m => m.id).sort().join('|'))}
             aria-label="Dismiss recall alert"
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
@@ -882,6 +886,7 @@ export function PantryScreen() {
                   </button>
                   <button
                     onClick={() => setSwipingItem(null)}
+                    aria-label="Close item actions"
                     style={{
                       position: 'absolute', top: 6, right: 8,
                       background: 'none', border: 'none', cursor: 'pointer',

@@ -82,9 +82,12 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // Use a UUID so two household members adding their first item in the same
+  // millisecond can't collide (the old `p-${counter}-${t36}` reset the counter
+  // to 0 each launch, so two fresh devices produced identical `p-1-<t>` ids and
+  // realtime upsert would overwrite one member's item with the other's).
+  return `p-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
 }
 
 let nextReceiptRowId = 0;
@@ -1132,6 +1135,7 @@ export function AddItemScreen() {
                   </div>
                   <button
                     onClick={() => setReceiptItems(prev => prev.filter(row => row.id !== item.id))}
+                    aria-label={`Remove ${item.name}`}
                     style={{
                       marginTop: '21px',
                       width: 32,
