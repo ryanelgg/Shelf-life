@@ -42,6 +42,18 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // Cleanly exit any shared household FIRST, using the caller's own JWT so
+    // the tested leave_household() logic runs as this user. Without this, the
+    // deleteUser() call below cascades through households.owner_id (ON DELETE
+    // CASCADE) and destroys the entire shared household — kicking out every
+    // family member and unlinking the shared pantry. leave_household() instead
+    // hands ownership to the longest-standing member (or disbands if last one),
+    // and no-ops if the user isn't in a household.
+    const { error: leaveError } = await userClient.rpc('leave_household');
+    if (leaveError) {
+      return json({ error: `Household exit failed: ${leaveError.message}` }, { status: 500 });
+    }
+
     const [pantryRes, wasteRes, profileRes] = await Promise.all([
       admin.from('pantry_items').delete().eq('user_id', userId),
       admin.from('waste_logs').delete().eq('user_id', userId),

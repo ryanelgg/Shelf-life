@@ -82,9 +82,12 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // Use a globally-unique ID (matches waste-log ID generation). The old
+  // per-launch counter reset to 0 every app start, so two household phones
+  // adding their first item in the same millisecond could mint identical IDs
+  // and overwrite each other over live sync.
+  return `p-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
 }
 
 let nextReceiptRowId = 0;
