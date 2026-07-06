@@ -2366,23 +2366,55 @@ const shelfLifeMap: Record<string, ShelfLifeEntry> = {
   }
 };
 
+function foldPluralWord(word: string): string {
+  if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y';
+  if (word.length > 3 && word.endsWith('es')) return word.slice(0, -2);
+  if (word.length > 2 && word.endsWith('s')) return word.slice(0, -1);
+  return word;
+}
+
 export function lookupShelfLife(foodName: string, location: string): number | null {
   const name = foodName.toLowerCase().trim();
-  // Try longest keyword match first for most specific result.
-  // kw.includes(name) direction is only used when the query is ≥50% of the
-  // keyword length — this prevents "chicken" from matching "chicken broth canned".
-  let bestMatch: ShelfLifeEntry | null = null;
-  let bestLen = 0;
+
+  const pick = (entry: ShelfLifeEntry): number | null => {
+    if (location === 'fridge')  return entry.fridgeDays;
+    if (location === 'freezer') return entry.freezerDays;
+    return entry.pantryDays ?? entry.fridgeDays; // pantry or counter, fall back to fridge
+  };
+
+  // 1. Exact match always wins — so "cream" resolves to the cream entry and is
+  //    never overridden by a longer, more specific keyword like "ice cream".
+  const exact = shelfLifeMap[name];
+  if (exact) return pick(exact);
+
+  // 2. Otherwise prefer the longest keyword that appears *as whole words* inside
+  //    the query (e.g. "whole milk" → "milk", "chicken breast" → "chicken
+  //    breast"). Only if nothing matches that way do we fall back to the looser
+  //    "query is a sub-phrase of a keyword" direction, which is what caused
+  //    short queries to inherit a longer keyword's data.
+  const nameWords = name.split(/\s+/).filter(Boolean).map(foldPluralWord);
+  let wholeWordMatch: ShelfLifeEntry | null = null;
+  let wholeWordLen = 0;
+  let subMatch: ShelfLifeEntry | null = null;
+  let subLen = 0;
+
   for (const [kw, entry] of Object.entries(shelfLifeMap)) {
-    const kwInName  = name.includes(kw);
-    const nameInKw  = kw.includes(name) && name.length >= kw.length * 0.5;
-    if ((kwInName || nameInKw) && kw.length > bestLen) {
-      bestMatch = entry;
-      bestLen = kw.length;
+    const kwWords = kw.split(/\s+/).filter(Boolean).map(foldPluralWord);
+    // kw's words all present (as whole words) in the query name.
+    const kwWholeInName = kwWords.every(w => nameWords.includes(w));
+    if (kwWholeInName) {
+      if (kw.length > wholeWordLen) { wholeWordMatch = entry; wholeWordLen = kw.length; }
+      continue;
+    }
+    // Looser fallback: the query is a sub-phrase of the keyword (kept only when
+    // the query is ≥50% of the keyword length, and used only if no whole-word
+    // match exists at all).
+    if (kw.includes(name) && name.length >= kw.length * 0.5 && kw.length > subLen) {
+      subMatch = entry;
+      subLen = kw.length;
     }
   }
-  if (!bestMatch) return null;
-  if (location === 'fridge')  return bestMatch.fridgeDays;
-  if (location === 'freezer') return bestMatch.freezerDays;
-  return bestMatch.pantryDays ?? bestMatch.fridgeDays; // pantry or counter, fall back to fridge
+
+  const best = wholeWordMatch ?? subMatch;
+  return best ? pick(best) : null;
 }

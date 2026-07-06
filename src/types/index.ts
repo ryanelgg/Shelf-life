@@ -7,6 +7,13 @@ export const FREE_LIMITS = {
   avoTrialDays: 7,     // new users get 7 days of Pro-level Avo access
 } as const;
 
+// Sentinel written to `avoTrialStartedAt` when a user reaches Pro without ever
+// having started a free trial. It's an already-expired date, so it (a) reads as
+// "not in a trial" and (b) makes `avoTrialStartedAt` non-null — which stops a
+// later cancellation from lazily starting a brand-new free 7-day trial. Granting
+// Pro itself stays free; this only closes the cancel→fresh-trial loophole.
+export const TRIAL_CONSUMED = '2000-01-01';
+
 export type AuthProvider = 'apple' | 'google' | 'email' | 'guest';
 
 export interface User {

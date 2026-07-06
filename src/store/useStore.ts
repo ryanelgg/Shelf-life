@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
+import { formatLocalDate, FREE_LIMITS, isAvoTrialActive, TRIAL_CONSUMED } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import * as debug from '../lib/debug';
@@ -495,13 +495,24 @@ export const useStore = create<ShelfLifeStore>()(
         const { supabaseUserId } = useStore.getState();
         let nextUser: User | null = null;
         set((s) => {
-          nextUser = s.user ? { ...s.user, subscriptionTier: tier } : null;
+          if (!s.user) { nextUser = null; return { user: null }; }
+          // When a user reaches Pro without ever starting a trial, mark the
+          // trial consumed so a later cancel can't hand them a fresh free 7-day
+          // trial. Granting Pro is still free (this doesn't gate upgrades).
+          const avoTrialStartedAt =
+            tier === 'pro' && !s.user.avoTrialStartedAt
+              ? TRIAL_CONSUMED
+              : s.user.avoTrialStartedAt;
+          nextUser = { ...s.user, subscriptionTier: tier, avoTrialStartedAt };
           return { user: nextUser };
         });
         if (supabaseUserId && nextUser) {
           // Awaited so the cloud write can't be orphaned by a sign-out or
           // navigation that happens immediately after an upgrade/cancel.
-          await syncProfileUpdates(supabaseUserId, { subscription_tier: tier });
+          await syncProfileUpdates(supabaseUserId, {
+            subscription_tier: tier,
+            avo_trial_started_at: (nextUser as User).avoTrialStartedAt,
+          });
         }
       },
       incrementAvoChat: (): boolean => {
@@ -560,15 +571,30 @@ export const useStore = create<ShelfLifeStore>()(
       decrementAvoChat: (): void => {
         const s = useStore.getState();
         if (!s.user) return;
+        const today = formatLocalDate(new Date());
         // Refund the counter that was actually charged.
         const hasProAccess = s.user.subscriptionTier === 'pro' || isAvoTrialActive(s.user);
-        const nextUser = hasProAccess
-          ? { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) }
-          : { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
+        let nextUser: User;
+        let rolledBackTrial = false;
+        if (hasProAccess) {
+          const refundedCount = Math.max(0, s.user.avoChatCount - 1);
+          nextUser = { ...s.user, avoChatCount: refundedCount };
+          // If this refund empties today's counter AND the trial only started
+          // today (as part of this now-failed first chat), roll the trial start
+          // back too so a failed first message doesn't burn a trial day.
+          if (s.user.subscriptionTier !== 'pro'
+            && s.user.avoTrialStartedAt === today
+            && refundedCount === 0) {
+            nextUser = { ...nextUser, avoTrialStartedAt: null };
+            rolledBackTrial = true;
+          }
+        } else {
+          nextUser = { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
+        }
         set({ user: nextUser });
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, hasProAccess
-            ? { avo_chat_count: nextUser.avoChatCount }
+            ? { avo_chat_count: nextUser.avoChatCount, ...(rolledBackTrial ? { avo_trial_started_at: null } : {}) }
             : { avo_free_chats_used: nextUser.avoFreeChatsUsed },
           ).catch(debug.error);
         }
@@ -577,6 +603,11 @@ export const useStore = create<ShelfLifeStore>()(
         const s = useStore.getState();
         if (!s.user) return false;
         if (s.user.subscriptionTier === 'pro') return true;
+        // Household members share the owner's pantry. Creating or joining a
+        // household is Pro-gated server-side, so being in one means the shared
+        // pantry belongs to a Pro owner — every member gets the same unlimited
+        // allowance while they're sharing it.
+        if (s.household) return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },
       isPro: (): boolean => {
