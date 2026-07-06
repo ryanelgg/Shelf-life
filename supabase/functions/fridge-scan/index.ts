@@ -68,8 +68,10 @@ Deno.serve(async (request) => {
       }),
     });
     if (!response.ok) {
-      const details = await response.text();
-      return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
+      // Log the upstream detail server-side but return a generic message + 502
+      // so we don't leak provider internals (or a confusing 401) to the client.
+      console.error(`[fridge-scan] Anthropic request failed ${response.status}:`, await response.text());
+      return json({ error: 'Fridge scanning is having trouble right now. Please try again.' }, { status: 502 });
     }
     const result = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
