@@ -6,6 +6,7 @@ import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
 import { getHouseholdMembers } from '../lib/households';
+import { computeAchievements } from '../lib/achievements';
 import { formatLocalDate } from '../types';
 import type { WasteLog } from '../types';
 
@@ -99,6 +100,8 @@ export function ImpactScreen() {
   }, [household]);
 
   const sharedStreak = useMemo(() => computeSharedStreak(wasteLogs), [wasteLogs]);
+  const achievements = useMemo(() => computeAchievements(wasteLogs), [wasteLogs]);
+  const zww = achievements.zeroWasteWeek;
 
   const stats = useMemo(() => {
     const eaten = wasteLogs.filter(w => w.action === 'eaten');
@@ -343,22 +346,92 @@ export function ImpactScreen() {
         </Card>
       )}
 
-      {/* Weekly Challenge */}
-      <Card className="card-enter stagger-6" style={{
-        background: 'rgba(74, 124, 89, 0.04)',
-        border: '1px solid rgba(74, 124, 89, 0.12)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-          <ImpactIcon type="trophy" size={26} color="var(--accent)" />
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 700 }}>Weekly Challenge</div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cook 3 meals from expiring ingredients</div>
+      {/* Achievements */}
+      <Card className="card-enter stagger-6">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ImpactIcon type="trophy" size={24} color="var(--accent)" />
+            <div style={{ fontSize: '16px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Achievements</div>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+            {achievements.earnedCount} of {achievements.total} unlocked
           </div>
         </div>
-        <ProgressBar value={66} color="var(--accent)" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <span>2 / 3 meals cooked</span>
-          <span style={{ color: 'var(--accent)' }}>4 days left</span>
+
+        {/* Featured challenge: Zero-Waste Week */}
+        <div style={{
+          padding: '14px',
+          borderRadius: '14px',
+          marginBottom: '14px',
+          background: zww.earned ? 'rgba(74, 124, 89, 0.10)' : 'rgba(74, 124, 89, 0.04)',
+          border: `1px solid ${zww.earned ? 'var(--accent)' : 'rgba(74, 124, 89, 0.15)'}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '26px', lineHeight: 1 }}>🥑</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 700 }}>Zero-Waste Week</span>
+                {zww.earned && (
+                  <span style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em', color: 'var(--accent)', background: 'rgba(74,124,89,0.14)', padding: '2px 6px', borderRadius: '6px' }}>
+                    EARNED
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                7 days in a row saving food with nothing tossed
+              </div>
+            </div>
+          </div>
+          <ProgressBar value={(zww.weekProgress / 7) * 100} color="var(--accent)" />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+            <span>{zww.weekProgress} / 7 days this week</span>
+            <span style={{ color: 'var(--accent)' }}>
+              {zww.earned
+                ? (zww.streak.current > 0 ? `${zww.streak.current}-day run going 🔥` : 'Start a fresh run!')
+                : zww.weekProgress === 0
+                  ? 'Log a save today to begin'
+                  : `${7 - zww.weekProgress} to go`}
+            </span>
+          </div>
+        </div>
+
+        {/* Badge grid (everything except the featured challenge) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          {achievements.achievements.filter(a => !a.featured).map(a => {
+            const pct = Math.min(100, Math.round((a.current / a.target) * 100));
+            return (
+              <div key={a.id} style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '10px', borderRadius: '12px',
+                border: `1px solid ${a.earned ? 'rgba(74, 124, 89, 0.25)' : 'var(--border)'}`,
+                background: a.earned ? 'rgba(74, 124, 89, 0.05)' : 'transparent',
+                opacity: a.earned ? 1 : 0.72,
+              }}>
+                <span style={{ fontSize: '22px', lineHeight: 1, filter: a.earned ? 'none' : 'grayscale(1)' }}>{a.emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
+                    {a.earned && (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                        <circle cx="8" cy="8" r="7" fill="var(--accent)" opacity="0.9" />
+                        <path d="M5 8 L7 10 L11 6" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  {a.earned ? (
+                    <div style={{ fontSize: '9px', color: 'var(--accent)', fontWeight: 600, marginTop: '2px' }}>Unlocked</div>
+                  ) : (
+                    <>
+                      <div style={{ height: 3, borderRadius: 2, background: 'var(--accent-dim)', marginTop: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', borderRadius: 2 }} />
+                      </div>
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '3px' }}>{a.current} / {a.target}</div>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </Card>
 
