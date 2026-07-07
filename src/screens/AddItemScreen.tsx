@@ -82,9 +82,13 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // Globally-unique so two household phones adding their first item in the same
+  // millisecond can't mint the same id and overwrite each other over live sync.
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `p-${crypto.randomUUID()}`;
+  }
+  return `p-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
 let nextReceiptRowId = 0;

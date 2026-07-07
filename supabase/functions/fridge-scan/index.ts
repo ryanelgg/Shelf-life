@@ -36,6 +36,10 @@ Deno.serve(async (request) => {
     if (!image) {
       return json({ error: 'No image provided' }, { status: 400 });
     }
+    // Reject oversized payloads before spending model tokens (~6 MB decoded).
+    if (image.length > 8_000_000) {
+      return json({ error: 'Image too large' }, { status: 400 });
+    }
     let mediaType = 'image/jpeg';
     let base64Data = image;
     if (image.startsWith('data:')) {

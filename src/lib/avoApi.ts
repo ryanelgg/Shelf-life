@@ -43,7 +43,11 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
 async function requestFromUrl(url: string, init: RequestInit) {
   const response = await fetchWithTimeout(url, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    // Attach the HTTP status so the UI can show the right message (e.g. the
+    // "getting a lot of questions right now" copy for 429, key errors for 401).
+    const err = new Error(await parseErrorMessage(response)) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
 
   const data = await response.json() as AvoChatResponse;
