@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
+import { formatLocalDate, FREE_LIMITS, isAvoTrialActive, nextAvoTrialStartedAt, nextStreak } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import * as debug from '../lib/debug';
@@ -413,21 +413,7 @@ export const useStore = create<ShelfLifeStore>()(
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
-          const today = formatLocalDate(new Date());
-          const yesterday = (() => {
-            const d = new Date();
-            d.setDate(d.getDate() - 1);
-            return formatLocalDate(d);
-          })();
-          let { streakDays, lastActiveDate } = s.user;
-          if (log.action === 'tossed') {
-            streakDays = 0;
-          } else {
-            if (lastActiveDate !== today) {
-              streakDays = lastActiveDate === yesterday ? streakDays + 1 : 1;
-            }
-            lastActiveDate = today;
-          }
+          const { streakDays, lastActiveDate } = nextStreak(s.user, log.action);
           profileUpdates = {
             streak_days: streakDays,
             last_active_date: lastActiveDate,
@@ -457,13 +443,29 @@ export const useStore = create<ShelfLifeStore>()(
           }
         }
       },
-      addWasteLogLocal: (log) => set((s) => (
-        // Dedupe by id: the originating device already appended this log, and
-        // realtime echoes it back to everyone (including the sender).
-        s.wasteLogs.some(l => l.id === log.id)
-          ? {}
-          : { wasteLogs: [...s.wasteLogs, log] }
-      )),
+      addWasteLogLocal: (log) => {
+        const { supabaseUserId, householdStreakEnabled } = useStore.getState();
+        let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
+        set((s) => {
+          // Dedupe by id: the originating device already appended this log,
+          // and realtime echoes it back to everyone (including the sender).
+          if (s.wasteLogs.some(l => l.id === log.id)) return {};
+          // householdStreakEnabled: a household member's activity advances
+          // (or resets) everyone's streak too, not just the device that
+          // logged it — otherwise the streak is silently per-device even
+          // though the setting claims it's shared.
+          if (!s.user || !householdStreakEnabled) return { wasteLogs: [...s.wasteLogs, log] };
+          const { streakDays, lastActiveDate } = nextStreak(s.user, log.action);
+          profileUpdates = { streak_days: streakDays, last_active_date: lastActiveDate };
+          return {
+            wasteLogs: [...s.wasteLogs, log],
+            user: { ...s.user, streakDays, lastActiveDate },
+          };
+        });
+        if (supabaseUserId && profileUpdates) {
+          syncProfileUpdates(supabaseUserId, profileUpdates).catch(debug.error);
+        }
+      },
 
       setRecipes: (recipes) => set({ recipes }),
 
@@ -492,16 +494,17 @@ export const useStore = create<ShelfLifeStore>()(
       setMealPlan: (plan) => set({ mealPlan: plan }),
 
       setSubscriptionTier: async (tier) => {
-        const { supabaseUserId } = useStore.getState();
-        let nextUser: User | null = null;
-        set((s) => {
-          nextUser = s.user ? { ...s.user, subscriptionTier: tier } : null;
-          return { user: nextUser };
-        });
-        if (supabaseUserId && nextUser) {
+        const { supabaseUserId, user } = useStore.getState();
+        if (!user) return;
+        const avoTrialStartedAt = nextAvoTrialStartedAt(user, tier);
+        set({ user: { ...user, subscriptionTier: tier, avoTrialStartedAt } });
+        if (supabaseUserId) {
           // Awaited so the cloud write can't be orphaned by a sign-out or
           // navigation that happens immediately after an upgrade/cancel.
-          await syncProfileUpdates(supabaseUserId, { subscription_tier: tier });
+          await syncProfileUpdates(supabaseUserId, {
+            subscription_tier: tier,
+            avo_trial_started_at: avoTrialStartedAt,
+          });
         }
       },
       incrementAvoChat: (): boolean => {
@@ -577,6 +580,11 @@ export const useStore = create<ShelfLifeStore>()(
         const s = useStore.getState();
         if (!s.user) return false;
         if (s.user.subscriptionTier === 'pro') return true;
+        // A free member of a household whose owner is Pro shouldn't get
+        // blocked once the shared pantry the owner grew exceeds 20 items —
+        // but a free user can't fake this by making their own household,
+        // since creating one already requires Pro (enforced server-side).
+        if (s.household?.ownerIsPro) return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },
       isPro: (): boolean => {

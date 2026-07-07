@@ -21,6 +21,7 @@ Deno.serve(async (request) => {
 
   const groqApiKey = Deno.env.get('GROQ_API_KEY');
   if (!groqApiKey) {
+    await guard.refund();
     return json({ error: 'GROQ_API_KEY is not configured for the avo-chat function' }, { status: 500 });
   }
 
@@ -65,6 +66,7 @@ Deno.serve(async (request) => {
       // Log the upstream detail server-side but return a generic message so we
       // don't leak provider internals to the client.
       console.error(`[avo-chat] Groq request failed ${groqResponse.status}:`, await groqResponse.text());
+      await guard.refund();
       return json({ error: 'Avo is having trouble right now. Please try again.' }, { status: 502 });
     }
 
@@ -74,11 +76,13 @@ Deno.serve(async (request) => {
 
     const text = payload.choices?.[0]?.message?.content?.trim();
     if (!text) {
+      await guard.refund();
       return json({ error: 'Groq returned an empty response' }, { status: 502 });
     }
 
     return json({ text });
   } catch (error) {
+    await guard.refund();
     const message = error instanceof Error ? error.message : 'Unexpected function error';
     return json({ error: message }, { status: 500 });
   }

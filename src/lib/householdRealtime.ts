@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import type { PantryItemRow, WasteLogRow } from './supabase';
 import { rowToPantryItem, rowToWasteLog } from './supabaseSync';
 import { useStore } from '../store/useStore';
+import { cancelItemNotifications, rescheduleItemNotifications } from './notifications';
 import * as debug from './debug';
 
 // Live sync for a shared household pantry. While a member is in a household we
@@ -33,9 +34,20 @@ export function subscribeHousehold(householdId: string): void {
         const store = useStore.getState();
         if (payload.eventType === 'DELETE') {
           const id = (payload.old as Partial<PantryItemRow>)?.id;
-          if (id) store.removePantryItemLocal(id);
+          if (id) {
+            store.removePantryItemLocal(id);
+            void cancelItemNotifications(id);
+          }
         } else {
-          store.upsertPantryItemLocal(rowToPantryItem(payload.new as PantryItemRow));
+          const item = rowToPantryItem(payload.new as PantryItemRow);
+          store.upsertPantryItemLocal(item);
+          // Without this, only the member who added/edited an item ever gets
+          // its expiry reminder scheduled on their device — everyone else in
+          // the household stays silent. Reschedule (cancel + schedule) here
+          // too so every member's device carries its own local notification.
+          if (store.notificationsEnabled) {
+            void rescheduleItemNotifications(item, store.user?.name);
+          }
         }
       },
     )

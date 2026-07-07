@@ -64,6 +64,91 @@ export function outboxPending(): number {
   return readOutbox().length;
 }
 
+// ── Pending-add coordination ────────────────────────────────────────────────
+//
+// An add can still be in flight (retrying) or sitting in the outbox when the
+// user edits or deletes the same item after coming back online. Without this,
+// the edit/delete would run against a row the server doesn't have yet — a
+// silent 0-row no-op — and the still-pending add would then land afterwards
+// and either overwrite the edit or resurrect the deleted item. Folding
+// same-id edits/deletes into the pending add itself means only one, final
+// write ever reaches the server, in the right order.
+
+interface PendingAdd {
+  row: Record<string, unknown>;
+  cancelled: boolean;
+}
+
+const pendingAdds = new Map<string, PendingAdd>();
+
+/** Call when an add write is first attempted, before any retry/enqueue. */
+export function trackPendingAdd(id: string, row: Record<string, unknown>): void {
+  pendingAdds.set(id, { row, cancelled: false });
+}
+
+/** The current row for a still-pending, non-cancelled add, or null. */
+export function pendingAddRow(id: string): Record<string, unknown> | null {
+  const p = pendingAdds.get(id);
+  return p && !p.cancelled ? p.row : null;
+}
+
+export function isPendingAddCancelled(id: string): boolean {
+  return pendingAdds.get(id)?.cancelled ?? false;
+}
+
+/** Call once the add's write has settled (succeeded, or handed to the
+ * outbox) — from then on the outbox/server is the source of truth for `id`. */
+export function resolvePendingAdd(id: string): void {
+  pendingAdds.delete(id);
+}
+
+/**
+ * Fold an update into a still-pending add (in memory and, if it already got
+ * queued, in the persisted outbox too). Returns true if it applied — the
+ * caller should skip firing a separate network write in that case.
+ */
+export function mergeIntoPendingAdd(id: string, updates: Record<string, unknown>): boolean {
+  let matched = false;
+  const p = pendingAdds.get(id);
+  if (p && !p.cancelled) {
+    p.row = { ...p.row, ...updates };
+    matched = true;
+  }
+  const entries = readOutbox();
+  let changed = false;
+  for (const entry of entries) {
+    if (entry.op.kind === 'pantryAdd' && entry.op.row.id === id) {
+      entry.op.row = { ...entry.op.row, ...updates };
+      changed = true;
+      matched = true;
+    }
+  }
+  if (changed) writeOutbox(entries);
+  return matched;
+}
+
+/**
+ * Cancel a still-pending add — the item is being deleted before it ever
+ * reached the server, so there's nothing to insert (or delete). Cancels both
+ * the in-memory tracker and any matching queued outbox entry. Returns true if
+ * a pending add was found and cancelled.
+ */
+export function cancelPendingAdd(id: string): boolean {
+  let matched = false;
+  const p = pendingAdds.get(id);
+  if (p && !p.cancelled) {
+    p.cancelled = true;
+    matched = true;
+  }
+  const entries = readOutbox();
+  const filtered = entries.filter(e => !(e.op.kind === 'pantryAdd' && e.op.row.id === id));
+  if (filtered.length !== entries.length) {
+    writeOutbox(filtered);
+    matched = true;
+  }
+  return matched;
+}
+
 async function replayOp(op: OutboxOp): Promise<boolean> {
   let error: { message: string } | null = null;
   switch (op.kind) {

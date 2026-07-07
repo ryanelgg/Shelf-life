@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // `.maybeSingle()` call (first = household_members query, second = households).
 const h = vi.hoisted(() => ({
   queue: [] as Array<{ data: unknown; error: unknown }>,
+  ownerIsProResult: { data: false as unknown, error: null as unknown },
 }));
 
 vi.mock('./supabase', () => ({
@@ -15,12 +16,16 @@ vi.mock('./supabase', () => ({
         }),
       }),
     }),
+    rpc: async () => h.ownerIsProResult,
   },
 }));
 
 import { getMyHousehold } from './households';
 
-beforeEach(() => { h.queue = []; });
+beforeEach(() => {
+  h.queue = [];
+  h.ownerIsProResult = { data: false, error: null };
+});
 
 describe('getMyHousehold', () => {
   it('THROWS on a real DB/network error (does not masquerade as "not in a household")', async () => {
@@ -38,11 +43,13 @@ describe('getMyHousehold', () => {
       { data: { household_id: 'hh1', role: 'member' }, error: null },
       { data: { id: 'hh1', invite_code: 'ABC123', owner_id: 'u9', created_at: '2026-01-01' }, error: null },
     ];
+    h.ownerIsProResult = { data: true, error: null };
     await expect(getMyHousehold('u1')).resolves.toEqual({
       id: 'hh1',
       inviteCode: 'ABC123',
       ownerId: 'u9',
       role: 'member',
+      ownerIsPro: true,
     });
   });
 

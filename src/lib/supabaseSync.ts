@@ -5,7 +5,18 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { SignInWithApple } from './appleSignIn';
 import * as debug from './debug';
-import { enqueueOutbox, flushOutbox, outboxPending, type OutboxOp } from './syncOutbox';
+import {
+  enqueueOutbox,
+  flushOutbox,
+  outboxPending,
+  type OutboxOp,
+  trackPendingAdd,
+  pendingAddRow,
+  isPendingAddCancelled,
+  resolvePendingAdd,
+  mergeIntoPendingAdd,
+  cancelPendingAdd,
+} from './syncOutbox';
 
 // Re-export so callers (App.tsx) can flush queued offline writes on boot from a
 // single sync surface.
@@ -415,7 +426,37 @@ export function syncPantryAdd(item: PantryItem, userId: string, householdId?: st
     frozen: item.frozen ?? false,
     date_type: item.dateType ?? null,
   };
-  syncWrite(() => supabase.from('pantry_items').insert(row), 'pantryAdd', { kind: 'pantryAdd', row });
+  trackPendingAdd(item.id, row);
+  void syncPantryAddWithRetry(item.id);
+}
+
+/**
+ * Like syncWrite, but add-specific: it re-checks pendingAddRow()/cancellation
+ * on every attempt so an edit or delete that arrives mid-retry (see
+ * syncPantryUpdate/syncPantryRemove) is reflected in what actually gets
+ * written — instead of racing a stale insert built from the original call.
+ */
+async function syncPantryAddWithRetry(id: string, maxRetries = 2, delayMs = 2000): Promise<void> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
+    if (isPendingAddCancelled(id)) { resolvePendingAdd(id); return; }
+    const row = pendingAddRow(id);
+    if (!row) return; // already resolved by a prior attempt
+
+    const { error } = await supabase.from('pantry_items').insert(row);
+    if (!error) {
+      resolvePendingAdd(id);
+      if (outboxPending() > 0) void flushOutbox();
+      return;
+    }
+    if (attempt === maxRetries) {
+      if (isPendingAddCancelled(id)) { resolvePendingAdd(id); return; }
+      debug.error(`[sync] pantryAdd failed after ${maxRetries + 1} attempts:`, error.message);
+      // Re-read the row: an edit may have merged into it since we started.
+      enqueueOutbox({ kind: 'pantryAdd', row: pendingAddRow(id) ?? row });
+      resolvePendingAdd(id); // now tracked durably by the outbox instead
+    }
+  }
 }
 
 export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
@@ -432,6 +473,11 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
   if (updates.frozen !== undefined)          row.frozen = updates.frozen;
   if (updates.dateType !== undefined)        row.date_type = updates.dateType ?? null;
 
+  // If the add for this item hasn't reached the server yet, fold this update
+  // into it rather than firing a write against a row that doesn't exist there
+  // yet (see syncOutbox.ts pending-add coordination).
+  if (mergeIntoPendingAdd(id, row)) return;
+
   syncWrite(
     () => supabase.from('pantry_items').update(row).eq('id', id),
     'pantryUpdate',
@@ -440,6 +486,10 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
 }
 
 export function syncPantryRemove(id: string) {
+  // If the add for this item hasn't reached the server yet, cancel it instead
+  // of deleting a row that was never created there (see syncOutbox.ts).
+  if (cancelPendingAdd(id)) return;
+
   syncWrite(
     () => supabase.from('pantry_items').delete().eq('id', id),
     'pantryRemove',

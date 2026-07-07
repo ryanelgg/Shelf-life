@@ -7,6 +7,13 @@ export const FREE_LIMITS = {
   avoTrialDays: 7,     // new users get 7 days of Pro-level Avo access
 } as const;
 
+// Stamped into avoTrialStartedAt for a user who becomes Pro without ever
+// having run the trial (e.g. Pro from signup). It's a real, far-past date so
+// isAvoTrialActive() is immediately false — but it's non-null, so the
+// "never started a trial" auto-start in incrementAvoChat won't hand them a
+// fresh free week the moment they cancel.
+export const AVO_TRIAL_USED_SENTINEL = '1970-01-01';
+
 export type AuthProvider = 'apple' | 'google' | 'email' | 'guest';
 
 export interface User {
@@ -51,6 +58,20 @@ export function isAvoTrialActive(
   return avoTrialDaysLeft(u, now) > 0;
 }
 
+/**
+ * Resolves avoTrialStartedAt for a subscription-tier change. Becoming Pro
+ * without ever having run the trial gets stamped with the "used" sentinel so
+ * a later cancel can't auto-start a fresh free week; every other transition
+ * leaves the field untouched.
+ */
+export function nextAvoTrialStartedAt(
+  u: { avoTrialStartedAt: string | null },
+  tier: SubscriptionTier,
+): string | null {
+  if (tier === 'pro' && !u.avoTrialStartedAt) return AVO_TRIAL_USED_SENTINEL;
+  return u.avoTrialStartedAt;
+}
+
 export type ThemeMode = 'dark' | 'light';
 
 export type DietaryPref = 'vegetarian' | 'vegan' | 'gluten-free' | 'dairy-free' | 'nut-free' | 'none';
@@ -90,6 +111,9 @@ export interface Household {
   inviteCode: string;
   ownerId: string;
   role: HouseholdRole;
+  // Whether the household's owner currently holds Pro. Free members are
+  // exempt from the pantry item cap while this is true (see canAddPantryItem).
+  ownerIsPro: boolean;
 }
 
 export interface HouseholdMember {
@@ -234,6 +258,31 @@ export function formatLocalDate(date: Date): string {
 export function parseLocalDate(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
   return new Date(year, (month || 1) - 1, day || 1);
+}
+
+/**
+ * Advances (or resets) a streak given a new waste-log action. Shared by
+ * addWasteLog (this device's own action) and addWasteLogLocal (a household
+ * member's action, applied here too when the shared-household-streak setting
+ * is on) so both paths compute the streak identically.
+ */
+export function nextStreak(
+  current: { streakDays: number; lastActiveDate: string },
+  action: WasteAction,
+  now: Date = new Date(),
+): { streakDays: number; lastActiveDate: string } {
+  if (action === 'tossed') {
+    return { streakDays: 0, lastActiveDate: current.lastActiveDate };
+  }
+  const today = formatLocalDate(now);
+  if (current.lastActiveDate === today) return current;
+  const yesterday = (() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return formatLocalDate(d);
+  })();
+  const streakDays = current.lastActiveDate === yesterday ? current.streakDays + 1 : 1;
+  return { streakDays, lastActiveDate: today };
 }
 
 export function getFreshnessStatus(expirationDate: string): FreshnessStatus {

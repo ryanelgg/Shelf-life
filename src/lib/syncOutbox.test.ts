@@ -18,7 +18,17 @@ vi.mock('./supabase', () => ({
 
 vi.mock('./debug', () => ({ error: vi.fn(), warn: vi.fn(), log: vi.fn() }));
 
-import { enqueueOutbox, flushOutbox, outboxPending } from './syncOutbox';
+import {
+  enqueueOutbox,
+  flushOutbox,
+  outboxPending,
+  trackPendingAdd,
+  pendingAddRow,
+  isPendingAddCancelled,
+  resolvePendingAdd,
+  mergeIntoPendingAdd,
+  cancelPendingAdd,
+} from './syncOutbox';
 
 // In-memory localStorage (node has none).
 function installLocalStorage() {
@@ -80,5 +90,72 @@ describe('syncOutbox', () => {
     enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Eggs' } });
     await flushOutbox();
     expect(h.calls).toContain('upsert:pantry_items');
+  });
+});
+
+// ── Pending-add coordination ────────────────────────────────────────────────
+//
+// Regression tests for the offline add-then-edit/delete bug: an item added
+// offline whose insert hasn't reached the server yet must not be raced by a
+// later edit/delete for the same id — otherwise the edit/delete no-ops against
+// a row the server doesn't have, and the still-pending add then overwrites the
+// edit or resurrects the deleted item once it lands.
+describe('pending-add coordination', () => {
+  it('has no pending add for an id that was never tracked', () => {
+    expect(pendingAddRow('never-added')).toBeNull();
+    expect(isPendingAddCancelled('never-added')).toBe(false);
+  });
+
+  it('folds an edit into a still-pending add instead of losing it', () => {
+    trackPendingAdd('a1', { id: 'a1', name: 'Milk', quantity: 1 });
+    const applied = mergeIntoPendingAdd('a1', { quantity: 2 });
+    expect(applied).toBe(true);
+    expect(pendingAddRow('a1')).toEqual({ id: 'a1', name: 'Milk', quantity: 2 });
+    resolvePendingAdd('a1');
+  });
+
+  it('folds an edit into an add that already made it to the outbox', () => {
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a2', name: 'Bread', quantity: 1 } });
+    // Simulate the in-flight tracker having settled (moved to the outbox) —
+    // mergeIntoPendingAdd must still find and update the queued entry.
+    const applied = mergeIntoPendingAdd('a2', { quantity: 3 });
+    expect(applied).toBe(true);
+
+    h.result = { error: null };
+    return flushOutbox().then(() => {
+      expect(h.calls).toEqual(['upsert:pantry_items']);
+    });
+  });
+
+  it('cancels a still-pending add on delete so it never reaches the server', () => {
+    trackPendingAdd('a3', { id: 'a3', name: 'Eggs' });
+    const cancelled = cancelPendingAdd('a3');
+    expect(cancelled).toBe(true);
+    expect(isPendingAddCancelled('a3')).toBe(true);
+    expect(pendingAddRow('a3')).toBeNull();
+  });
+
+  it('removes a queued add from the outbox on delete instead of resurrecting it', async () => {
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a4', name: 'Yogurt' } });
+    expect(outboxPending()).toBe(1);
+
+    const cancelled = cancelPendingAdd('a4');
+    expect(cancelled).toBe(true);
+    expect(outboxPending()).toBe(0);
+
+    await flushOutbox();
+    expect(h.calls).toEqual([]); // never inserted
+  });
+
+  it('reports no match when there is nothing pending for that id', () => {
+    expect(mergeIntoPendingAdd('nope', { quantity: 5 })).toBe(false);
+    expect(cancelPendingAdd('nope')).toBe(false);
+  });
+
+  it('an already-resolved add is untouched by a later edit/delete for the same id', () => {
+    trackPendingAdd('a5', { id: 'a5', name: 'Cheese' });
+    resolvePendingAdd('a5'); // e.g. the insert already succeeded
+    expect(mergeIntoPendingAdd('a5', { quantity: 2 })).toBe(false);
+    expect(cancelPendingAdd('a5')).toBe(false);
   });
 });

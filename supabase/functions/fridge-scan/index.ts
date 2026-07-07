@@ -29,6 +29,7 @@ Deno.serve(async (request) => {
 
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!anthropicKey) {
+    await guard.refund();
     return json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
   }
   try {
@@ -69,6 +70,7 @@ Deno.serve(async (request) => {
     });
     if (!response.ok) {
       const details = await response.text();
+      await guard.refund();
       return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
     }
     const result = await response.json() as {
@@ -83,6 +85,7 @@ Deno.serve(async (request) => {
     return json({ items });
   } catch (error) {
     Sentry.captureException(error);
+    await guard.refund();
     const message = error instanceof Error ? error.message : 'Unexpected error';
     return json({ error: message }, { status: 500 });
   }

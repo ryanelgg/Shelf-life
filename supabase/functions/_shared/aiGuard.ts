@@ -26,7 +26,7 @@ export function json(body: unknown, init: ResponseInit = {}) {
 }
 
 type GuardResult =
-  | { ok: true; userId: string }
+  | { ok: true; userId: string; refund: () => Promise<void> }
   | { ok: false; response: Response };
 
 export async function guardAiRequest(
@@ -77,5 +77,15 @@ export async function guardAiRequest(
     };
   }
 
-  return { ok: true, userId };
+  return {
+    ok: true,
+    userId,
+    // Call this if the upstream AI provider itself fails after this point —
+    // the daily ceiling is an abuse backstop, not something the user should
+    // be charged against for a failure that wasn't their fault.
+    refund: async () => {
+      const { error: refundError } = await admin.rpc('decrement_ai_usage', { p_user_id: userId, p_kind: kind });
+      if (refundError) console.error('[aiGuard] refund failed:', refundError.message);
+    },
+  };
 }

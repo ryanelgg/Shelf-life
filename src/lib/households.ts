@@ -6,7 +6,7 @@ import type { Household, HouseholdMember, HouseholdRole } from '../types';
 // supabase/migrations/0001_households.sql) so the Pro requirement and the
 // 4-member cap are enforced server-side and can't be bypassed from the client.
 
-function toHousehold(row: unknown, role: HouseholdRole): Household {
+function toHousehold(row: unknown, role: HouseholdRole): Omit<Household, 'ownerIsPro'> {
   // Guard the RPC payload before trusting it. A SECURITY DEFINER RPC can return
   // null (no row), an array, or a row missing fields if the SQL ever changes;
   // a blind `as HouseholdRow` cast would then surface as a raw TypeError
@@ -29,6 +29,19 @@ function toHousehold(row: unknown, role: HouseholdRole): Household {
  * unlinked) until a restart. App.tsx keeps local data + the persisted household
  * when this throws, mirroring loadProfile / loadAllData.
  */
+/**
+ * Whether the caller's household owner currently holds Pro, computed
+ * server-side (see 0005_household_owner_pro.sql). Free members are exempt
+ * from the pantry item cap only while this is true — a free user can't fake
+ * it by creating their own household, since create_household already
+ * requires Pro. Defaults to false on error or if the caller isn't in one.
+ */
+export async function getHouseholdOwnerIsPro(): Promise<boolean> {
+  const { data, error } = await supabase.rpc('household_owner_is_pro');
+  if (error) return false;
+  return data === true;
+}
+
 export async function getMyHousehold(userId: string): Promise<Household | null> {
   const { data: member, error } = await supabase
     .from('household_members')
@@ -46,21 +59,24 @@ export async function getMyHousehold(userId: string): Promise<Household | null> 
   if (hhError) throw hhError;
   if (!hh) return null;
 
-  return toHousehold(hh as HouseholdRow, member.role as HouseholdRole);
+  const household = toHousehold(hh as HouseholdRow, member.role as HouseholdRole);
+  return { ...household, ownerIsPro: await getHouseholdOwnerIsPro() };
 }
 
 /** Create a new household. Throws if the caller isn't Pro or is already in one. */
 export async function createHousehold(): Promise<Household> {
   const { data, error } = await supabase.rpc('create_household');
   if (error) throw new Error(error.message);
-  return toHousehold(data as HouseholdRow, 'owner');
+  // The creator just passed the Pro check server-side to get here.
+  return { ...toHousehold(data as HouseholdRow, 'owner'), ownerIsPro: true };
 }
 
 /** Join a household by invite code. Throws if invalid, full, or already joined. */
 export async function joinHousehold(code: string): Promise<Household> {
   const { data, error } = await supabase.rpc('join_household', { p_code: code });
   if (error) throw new Error(error.message);
-  return toHousehold(data as HouseholdRow, 'member');
+  const household = toHousehold(data as HouseholdRow, 'member');
+  return { ...household, ownerIsPro: await getHouseholdOwnerIsPro() };
 }
 
 /** Leave the current household (disbands it if you're the last member). */
