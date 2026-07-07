@@ -563,15 +563,30 @@ export const useStore = create<ShelfLifeStore>()(
       decrementAvoChat: (): void => {
         const s = useStore.getState();
         if (!s.user) return;
+        const today = formatLocalDate(new Date());
         // Refund the counter that was actually charged.
         const hasProAccess = s.user.subscriptionTier === 'pro' || isAvoTrialActive(s.user);
-        const nextUser = hasProAccess
-          ? { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) }
-          : { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
+        let nextUser: User;
+        let rolledBackTrial = false;
+        if (hasProAccess) {
+          const refundedCount = Math.max(0, s.user.avoChatCount - 1);
+          nextUser = { ...s.user, avoChatCount: refundedCount };
+          // If this refund empties today's counter AND the trial only started
+          // today (as part of this now-failed first chat), roll the trial start
+          // back too so a failed first message doesn't burn a trial day.
+          if (s.user.subscriptionTier !== 'pro'
+            && s.user.avoTrialStartedAt === today
+            && refundedCount === 0) {
+            nextUser = { ...nextUser, avoTrialStartedAt: null };
+            rolledBackTrial = true;
+          }
+        } else {
+          nextUser = { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
+        }
         set({ user: nextUser });
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, hasProAccess
-            ? { avo_chat_count: nextUser.avoChatCount }
+            ? { avo_chat_count: nextUser.avoChatCount, ...(rolledBackTrial ? { avo_trial_started_at: null } : {}) }
             : { avo_free_chats_used: nextUser.avoFreeChatsUsed },
           ).catch(debug.error);
         }
@@ -584,6 +599,8 @@ export const useStore = create<ShelfLifeStore>()(
         // blocked once the shared pantry the owner grew exceeds 20 items —
         // but a free user can't fake this by making their own household,
         // since creating one already requires Pro (enforced server-side).
+        // Checked live (not just "in a household") so a member's exemption
+        // ends if the owner later cancels Pro.
         if (s.household?.ownerIsPro) return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },

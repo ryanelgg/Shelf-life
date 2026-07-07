@@ -164,7 +164,9 @@ export function PantryScreen() {
     return status === 'expiring' || status === 'expiring-soon';
   }).length;
 
-  const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
+  // estimatedValue is per unit, so multiply by quantity — matches ImpactScreen's
+  // money-saved math and stops the pantry total from under-counting multi-unit items.
+  const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue * i.quantity, 0);
   const urgentItems = useMemo(() => (
     pantryItems
       .filter(i => ['expired', 'expiring', 'expiring-soon'].includes(getFreshnessStatus(i.expirationDate)))

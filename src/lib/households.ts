@@ -20,18 +20,8 @@ function toHousehold(row: unknown, role: HouseholdRole): Omit<Household, 'ownerI
 }
 
 /**
- * Returns the caller's household, or null if they aren't in one.
- *
- * Throws on a real DB/network error so the caller can tell a transient failure
- * apart from "genuinely not in a household" (null). Collapsing both into null —
- * as this used to — meant a momentary blip on launch silently dropped a member
- * into their solo pantry (shared items vanish, realtime turns off, edits save
- * unlinked) until a restart. App.tsx keeps local data + the persisted household
- * when this throws, mirroring loadProfile / loadAllData.
- */
-/**
  * Whether the caller's household owner currently holds Pro, computed
- * server-side (see 0005_household_owner_pro.sql). Free members are exempt
+ * server-side (see 0006_household_owner_pro.sql). Free members are exempt
  * from the pantry item cap only while this is true — a free user can't fake
  * it by creating their own household, since create_household already
  * requires Pro. Defaults to false on error or if the caller isn't in one.
@@ -42,6 +32,16 @@ export async function getHouseholdOwnerIsPro(): Promise<boolean> {
   return data === true;
 }
 
+/**
+ * Returns the caller's household, or null if they aren't in one.
+ *
+ * Throws on a real DB/network error so the caller can tell a transient failure
+ * apart from "genuinely not in a household" (null). Collapsing both into null —
+ * as this used to — meant a momentary blip on launch silently dropped a member
+ * into their solo pantry (shared items vanish, realtime turns off, edits save
+ * unlinked) until a restart. App.tsx keeps local data + the persisted household
+ * when this throws, mirroring loadProfile / loadAllData.
+ */
 export async function getMyHousehold(userId: string): Promise<Household | null> {
   const { data: member, error } = await supabase
     .from('household_members')
@@ -88,7 +88,10 @@ export async function leaveHousehold(): Promise<void> {
 /** List the members of the caller's household, with display names. */
 export async function getHouseholdMembers(): Promise<HouseholdMember[]> {
   const { data, error } = await supabase.rpc('household_members_info');
-  if (error || !data) return [];
+  // Throw on a real error (network blip, RLS) so callers can distinguish
+  // failure from a genuinely empty list — matching the rest of this layer.
+  if (error) throw new Error(error.message);
+  if (!data) return [];
   return (data as { user_id: string; name: string | null; role: string }[]).map(r => ({
     userId: r.user_id,
     name: r.name,
