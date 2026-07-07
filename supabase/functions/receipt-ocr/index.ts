@@ -36,6 +36,11 @@ Deno.serve(async (request) => {
     if (!image) {
       return json({ error: 'No image provided' }, { status: 400 });
     }
+    // Reject oversized payloads before spending model tokens (~6 MB decoded).
+    if (image.length > 8_000_000) {
+      await guard.refund();
+      return json({ error: 'Image too large' }, { status: 400 });
+    }
     let mediaType = 'image/jpeg';
     let base64Data = image;
     if (image.startsWith('data:')) {
@@ -68,9 +73,11 @@ Deno.serve(async (request) => {
       }),
     });
     if (!response.ok) {
-      const details = await response.text();
+      // Log the upstream detail server-side but return a generic message + 502
+      // so we don't leak provider internals (or a confusing 401) to the client.
+      console.error(`[receipt-ocr] Anthropic request failed ${response.status}:`, await response.text());
       await guard.refund();
-      return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
+      return json({ error: 'Receipt scanning is having trouble right now. Please try again.' }, { status: 502 });
     }
     const result = await response.json() as {
       content?: Array<{ type: string; text?: string }>;

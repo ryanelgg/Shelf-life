@@ -43,7 +43,12 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
 async function requestFromUrl(url: string, init: RequestInit) {
   const response = await fetchWithTimeout(url, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    // Attach the HTTP status so callers can distinguish rate-limit (429) and
+    // auth (401) from a generic failure. Without this the status-specific
+    // copy in CookScreen was unreachable dead code.
+    const error = new Error(await parseErrorMessage(response)) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   const data = await response.json() as AvoChatResponse;

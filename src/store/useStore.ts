@@ -353,6 +353,7 @@ export const useStore = create<ShelfLifeStore>()(
           showSettings: false,
           avoAiConsent: null,
           notificationsEnabled: null,
+          householdStreakEnabled: false,
         });
         void cancelAllNotifications();
       },
