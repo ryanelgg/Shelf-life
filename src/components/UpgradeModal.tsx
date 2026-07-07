@@ -4,7 +4,7 @@ import { Card } from './Card';
 import { hapticSuccess } from '../lib/haptics';
 
 interface UpgradeModalProps {
-  feature: 'pantry' | 'chat' | 'receipt' | 'fridge' | 'mealplan' | 'briefing' | 'onboarding';
+  feature: 'pantry' | 'chat' | 'receipt' | 'fridge' | 'mealplan' | 'briefing' | 'restock' | 'onboarding';
   onClose: () => void;
   onUpgrade: () => void;
   /** Delay in ms before the close button appears. 0 = immediate. */
@@ -36,6 +36,10 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
     title: "Avo's Daily Briefing is Pro",
     description: 'Wake up to a personalized rundown from Avo — what to cook today, what to use up first, and a fresh recipe pick.',
   },
+  restock: {
+    title: 'Predictive Restock is Pro',
+    description: 'Avo learns how fast you go through staples and predicts when you\'ll run out — then builds your shopping list before you notice you\'re low.',
+  },
   onboarding: {
     title: 'Get more from Pantre',
     description: 'Unlock unlimited pantry tracking, AI-powered nutrition advice, receipt scanning, and more.',
@@ -48,7 +52,7 @@ const PRO_FEATURES = [
   "Avo's Daily Briefing",
   'Receipt scanning',
   'Personalized meal plans',
-  'Budget-optimized shopping lists',
+  'Predictive Restock shopping lists',
 ];
 
 export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }: UpgradeModalProps) {

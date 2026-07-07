@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { computeRestockSuggestions, runOutLabel } from '../lib/predictiveRestock';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -200,6 +201,15 @@ function LightbulbIcon({ size = 18, color = 'currentColor' }: { size?: number; c
       <path d="M9 21 L15 21" /><path d="M10 18 L14 18" />
       <path d="M12 2 C8 2, 5 5, 5 9 C5 12, 7 14, 9 16 L9 18 L15 18 L15 16 C17 14, 19 12, 19 9 C19 5, 16 2, 12 2 Z" fill="none" />
       <line x1="9" y1="16" x2="15" y2="16" />
+    </svg>
+  );
+}
+
+function RestockIcon({ size = 18, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12 a9 9 0 0 1 15-6.7 L21 8" /><path d="M21 3 L21 8 L16 8" />
+      <path d="M21 12 a9 9 0 0 1 -15 6.7 L3 16" /><path d="M3 21 L3 16 L8 16" />
     </svg>
   );
 }
@@ -427,11 +437,13 @@ function recipeSearchTokens(query: string): string[] {
 
 export function PlanScreen() {
   const {
-    mealPlan, recipes, pantryItems, browseRecipes, user,
+    mealPlan, recipes, pantryItems, wasteLogs, browseRecipes, user,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
     isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<'mealplan' | 'restock'>('mealplan');
+  const [restockAddedAt, setRestockAddedAt] = useState<number | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [newItemName, setNewItemName] = useState('');
@@ -623,6 +635,50 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       fromRecipe: r.name,
     }))
   ).filter((s, i, arr) => arr.findIndex(a => a.name === s.name) === i).slice(0, 8);
+
+  // Predictive Restock (Pro) — learns depletion cadence from waste logs and
+  // predicts which staples are about to run out.
+  const restockSuggestions = useMemo(
+    () => computeRestockSuggestions(pantryItems, wasteLogs),
+    [pantryItems, wasteLogs],
+  );
+
+  const openUpgrade = (feature: 'mealplan' | 'restock') => {
+    setUpgradeFeature(feature);
+    setShowUpgrade(true);
+  };
+
+  const RESTOCK_LIST_NAME = '🔄 Restock';
+
+  const handleAddRestockToList = () => {
+    if (restockSuggestions.length === 0) return;
+    const existing = shoppingLists.find(l => l.name === RESTOCK_LIST_NAME);
+    const toItem = (s: typeof restockSuggestions[number]): ShoppingItem => ({
+      id: `si-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${s.key}`}`,
+      name: s.name,
+      category: s.category,
+      quantity: s.suggestedQuantity,
+      unit: s.unit,
+      checked: false,
+    });
+
+    if (existing) {
+      // Only add staples not already on the Restock list (match by name, case-insensitive).
+      const have = new Set(existing.items.map(i => i.name.toLowerCase()));
+      const additions = restockSuggestions.filter(s => !have.has(s.name.toLowerCase())).map(toItem);
+      if (additions.length > 0) {
+        updateShoppingList(existing.id, { items: [...existing.items, ...additions] });
+      }
+    } else {
+      addShoppingList({
+        id: `sl-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+        name: RESTOCK_LIST_NAME,
+        items: restockSuggestions.map(toItem),
+        createdDate: formatLocalDate(new Date()),
+      });
+    }
+    setRestockAddedAt(Date.now());
+  };
 
   // Total items to buy from meal plan
   const totalToBuy = mealPlan.reduce((s, d) => s + d.toBuy, 0);
@@ -846,6 +902,93 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           </button>
         )}
       </Card>
+
+      {/* Predictive Restock — Pro */}
+      {!isPro() ? (
+        <Card className="card-enter stagger-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <RestockIcon size={18} color="var(--accent)" />
+            <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Predictive Restock</div>
+            <span style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em', color: '#B8862D', background: 'rgba(212,164,74,0.14)', padding: '2px 6px', borderRadius: '6px' }}>PRO</span>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.5 }}>
+            Avo learns how fast you go through staples and predicts when you'll run out — then builds your shopping list before you're low.
+          </div>
+          <button
+            onClick={() => openUpgrade('restock')}
+            style={{
+              width: '100%', padding: '11px', borderRadius: '12px', border: 'none',
+              background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff', cursor: 'pointer',
+              fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', fontWeight: 700,
+            }}
+          >
+            Unlock Predictive Restock
+          </button>
+        </Card>
+      ) : restockSuggestions.length > 0 ? (
+        <Card className="card-enter stagger-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <RestockIcon size={18} color="var(--accent)" />
+            <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Predictive Restock</div>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            Staples Avo thinks you're about to run out of
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {restockSuggestions.map(s => {
+              const urgent = s.daysUntilRunOut <= 0;
+              const soon = s.daysUntilRunOut <= 2;
+              const color = urgent ? 'var(--expiring)' : soon ? 'var(--expiring-soon)' : 'var(--good)';
+              return (
+                <div key={s.key} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', borderRadius: '12px',
+                  border: '1px solid rgba(74, 124, 89, 0.12)', background: 'rgba(74, 124, 89, 0.03)',
+                }}>
+                  <FoodCategoryIcon category={s.category} size={20} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{s.name}</span>
+                      {s.useBeforeRebuy && (
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--expiring)', background: 'rgba(211,84,84,0.10)', padding: '2px 6px', borderRadius: '6px' }}>
+                          use yours first
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      every ~{s.cadenceDays}d{s.confidence === 'medium' ? ' · learning' : ''}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color }}>{runOutLabel(s.daysUntilRunOut)}</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px' }}>buy {s.suggestedQuantity} {s.unit}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={handleAddRestockToList}
+            style={{
+              marginTop: '12px', width: '100%', padding: '11px', borderRadius: '12px',
+              border: '1px solid var(--accent)', background: 'rgba(74, 124, 89, 0.06)', cursor: 'pointer',
+              fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', fontWeight: 700, color: 'var(--accent)',
+            }}
+          >
+            {restockAddedAt ? '✓ Added to your Restock list' : `Add ${restockSuggestions.length} to Restock list`}
+          </button>
+        </Card>
+      ) : (
+        <Card className="card-enter stagger-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <RestockIcon size={18} color="var(--accent)" />
+            <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Predictive Restock</div>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Avo's still learning your habits. As you use up and log items over a few weeks, predictions for what you're about to run out of will appear here.
+          </div>
+        </Card>
+      )}
 
       {/* Smart suggestions — Pro only */}
       {isPro() && suggestions.length > 0 && (
@@ -1543,7 +1686,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       )}
       {showUpgrade && (
         <UpgradeModal
-          feature="mealplan"
+          feature={upgradeFeature}
           onClose={() => setShowUpgrade(false)}
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
