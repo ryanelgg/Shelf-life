@@ -10,6 +10,7 @@ import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../t
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { computeRestockSuggestions, runOutLabel } from '../lib/predictiveRestock';
+import { exportMealPlanToCalendar } from '../lib/calendarExport';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -741,6 +742,20 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
               PRO
             </div>
           )}
+          <button
+            onClick={() => { void exportMealPlanToCalendar(isPro() ? mealPlan : mealPlan.slice(0, 2)); }}
+            aria-label="Add meal plan to calendar"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              padding: '5px 10px', borderRadius: '10px',
+              border: '1px solid var(--accent)', background: 'transparent',
+              color: 'var(--accent)', fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            <CalendarIcon size={13} color="var(--accent)" />
+            Add to Calendar
+          </button>
         </div>
 
         {isPro() && (
