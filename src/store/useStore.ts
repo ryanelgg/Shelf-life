@@ -410,17 +410,20 @@ export const useStore = create<ShelfLifeStore>()(
 
       addWasteLog: (log) => {
         const { supabaseUserId, household } = useStore.getState();
-        if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
+        // Attribute the entry to its author so the household leaderboard can
+        // credit it. syncWasteLog already persists user_id server-side.
+        const stamped: WasteLog = supabaseUserId ? { ...log, userId: log.userId ?? supabaseUserId } : log;
+        if (supabaseUserId) syncWasteLog(stamped, supabaseUserId, household?.id);
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
-          if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
+          if (!s.user) return { wasteLogs: [...s.wasteLogs, stamped] };
           const { streakDays, lastActiveDate } = nextStreak(s.user, log.action);
           profileUpdates = {
             streak_days: streakDays,
             last_active_date: lastActiveDate,
           };
           return {
-            wasteLogs: [...s.wasteLogs, log],
+            wasteLogs: [...s.wasteLogs, stamped],
             user: { ...s.user, streakDays, lastActiveDate },
           };
         });
