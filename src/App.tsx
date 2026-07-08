@@ -1,12 +1,14 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
-import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { loadProfile, loadAllData, mergePantryItemsToCloud, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { publishWidgetData } from './lib/widget';
 import { formatLocalDate } from './types';
+import type { AuthProvider, PantryItem } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
+import { PantryMergeModal } from './components/PantryMergeModal';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
@@ -176,6 +178,15 @@ function ScreenFallback({ label }: { label: string }) {
 export default function App() {
   const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId } = useStore();
 
+  // Set when a guest who has local pantry items signs into an existing account.
+  // The modal asks whether to merge the local items into the cloud account or
+  // discard them and use the cloud-only state. Auth completion is paused until
+  // the user picks.
+  const [pendingMerge, setPendingMerge] = useState<{
+    items: PantryItem[];
+    finalize: (mode: 'merge' | 'discard') => Promise<void>;
+  } | null>(null);
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     let lastProcessedUrl: string | null = null;
@@ -241,6 +252,10 @@ export default function App() {
       if (!session?.user) return;
 
       const sbUser = session.user;
+      // Capture pre-signin state so we can detect a guest→account transition
+      // and offer the local pantry items to the cloud account.
+      const prevUserId = useStore.getState().supabaseUserId;
+      const localItemsBeforeSignin = useStore.getState().pantryItems;
       setSupabaseUserId(sbUser.id);
 
       // loadProfile throws only on a real error. A null result means the row
@@ -265,7 +280,7 @@ export default function App() {
           id: sbUser.id,
           name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
           email: profile.email ?? sbUser.email,
-          authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
+          authProvider: profile.auth_provider as AuthProvider,
           dietaryPreferences: (profile.dietary_preferences ?? []) as never,
           createdAt: profile.created_at,
           onboardingComplete: true,
@@ -283,22 +298,46 @@ export default function App() {
           tier: profile.subscription_tier,
           auth_provider: profile.auth_provider,
         });
-        try {
-          // Resolve the user's household first so we load the SHARED pantry
-          // (every member's items live under the same household_id).
-          const household = await getMyHousehold(sbUser.id);
-          if (mySeq !== authSeq) return; // superseded while loading
-          setHousehold(household);
-          // Push any writes that failed to sync while offline UP to the cloud
-          // BEFORE we read it back — otherwise loadAllData would overwrite local
-          // state and silently drop offline adds / resurrect offline deletes.
-          await flushOutbox();
-          const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
-          if (mySeq !== authSeq) return; // superseded while loading
-          loadCloudData(pantryItems, wasteLogs);
-          debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length, household: household?.id ?? null });
-        } catch (err) {
-          debug.warn('[auth] loadAllData failed, keeping local data:', err);
+
+        const finishSignIn = async (mergeLocal: boolean) => {
+          if (mergeLocal && localItemsBeforeSignin.length > 0) {
+            try {
+              await mergePantryItemsToCloud(localItemsBeforeSignin, sbUser.id);
+            } catch (err) {
+              debug.warn('[auth] merge failed, falling back to cloud-only:', err);
+            }
+          }
+          try {
+            // Resolve the user's household first so we load the SHARED pantry
+            // (every member's items live under the same household_id).
+            const household = await getMyHousehold(sbUser.id);
+            if (mySeq !== authSeq) return; // superseded while loading
+            setHousehold(household);
+            // Push any writes that failed to sync while offline UP to the cloud
+            // BEFORE we read it back — otherwise loadAllData would overwrite local
+            // state and silently drop offline adds / resurrect offline deletes.
+            await flushOutbox();
+            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
+            if (mySeq !== authSeq) return; // superseded while loading
+            loadCloudData(pantryItems, wasteLogs);
+            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length, household: household?.id ?? null });
+          } catch (err) {
+            debug.warn('[auth] loadAllData failed, keeping local data:', err);
+          }
+        };
+
+        // Guest→account transition with unsynced local items: ask before we
+        // overwrite local state with the cloud's pantry.
+        if (prevUserId === null && localItemsBeforeSignin.length > 0) {
+          setPendingMerge({
+            items: localItemsBeforeSignin,
+            finalize: async (mode) => {
+              await finishSignIn(mode === 'merge');
+              setPendingMerge(null);
+            },
+          });
+        } else {
+          await finishSignIn(false);
         }
       } else {
         const rawProvider = sbUser.app_metadata?.provider;
@@ -379,6 +418,13 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      {pendingMerge && (
+        <PantryMergeModal
+          itemCount={pendingMerge.items.length}
+          onMerge={() => pendingMerge.finalize('merge')}
+          onDiscard={() => pendingMerge.finalize('discard')}
+        />
+      )}
       <KeyboardScrollManager />
     </div>
   );

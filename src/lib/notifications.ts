@@ -110,20 +110,25 @@ function hashStringToInt(str: string): number {
     hash = ((hash << 5) - hash) + str.charCodeAt(i);
     hash |= 0;
   }
-  return Math.abs(hash) % 100000000;
+  return Math.abs(hash);
 }
 
+// Capacitor LocalNotifications IDs are 32-bit signed ints. We mask the hash to
+// 28 bits and shift left 2 to leave room for a 2-bit slot tag, keeping every
+// item ID under 2^30 — well clear of the reserved engagement range above 1.9e9.
+// (The previous `% 100000000` truncation made two different item ids collide
+// far more often than the birthday paradox alone would predict.)
 function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number } {
-  const base = hashStringToInt(itemId);
+  const base = hashStringToInt(itemId) & 0x0fffffff;
   return {
-    twoDays: base * 10 + 1,
-    oneDay: base * 10 + 2,
-    dayOf: base * 10 + 3,
+    twoDays: (base << 2) | 0,
+    oneDay:  (base << 2) | 1,
+    dayOf:   (base << 2) | 2,
   };
 }
 
-// Reserved IDs for engagement notifications (won't collide with item hashes
-// because items max out at base * 10 + 3 < 1_000_000_000).
+// Reserved IDs for engagement notifications (sit above 1.9e9, can't collide
+// with item IDs which are capped at (2^28 - 1) << 2 < 2^30).
 const ENGAGEMENT_IDS = {
   streakProtection: 1_900_000_001,
   reEngagement: 1_900_000_002,
