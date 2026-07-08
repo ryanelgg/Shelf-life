@@ -44,6 +44,10 @@ Deno.serve(async (request) => {
         base64Data = match[2];
       }
     }
+    // Reject oversized images (~6 MB) to protect memory + AI cost.
+    if (base64Data.length > 8_000_000) {
+      return json({ error: 'Image too large — please use a smaller photo.' }, { status: 413 });
+    }
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

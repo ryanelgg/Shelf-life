@@ -39,7 +39,7 @@ export function avoTrialDaysLeft(
   if (!u.avoTrialStartedAt) return 0;
   const start = parseLocalDate(u.avoTrialStartedAt);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const elapsed = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
+  const elapsed = Math.round((today.getTime() - start.getTime()) / 86_400_000);
   return Math.max(0, FREE_LIMITS.avoTrialDays - elapsed);
 }
 

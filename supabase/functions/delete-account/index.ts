@@ -42,6 +42,16 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // Leave any shared household FIRST (runs as the user via their JWT). This
+    // hands ownership to the longest-standing member, or disbands cleanly if
+    // they were the last one. Without this, deleting a household OWNER cascades
+    // (households.owner_id ON DELETE CASCADE) and wipes every member's shared
+    // pantry. leave_household() is a safe no-op if the user isn't in one.
+    const { error: leaveError } = await userClient.rpc('leave_household');
+    if (leaveError) {
+      return json({ error: `Could not detach household: ${leaveError.message}` }, { status: 500 });
+    }
+
     const [pantryRes, wasteRes, profileRes] = await Promise.all([
       admin.from('pantry_items').delete().eq('user_id', userId),
       admin.from('waste_logs').delete().eq('user_id', userId),

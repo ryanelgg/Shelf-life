@@ -72,7 +72,10 @@ export async function leaveHousehold(): Promise<void> {
 /** List the members of the caller's household, with display names. */
 export async function getHouseholdMembers(): Promise<HouseholdMember[]> {
   const { data, error } = await supabase.rpc('household_members_info');
-  if (error || !data) return [];
+  // Surface real DB/network errors so the UI can show a friendly failure
+  // instead of a misleading "empty household".
+  if (error) throw error;
+  if (!data) return [];
   return (data as { user_id: string; name: string | null; role: string }[]).map(r => ({
     userId: r.user_id,
     name: r.name,

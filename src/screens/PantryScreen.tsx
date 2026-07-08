@@ -135,7 +135,11 @@ export function PantryScreen() {
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
   const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [recallDismissed, setRecallDismissed] = useState(false);
+  // Remember WHICH set of recalls was dismissed (not just a boolean), so the
+  // banner re-appears if a newly-added item falls under a different recall.
+  const [dismissedRecallKey, setDismissedRecallKey] = useState<string | null>(null);
+  const recallKey = recallMatches.map(m => m.matchedItem).sort().join('|');
+  const recallDismissed = recallKey === dismissedRecallKey;
 
   useEffect(() => {
     if (pantryItems.length === 0) return;
@@ -367,7 +371,7 @@ export function PantryScreen() {
             </div>
           </div>
           <button
-            onClick={() => setRecallDismissed(true)}
+            onClick={() => setDismissedRecallKey(recallKey)}
             aria-label="Dismiss recall alert"
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
