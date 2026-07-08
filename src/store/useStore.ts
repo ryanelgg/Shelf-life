@@ -6,6 +6,7 @@ import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS, isAvoTrialActive, nextAvoTrialStartedAt, nextStreak } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
+import { bestDinnerForPantry } from '../lib/recipeMatch';
 import * as debug from '../lib/debug';
 import {
   scheduleItemNotifications,
@@ -291,6 +292,14 @@ function daysAgo(n: number): string {
   return formatLocalDate(d);
 }
 
+/** Name of a real recipe worth nudging about right now — only when it actually
+ * uses something expiring, so the recipe nudge rescues food rather than just
+ * suggesting a random dinner. Null when nothing matches. */
+function recipeNudgeTarget(pantryItems: PantryItem[], recipes: Recipe[], browseRecipes: Recipe[]): string | null {
+  const best = bestDinnerForPantry(pantryItems, [...recipes, ...browseRecipes]);
+  return best?.usesExpiring ? best.recipe.name : null;
+}
+
 export const useStore = create<ShelfLifeStore>()(
   persist(
     (set) => ({
@@ -443,7 +452,8 @@ export const useStore = create<ShelfLifeStore>()(
           if (log.action === 'eaten') {
             // They actually consumed food — refresh the recipe nudge so we
             // don't bug them about cooking right after a successful meal.
-            void scheduleRecipeNudge(user.name);
+            const { pantryItems, recipes, browseRecipes } = useStore.getState();
+            void scheduleRecipeNudge(user.name, recipeNudgeTarget(pantryItems, recipes, browseRecipes));
           }
         }
       },
@@ -621,12 +631,13 @@ export const useStore = create<ShelfLifeStore>()(
       setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),
       setNotificationsEnabled: (enabled) => {
         set({ notificationsEnabled: enabled });
-        const { pantryItems, user } = useStore.getState();
+        const { pantryItems, recipes, browseRecipes, user } = useStore.getState();
         if (enabled) {
           void rescheduleAllNotifications({
             items: pantryItems,
             streakDays: user?.streakDays ?? 0,
             userName: user?.name,
+            recipeName: recipeNudgeTarget(pantryItems, recipes, browseRecipes),
           });
         } else {
           void cancelAllNotifications();

@@ -5,8 +5,9 @@ import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel, ingredientMatchesItem } from '../types';
+import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
+import { bestDinnerForPantry } from '../lib/recipeMatch';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe, DateLabelType } from '../types';
@@ -182,27 +183,9 @@ export function PantryScreen() {
 
   const briefing = useMemo(() => {
     // 2. Best dinner option — the recipe that matches the most pantry items,
-    //    preferring ones that use food which is expiring soon.
-    const allRecipes = [...recipes, ...browseRecipes];
-    let bestDinner: { recipe: Recipe; matchCount: number; usesExpiring: boolean } | null = null;
-    for (const r of allRecipes) {
-      let matchCount = 0;
-      let usesExpiring = false;
-      for (const ing of r.ingredients) {
-        const m = pantryItems.find(p => ingredientMatchesItem(ing.name, p.name));
-        if (m) {
-          matchCount++;
-          const s = getFreshnessStatus(m.expirationDate);
-          if (s === 'expiring' || s === 'expiring-soon' || s === 'expired') usesExpiring = true;
-        }
-      }
-      if (matchCount === 0) continue;
-      const better =
-        !bestDinner ||
-        (usesExpiring && !bestDinner.usesExpiring) ||
-        (usesExpiring === bestDinner.usesExpiring && matchCount > bestDinner.matchCount);
-      if (better) bestDinner = { recipe: r, matchCount, usesExpiring };
-    }
+    //    preferring ones that use food which is expiring soon. Shared with the
+    //    evening cook-nudge notification so the two never drift apart.
+    const bestDinner = bestDinnerForPantry(pantryItems, [...recipes, ...browseRecipes]);
 
     // 3. One item worth freezing — expiring soon, not already frozen, and
     //    freezing actually buys meaningful extra time.

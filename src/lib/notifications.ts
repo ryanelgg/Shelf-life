@@ -347,11 +347,16 @@ export async function scheduleReEngagement(userName?: string | null): Promise<vo
 
 // ── Recipe nudge (5 days no cook log) ───────────────────────────────────────
 
-export async function scheduleRecipeNudge(userName?: string | null): Promise<void> {
+export async function scheduleRecipeNudge(userName?: string | null, recipeName?: string | null): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
     await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.recipeNudge }] });
-    const copy = pickRandom(RECIPE_NUDGE)(firstName(userName));
+    // When a real recipe already matches something expiring in the pantry,
+    // name it directly instead of the generic "got recipe ideas" copy —
+    // more actionable, and it actually rescues the at-risk food.
+    const copy = recipeName
+      ? { title: '🍳 Tonight\'s dinner, solved', body: `You've got everything for ${recipeName} — and it uses up food that's expiring soon.` }
+      : pickRandom(RECIPE_NUDGE)(firstName(userName));
     await LocalNotifications.schedule({
       notifications: [{
         id: ENGAGEMENT_IDS.recipeNudge,
@@ -385,6 +390,7 @@ interface RescheduleContext {
   items: PantryItem[];
   streakDays: number;
   userName?: string | null;
+  recipeName?: string | null;
 }
 
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
@@ -403,5 +409,5 @@ export async function rescheduleAllNotifications(ctx: RescheduleContext): Promis
   }
   await scheduleStreakProtection(ctx.streakDays, ctx.userName);
   await scheduleReEngagement(ctx.userName);
-  await scheduleRecipeNudge(ctx.userName);
+  await scheduleRecipeNudge(ctx.userName, ctx.recipeName);
 }
