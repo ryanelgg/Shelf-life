@@ -9,7 +9,7 @@ import {
   leaveHousehold,
   getHouseholdMembers,
 } from '../lib/households';
-import { loadAllData } from '../lib/supabaseSync';
+import { loadAllData, flushOutbox } from '../lib/supabaseSync';
 import * as debug from '../lib/debug';
 
 type StreakChoice = 'personal' | 'household';
@@ -69,6 +69,9 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const reloadPantry = async (householdId: string | null) => {
     if (!supabaseUserId) return;
     try {
+      // Drain any offline-queued writes first, or the authoritative reload below
+      // would overwrite (and drop) an item that was added offline moments ago.
+      await flushOutbox();
       const { pantryItems, wasteLogs } = await loadAllData(supabaseUserId, householdId);
       loadCloudData(pantryItems, wasteLogs);
     } catch (e) {
