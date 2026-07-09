@@ -251,7 +251,15 @@ export async function signOut() {
   // scope: 'global' revokes the refresh token server-side so a stale session
   // can't silently re-hydrate after a SIGNED_OUT event.
   _userInitiatedSignOut = true;
-  await supabase.auth.signOut({ scope: 'global' });
+  try {
+    await supabase.auth.signOut({ scope: 'global' });
+  } catch (e) {
+    // If the revoke fails (e.g. network error) no SIGNED_OUT event fires, so
+    // the flag would stay stuck true and a later *passive* sign-out (token
+    // expiry) would wipe all local data. Clear it before rethrowing.
+    _userInitiatedSignOut = false;
+    throw e;
+  }
 }
 
 export async function deleteAccount(): Promise<void> {
