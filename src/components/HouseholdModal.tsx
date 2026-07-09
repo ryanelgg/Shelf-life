@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from './Card';
 import { useStore } from '../store/useStore';
 import { HOUSEHOLD_MAX_MEMBERS } from '../types';
@@ -10,6 +10,9 @@ import {
   getHouseholdMembers,
 } from '../lib/households';
 import { loadAllData } from '../lib/supabaseSync';
+import { buildQrSvg } from '../lib/qr';
+import { buildInviteUrl, parseInviteCode } from '../lib/inviteCode';
+import { QRScanner } from './QRScanner';
 import * as debug from '../lib/debug';
 
 type StreakChoice = 'personal' | 'household';
@@ -51,8 +54,28 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   // Streak prompt state: shown before create/join to let the user choose
   const [streakPromptPending, setStreakPromptPending] = useState<'create' | 'join' | null>(null);
+
+  // QR of the invite (owner view). Memoized so we don't re-encode every render.
+  const inviteQrSvg = useMemo(
+    () => (household ? buildQrSvg(buildInviteUrl(household.inviteCode)) : ''),
+    [household],
+  );
+
+  const handleScanResult = (text: string) => {
+    setShowScanner(false);
+    const parsed = parseInviteCode(text);
+    if (!parsed) {
+      setError("That QR code doesn't look like a Pantre invite.");
+      return;
+    }
+    setError(null);
+    setCode(parsed);
+    // Reuse the normal join path (which prompts for the streak choice first).
+    setStreakPromptPending('join');
+  };
 
   const refreshMembers = useCallback(async () => {
     if (!household) return;
@@ -171,6 +194,23 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
                 {copied ? 'Copied!' : 'Tap to copy · share it with your household'}
               </div>
+
+              {/* Invite QR — the other person scans this instead of typing the code */}
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--tab-border)' }}>
+                <div
+                  className="hh-qr"
+                  aria-label="Household invite QR code"
+                  style={{
+                    width: '160px', height: '160px', margin: '0 auto',
+                    background: '#fff', borderRadius: '12px', padding: '10px',
+                    boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: inviteQrSvg }}
+                />
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>
+                  Or have them scan this in Pantre → Household → Scan
+                </div>
+              </div>
             </Card>
 
             <Card style={{ padding: '18px 20px' }}>
@@ -212,6 +252,15 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
               />
               <button onClick={handleJoin} disabled={busy || !code.trim()} style={{ ...primaryBtn, width: '100%', marginTop: '12px', opacity: (busy || !code.trim()) ? 0.5 : 1 }}>
                 {busy ? 'Joining…' : 'Join household'}
+              </button>
+
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '12px 0 4px' }}>— or —</div>
+              <button
+                onClick={() => { if (!busy) { setError(null); setShowScanner(true); } }}
+                disabled={busy}
+                style={{ ...primaryBtn, width: '100%', background: 'transparent', color: 'var(--accent)', border: '1.5px solid var(--accent)', opacity: busy ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <span style={{ fontSize: '18px' }}>▣</span> Scan a QR code
               </button>
             </Card>
           </>
@@ -277,8 +326,13 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
         </div>
       )}
 
+      {showScanner && (
+        <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />
+      )}
+
       <style>{`
         @keyframes upgradeFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .hh-qr svg { width: 100%; height: 100%; display: block; }
       `}</style>
     </div>
   );
