@@ -18,6 +18,7 @@ import {
   scheduleReEngagement,
   scheduleRecipeNudge,
   celebrateStreakMilestone,
+  schedulePremiumPerks,
 } from '../lib/notifications';
 
 interface ShelfLifeStore {
@@ -508,10 +509,14 @@ export const useStore = create<ShelfLifeStore>()(
       setMealPlan: (plan) => set({ mealPlan: plan }),
 
       setSubscriptionTier: async (tier) => {
-        const { supabaseUserId, user } = useStore.getState();
+        const { supabaseUserId, user, notificationsEnabled } = useStore.getState();
         if (!user) return;
         const avoTrialStartedAt = nextAvoTrialStartedAt(user, tier);
         set({ user: { ...user, subscriptionTier: tier, avoTrialStartedAt } });
+        // Pro-only perk notifications appear on upgrade and vanish on downgrade.
+        if (notificationsEnabled) {
+          void schedulePremiumPerks(tier === 'pro', user.name);
+        }
         if (supabaseUserId) {
           // Awaited so the cloud write can't be orphaned by a sign-out or
           // navigation that happens immediately after an upgrade/cancel.
@@ -638,6 +643,7 @@ export const useStore = create<ShelfLifeStore>()(
             streakDays: user?.streakDays ?? 0,
             userName: user?.name,
             recipeName: recipeNudgeTarget(pantryItems, recipes, browseRecipes),
+            isPro: user?.subscriptionTier === 'pro',
           });
         } else {
           void cancelAllNotifications();

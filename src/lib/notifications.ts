@@ -87,6 +87,35 @@ const RECIPE_NUDGE = [
   (_u: string) => ({ title: '🍽️ Dinner ideas?', body: 'Open the app — Avo\'s got 3 recipes ready for you.' }),
 ];
 
+// ── Pro-member perks — rewards for people who already pay, never an upsell ───
+const PRO_WEEKLY_REPORT = [
+  (u: string) => ({ title: '📊 Your Pro weekly report', body: `${u}, your full impact breakdown is ready — savings, waste rate, and your best wins this week.` }),
+  (_u: string) => ({ title: '🥑 This week, in detail', body: 'Your Pro impact report just dropped. See exactly where you crushed it 📊' }),
+];
+const PRO_MEALPLAN_READY = [
+  (u: string) => ({ title: '📋 Your week, planned', body: `Morning ${u}! Avo lined up this week's meals around what's in your pantry. Take a look.` }),
+  (_u: string) => ({ title: '🥑 Meal plan ready', body: 'Avo planned your week from your pantry. One less thing to think about 💚' }),
+];
+const PRO_SHOPPING_READY = [
+  (u: string) => ({ title: '🛒 Shopping list, auto-built', body: `${u}, Avo turned your meal plan into a ready-to-go shopping list. Tap to review.` }),
+  (_u: string) => ({ title: "🥑 List's ready", body: "Your Pro shopping list built itself from this week's plan 🛒" }),
+];
+const PRO_TOMORROW_PLAN = [
+  (u: string) => ({ title: "🌙 Tomorrow's dinner is sorted", body: `Rest easy, ${u} — Avo's already got tomorrow's meal planned from your pantry.` }),
+  (_u: string) => ({ title: "🥑 Tomorrow's handled", body: "Avo lined up tomorrow's dinner. Sleep easy 🌙" }),
+];
+const PRO_CHAT_REFILL = [
+  (u: string) => ({ title: '💬 Your 20 Avo chats refreshed', body: `Fresh batch ready, ${u} — ask Avo anything about tonight's cooking.` }),
+  (_u: string) => ({ title: '🥑 Chats topped up', body: 'Your daily Avo chats just reset to 20. Cook away 💬' }),
+];
+const PRO_RECIPE_PACK = (name: string) => [
+  (u: string) => ({ title: '🍳 New recipes — you get them first', body: `${u}, the "${name}" recipe pack just landed for Pro members. Dig in!` }),
+  (_u: string) => ({ title: `🥑 "${name}" is here`, body: 'A fresh recipe pack just dropped — Pro members get early access 🍳' }),
+];
+const PRO_ANNIVERSARY = (years: number) => [
+  (u: string) => ({ title: `🎉 ${years} year${years === 1 ? '' : 's'} of Pantre Pro!`, body: `Thank you for being here, ${u}. Here's to everything you've saved 🥑💚` }),
+];
+
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -133,6 +162,14 @@ const ENGAGEMENT_IDS = {
   streakProtection: 1_900_000_001,
   reEngagement: 1_900_000_002,
   recipeNudge: 1_900_000_003,
+  // Pro-member perks
+  proWeeklyReport: 1_900_000_004,
+  proMealPlan: 1_900_000_005,
+  proShopping: 1_900_000_006,
+  proTomorrow: 1_900_000_007,
+  proChatRefill: 1_900_000_008,
+  recipePack: 1_900_000_009,
+  proAnniversary: 1_900_000_010,
   // Milestones use 1_900_001_000 + streakDays for uniqueness
   milestoneBase: 1_900_001_000,
 } as const;
@@ -375,6 +412,87 @@ export async function scheduleRecipeNudge(userName?: string | null, recipeName?:
   }
 }
 
+// ── Pro-member perks — rewards for people who already pay, never an upsell ───
+
+/**
+ * Schedules (or clears) the fixed-cadence Pro perk reminders: weekly impact
+ * report, meal-plan-ready, shopping-list-ready, tomorrow's-plan, and daily
+ * chat refill. Always clears first so the perks vanish immediately on a
+ * downgrade — call this from setSubscriptionTier and on any reschedule.
+ */
+export async function schedulePremiumPerks(isPro: boolean, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const ids = [
+    ENGAGEMENT_IDS.proWeeklyReport,
+    ENGAGEMENT_IDS.proMealPlan,
+    ENGAGEMENT_IDS.proShopping,
+    ENGAGEMENT_IDS.proTomorrow,
+    ENGAGEMENT_IDS.proChatRefill,
+  ];
+  try {
+    // Always clear first so perks vanish immediately if a user downgrades.
+    await LocalNotifications.cancel({ notifications: ids.map(id => ({ id })) });
+    if (!isPro) return;
+    const u = firstName(userName);
+    const report = pickRandom(PRO_WEEKLY_REPORT)(u);
+    const meal = pickRandom(PRO_MEALPLAN_READY)(u);
+    const shop = pickRandom(PRO_SHOPPING_READY)(u);
+    const tomorrow = pickRandom(PRO_TOMORROW_PLAN)(u);
+    const refill = pickRandom(PRO_CHAT_REFILL)(u);
+    await LocalNotifications.schedule({
+      notifications: [
+        // Sunday 9am — weekly impact report
+        { id: ENGAGEMENT_IDS.proWeeklyReport, title: report.title, body: report.body, schedule: { on: { weekday: 1, hour: 9, minute: 0 }, allowWhileIdle: true } },
+        // Monday 9am — the week's meal plan is ready
+        { id: ENGAGEMENT_IDS.proMealPlan, title: meal.title, body: meal.body, schedule: { on: { weekday: 2, hour: 9, minute: 0 }, allowWhileIdle: true } },
+        // Saturday 10am — auto-built shopping list
+        { id: ENGAGEMENT_IDS.proShopping, title: shop.title, body: shop.body, schedule: { on: { weekday: 7, hour: 10, minute: 0 }, allowWhileIdle: true } },
+        // Nightly 8:30pm — tomorrow's dinner is planned
+        { id: ENGAGEMENT_IDS.proTomorrow, title: tomorrow.title, body: tomorrow.body, schedule: { on: { hour: 20, minute: 30 }, allowWhileIdle: true } },
+        // Daily 9am — chats refreshed
+        { id: ENGAGEMENT_IDS.proChatRefill, title: refill.title, body: refill.body, schedule: { on: { hour: 9, minute: 0 }, allowWhileIdle: true } },
+      ],
+    });
+  } catch (e) {
+    debug.warn('[notifications] premium perks failed:', e);
+  }
+}
+
+/**
+ * Fire when a new recipe pack is released to a Pro member. No caller wires
+ * this yet — there's no recipe-pack content system in the app to trigger it
+ * from — but the notification itself is ready for whenever that lands.
+ */
+export async function celebrateRecipePack(packName: string, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const copy = pickRandom(PRO_RECIPE_PACK(packName))(firstName(userName));
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.recipePack, title: copy.title, body: copy.body, schedule: { at: new Date(Date.now() + 30_000), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] recipe pack failed:', e);
+  }
+}
+
+/**
+ * Fire on a Pro member's subscription anniversary. No caller wires this yet —
+ * it needs a tracked Pro-start date the app doesn't record — but the
+ * notification itself is ready for whenever that lands.
+ */
+export async function celebrateProAnniversary(years: number, userName?: string | null): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  if (years < 1) return;
+  try {
+    const copy = pickRandom(PRO_ANNIVERSARY(years))(firstName(userName));
+    await LocalNotifications.schedule({
+      notifications: [{ id: ENGAGEMENT_IDS.proAnniversary, title: copy.title, body: copy.body, schedule: { at: new Date(Date.now() + 30_000), allowWhileIdle: true } }],
+    });
+  } catch (e) {
+    debug.warn('[notifications] pro anniversary failed:', e);
+  }
+}
+
 // ── Cancel-all + reschedule-all (for toggle on/off) ─────────────────────────
 
 export async function cancelAllNotifications(): Promise<void> {
@@ -396,6 +514,7 @@ interface RescheduleContext {
   streakDays: number;
   userName?: string | null;
   recipeName?: string | null;
+  isPro?: boolean;
 }
 
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
@@ -415,4 +534,5 @@ export async function rescheduleAllNotifications(ctx: RescheduleContext): Promis
   await scheduleStreakProtection(ctx.streakDays, ctx.userName);
   await scheduleReEngagement(ctx.userName);
   await scheduleRecipeNudge(ctx.userName, ctx.recipeName);
+  await schedulePremiumPerks(ctx.isPro ?? false, ctx.userName);
 }

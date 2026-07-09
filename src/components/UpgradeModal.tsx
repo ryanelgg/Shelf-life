@@ -53,6 +53,7 @@ const PRO_FEATURES = [
   'Receipt scanning',
   'Personalized meal plans',
   'Predictive Restock shopping lists',
+  'Weekly impact report',
 ];
 
 export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }: UpgradeModalProps) {
