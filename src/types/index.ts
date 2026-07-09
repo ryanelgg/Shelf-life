@@ -36,6 +36,8 @@ export interface User {
   // separate from avoChatCount so a Pro→free or trial→free transition can't
   // lock the user out with a stale daily count.
   avoFreeChatsUsed: number;
+  avatar?: string;       // preset emoji avatar (Profile screen)
+  bestStreak?: number;   // highest streak ever reached (lifetime profile stat)
 }
 
 /** Days remaining in the Avo trial (0 if never started or expired). */

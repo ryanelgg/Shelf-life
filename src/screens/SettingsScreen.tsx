@@ -25,7 +25,7 @@ const DIETS: { id: DietaryPref; label: string }[] = [
 const APP_STORE_REVIEW_URL = (import.meta.env.VITE_APP_STORE_REVIEW_URL as string | undefined)?.trim();
 
 export function SettingsScreen() {
-  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household } = useStore();
+  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household, setShowProfile } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCancelPro, setShowCancelPro] = useState(false);
   const [showHousehold, setShowHousehold] = useState(false);
@@ -183,6 +183,17 @@ export function SettingsScreen() {
               </div>
             )}
           </div>
+          <button
+            onClick={() => setShowProfile(true)}
+            style={{
+              width: '100%', marginTop: '14px', padding: '12px', borderRadius: '10px',
+              border: '1px solid var(--input-border)', background: 'var(--input-bg)',
+              color: 'var(--text-primary)', fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            View profile &amp; badges 🌳 →
+          </button>
         </Card>
 
         {/* Subscription */}

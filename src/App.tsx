@@ -11,6 +11,9 @@ import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { PantryMergeModal } from './components/PantryMergeModal';
 import { TabBar } from './components/TabBar';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
+import { WeeklyImpactCard } from './components/WeeklyImpactCard';
+import { weekId, logsThisWeek } from './lib/impact';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -176,7 +179,8 @@ function ScreenFallback({ label }: { label: string }) {
 }
 
 export default function App() {
-  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId } = useStore();
+  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId, wasteLogs, lastImpactCardWeek, setLastImpactCardWeek, showProfile, setShowProfile } = useStore();
+  const [showWeeklyCard, setShowWeeklyCard] = useState(false);
 
   // Set when a guest who has local pantry items signs into an existing account.
   // The modal asks whether to merge the local items into the cloud account or
@@ -291,6 +295,8 @@ export default function App() {
           avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
           avoTrialStartedAt: profile.avo_trial_started_at ?? null,
           avoFreeChatsUsed: profile.avo_free_chats_used ?? 0,
+          avatar: profile.avatar ?? undefined,
+          bestStreak: profile.best_streak ?? profile.streak_days,
         });
         debug.log('[auth] setUser called — transitioning to main app');
         posthog.identify(sbUser.id, {
@@ -367,6 +373,15 @@ export default function App() {
     unsubscribeHousehold();
   }, [household?.id, supabaseUserId]);
 
+  // Once a week, if there's been activity, surface the weekly Impact Card.
+  useEffect(() => {
+    if (!user?.onboardingComplete) return;
+    const currentWeek = weekId(new Date());
+    if (lastImpactCardWeek === currentWeek) return;
+    if (logsThisWeek(wasteLogs).length === 0) return;
+    setShowWeeklyCard(true);
+  }, [user?.onboardingComplete, wasteLogs, lastImpactCardWeek]);
+
   if (!user?.onboardingComplete) {
     return (
       <div data-theme={theme} style={{
@@ -418,6 +433,15 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      {showProfile && <ProfileScreen onClose={() => setShowProfile(false)} />}
+      {showWeeklyCard && (
+        <WeeklyImpactCard
+          onClose={() => {
+            setLastImpactCardWeek(weekId(new Date()));
+            setShowWeeklyCard(false);
+          }}
+        />
+      )}
       {pendingMerge && (
         <PantryMergeModal
           itemCount={pendingMerge.items.length}

@@ -22,6 +22,9 @@ export interface ProfileRow {
   auth_provider: string;
   email: string | null;
   created_at: string;
+  avatar?: string | null;
+  best_streak?: number;
+  card_theme?: string | null;
 }
 
 export interface HouseholdRow {
