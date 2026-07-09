@@ -43,7 +43,11 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
 async function requestFromUrl(url: string, init: RequestInit) {
   const response = await fetchWithTimeout(url, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    // Carry the HTTP status on the error so callers can show the right
+    // message for 401 (key not set) / 429 (rate-limited) vs. a generic failure.
+    const error = new Error(await parseErrorMessage(response)) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   const data = await response.json() as AvoChatResponse;
