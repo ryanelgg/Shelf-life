@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { checkPantryForRecalls } from '../lib/recallApi';
 import type { RecallMatch } from '../lib/recallApi';
 import posthog from 'posthog-js';
@@ -136,13 +136,27 @@ export function PantryScreen() {
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
   const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
   const [recallDismissed, setRecallDismissed] = useState(false);
+  const recallSigRef = useRef('');
 
   useEffect(() => {
-    if (pantryItems.length === 0) return;
+    if (pantryItems.length === 0) { setRecallMatches([]); return; }
+    // Guard against out-of-order resolution: a slower earlier request must not
+    // overwrite a newer result when the pantry changes rapidly (bulk add).
+    let cancelled = false;
     const names = pantryItems.map(i => i.name);
     checkPantryForRecalls(names).then(matches => {
+      if (cancelled) return;
       setRecallMatches(matches);
+      // Re-show the banner whenever the SET of recalled items changes, so a
+      // newly-added recalled item resurfaces the alert even after an earlier
+      // dismissal this session.
+      const sig = matches.map(m => m.id).sort().join('|');
+      if (sig !== recallSigRef.current) {
+        recallSigRef.current = sig;
+        if (sig) setRecallDismissed(false);
+      }
     }).catch(() => {/* silently ignore - recall check is best-effort */});
+    return () => { cancelled = true; };
   }, [pantryItems]);
 
   const filteredItems = useMemo(() => {
@@ -792,6 +806,7 @@ export function PantryScreen() {
           </div>
           <button
             onClick={handleDismissAlert}
+            aria-label="Dismiss expiring-soon alert"
             style={{
               position: 'absolute', top: 8, right: 10,
               background: 'none', border: 'none', cursor: 'pointer',
@@ -1045,9 +1060,9 @@ function EditItemModal({ item, onSave, onClose }: {
           { label: 'Name', el: <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /> },
           { label: 'Quantity', el: (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button onClick={() => setQuantity(q => String(Math.max(1, parseFloat(q) - 1)))} style={qBtnStyle}>−</button>
+              <button aria-label="Decrease quantity" onClick={() => setQuantity(q => String(Math.max(1, (parseFloat(q) || 1) - 1)))} style={qBtnStyle}>−</button>
               <input value={quantity} onChange={e => setQuantity(e.target.value)} style={{ ...inputStyle, textAlign: 'center', width: '60px' }} />
-              <button onClick={() => setQuantity(q => String(parseFloat(q) + 1))} style={qBtnStyle}>+</button>
+              <button aria-label="Increase quantity" onClick={() => setQuantity(q => String((parseFloat(q) || 0) + 1))} style={qBtnStyle}>+</button>
               <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="unit" style={{ ...inputStyle, width: '70px' }} />
             </div>
           )},

@@ -10,11 +10,14 @@ export interface CommunityProduct {
 }
 
 export async function lookupCommunityProduct(barcode: string): Promise<CommunityProduct | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('community_products')
     .select('barcode, name, brand, category')
     .eq('barcode', barcode)
     .maybeSingle();
+  // Log a real query error so a transient DB/network failure isn't silently
+  // treated as "product not found" (which would prompt a needless re-submit).
+  if (error) debug.warn('[communityProducts] lookup failed:', error.message);
   if (!data) return null;
   return {
     barcode: data.barcode,

@@ -72,7 +72,11 @@ export async function leaveHousehold(): Promise<void> {
 /** List the members of the caller's household, with display names. */
 export async function getHouseholdMembers(): Promise<HouseholdMember[]> {
   const { data, error } = await supabase.rpc('household_members_info');
-  if (error || !data) return [];
+  // Throw on a real error so the caller can distinguish a transient network/DB
+  // failure from a genuinely empty household. Collapsing both into [] (as this
+  // used to) silently showed an empty member list on a momentary blip.
+  if (error) throw error;
+  if (!data) return [];
   return (data as { user_id: string; name: string | null; role: string }[]).map(r => ({
     userId: r.user_id,
     name: r.name,

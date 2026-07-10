@@ -9,7 +9,7 @@ import {
   leaveHousehold,
   getHouseholdMembers,
 } from '../lib/households';
-import { loadAllData } from '../lib/supabaseSync';
+import { loadAllData, flushOutbox } from '../lib/supabaseSync';
 import * as debug from '../lib/debug';
 
 type StreakChoice = 'personal' | 'household';
@@ -69,6 +69,11 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const reloadPantry = async (householdId: string | null) => {
     if (!supabaseUserId) return;
     try {
+      // Drain any queued offline writes BEFORE loading from the server, or an
+      // item added while offline (still sitting in the outbox) would be wiped
+      // when loadCloudData replaces local state with the server's. Mirrors the
+      // flushOutbox()→loadCloudData order App.tsx already uses on sign-in.
+      await flushOutbox();
       const { pantryItems, wasteLogs } = await loadAllData(supabaseUserId, householdId);
       loadCloudData(pantryItems, wasteLogs);
     } catch (e) {

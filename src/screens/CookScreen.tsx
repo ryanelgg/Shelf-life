@@ -234,7 +234,7 @@ export function CookScreen() {
           <button
             key={i}
             onClick={() => sendMessage(s)}
-            disabled={isStreaming}
+            disabled={isStreaming || avoAiConsent !== 'granted'}
             style={{
               padding: '7px 13px',
               borderRadius: '20px',

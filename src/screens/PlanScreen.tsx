@@ -1377,6 +1377,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
               </div>
               <button
                 onClick={() => removeShoppingList(list.id)}
+                aria-label="Delete shopping list"
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   color: 'var(--text-muted)', fontSize: '14px', padding: '4px',
@@ -1436,6 +1437,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
                   </span>
                   <button
                     onClick={e => { e.stopPropagation(); removeShoppingItem(list.id, item.id); }}
+                    aria-label="Remove item from shopping list"
                     style={{
                       background: 'none', border: 'none', cursor: 'pointer',
                       color: 'var(--text-muted)', fontSize: '14px', padding: '2px 4px',

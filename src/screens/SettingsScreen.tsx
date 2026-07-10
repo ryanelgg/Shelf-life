@@ -306,6 +306,9 @@ export function SettingsScreen() {
             </div>
             <button
               className={`theme-toggle ${theme === 'dark' ? 'active' : ''}`}
+              role="switch"
+              aria-checked={theme === 'dark'}
+              aria-label="Dark mode"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             />
           </div>
@@ -324,6 +327,9 @@ export function SettingsScreen() {
             </div>
             <button
               className={`theme-toggle ${notificationsEnabled ? 'active' : ''}`}
+              role="switch"
+              aria-checked={!!notificationsEnabled}
+              aria-label="Avo notifications"
               onClick={() => { void handleToggleNotifications(); }}
             />
           </div>
@@ -344,6 +350,9 @@ export function SettingsScreen() {
             </div>
             <button
               className={`theme-toggle ${avoAiConsent === 'granted' ? 'active' : ''}`}
+              role="switch"
+              aria-checked={avoAiConsent === 'granted'}
+              aria-label="Avo AI"
               onClick={() => setAvoAiConsent(avoAiConsent === 'granted' ? 'declined' : 'granted')}
             />
           </div>

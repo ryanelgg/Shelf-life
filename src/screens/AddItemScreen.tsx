@@ -82,14 +82,16 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // A globally-unique ID. A per-launch counter (the old approach) resets to 0
+  // on every app start, so two household members adding items in the same
+  // millisecond could mint identical IDs and overwrite each other over live
+  // sync. crypto.randomUUID() has no such collision window.
+  return `p-${crypto.randomUUID()}`;
 }
 
-let nextReceiptRowId = 0;
 function generateReceiptRowId(): string {
-  return `receipt-${++nextReceiptRowId}-${Date.now().toString(36)}`;
+  return `receipt-${crypto.randomUUID()}`;
 }
 
 function createReceiptListItem(item: { name: string; price: number }): ReceiptListItem {

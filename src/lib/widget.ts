@@ -36,11 +36,17 @@ export interface WidgetPayload {
 // Pure + deterministic so it can be unit-tested with an injected `now`.
 export function buildWidgetPayload(items: PantryItem[], now: Date = new Date()): WidgetPayload {
   const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const withDays = items.map(i => {
-    const exp = parseLocalDate(i.expirationDate);
-    const daysLeft = Math.round((exp.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
-    return { name: i.name, expirationDate: i.expirationDate, daysLeft };
-  });
+  const withDays = items
+    // Skip items with no/invalid date: parseLocalDate('') → Invalid Date →
+    // NaN daysLeft, which corrupts the sort comparator and can surface a
+    // "NaN days" row on the home-screen widget.
+    .filter(i => !!i.expirationDate)
+    .map(i => {
+      const exp = parseLocalDate(i.expirationDate);
+      const daysLeft = Math.round((exp.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
+      return { name: i.name, expirationDate: i.expirationDate, daysLeft };
+    })
+    .filter(i => Number.isFinite(i.daysLeft));
   withDays.sort((a, b) => a.daysLeft - b.daysLeft);
   return {
     updatedAt: formatLocalDate(now),
@@ -55,10 +61,13 @@ export async function publishWidgetData(items: PantryItem[]): Promise<void> {
   if (Capacitor.getPlatform() !== 'ios') return;
   const value = JSON.stringify(buildWidgetPayload(items));
   if (value === lastSerialized) return; // nothing changed — skip the native call
-  lastSerialized = value;
   try {
     // Writes to the App Group suite and calls WidgetCenter.reloadAllTimelines().
     await PantreWidget.setData({ value });
+    // Only cache the payload AFTER a successful write. Caching before the await
+    // meant a transient native failure poisoned the dedup cache, so every later
+    // call early-returned and the widget stayed permanently stale.
+    lastSerialized = value;
   } catch (e) {
     debug.error('[widget] publish failed', e);
   }
