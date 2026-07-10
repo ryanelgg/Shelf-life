@@ -5,9 +5,13 @@ import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
+import { UpgradeModal } from '../components/UpgradeModal';
 import { getHouseholdMembers } from '../lib/households';
 import { formatLocalDate } from '../types';
 import type { WasteLog } from '../types';
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
 /** Consecutive days (ending today or yesterday) with at least one "save"
  * (any non-toss action) anywhere in the household. Computed from the shared
@@ -85,7 +89,8 @@ function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string;
 }
 
 export function ImpactScreen() {
-  const { wasteLogs, user, household } = useStore();
+  const { wasteLogs, user, household, isPro, setSubscriptionTier } = useStore();
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Member count for the "Saved Together" card. Only fetched when in a household.
   const [memberCount, setMemberCount] = useState(0);
@@ -137,6 +142,37 @@ export function ImpactScreen() {
   }, [wasteLogs]);
 
   const streakDays = user?.streakDays ?? 0;
+
+  // Monthly Waste Report (Pro) — a once-a-month recap computed locally from the
+  // waste logs (no AI call, so it can't fail or cost anything).
+  const monthReport = useMemo(() => {
+    const now = new Date();
+    const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const logs = wasteLogs.filter(w => w.date.startsWith(prefix));
+    const tossed = logs.filter(w => w.action === 'tossed');
+    const saved = logs.filter(w => w.action !== 'tossed');
+    const moneySaved = saved.reduce((sum, w) => sum + w.estimatedValue * w.quantity, 0);
+    const moneyTossed = tossed.reduce((sum, w) => sum + w.estimatedValue * w.quantity, 0);
+    const saveRate = logs.length > 0 ? (saved.length / logs.length) * 100 : 0;
+
+    const byCategory: Record<string, number> = {};
+    for (const w of tossed) byCategory[w.category] = (byCategory[w.category] ?? 0) + w.quantity;
+    const topWasted = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    let tip: string;
+    if (logs.length === 0) tip = "No food logged yet this month — log a few items and I'll spot your patterns. 🥑";
+    else if (tossed.length === 0) tip = `Spotless month — nothing wasted and $${moneySaved.toFixed(0)} kept in your pocket. Incredible! 🥑`;
+    else if (topWasted) tip = `Most of your waste this month was ${topWasted}. Try buying a little less next shop, or cook it earlier in the week — I can help in the Cook tab.`;
+    else tip = `You saved $${moneySaved.toFixed(0)} this month. Keep logging and I'll find where you can save even more.`;
+
+    return {
+      monthName: MONTH_NAMES[now.getMonth()],
+      total: logs.length,
+      savedCount: saved.length,
+      tossedCount: tossed.length,
+      moneySaved, moneyTossed, saveRate, topWasted, tip,
+    };
+  }, [wasteLogs]);
 
   if (wasteLogs.length === 0) {
     return (
@@ -192,6 +228,66 @@ export function ImpactScreen() {
             {stats.saveRate.toFixed(0)}% of tracked food used before expiring
           </div>
         </div>
+      </Card>
+
+      {/* Monthly Waste Report (Pro) */}
+      <Card className="card-enter stagger-3" style={{ position: 'relative', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ fontSize: '16px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>
+            {monthReport.monthName} Waste Report
+          </div>
+          <span style={{
+            fontSize: '9px', fontWeight: 800, letterSpacing: '0.08em',
+            color: '#fff', background: 'var(--accent)', padding: '3px 7px', borderRadius: '6px',
+          }}>PRO</span>
+        </div>
+
+        {/* The data preview is blurred for free users. aria-hidden so a screen
+            reader doesn't read a stat the user can't actually access. */}
+        <div aria-hidden={!isPro()} style={{ filter: isPro() ? 'none' : 'blur(6px)', userSelect: isPro() ? 'auto' : 'none' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', textAlign: 'center' }}>
+            <div>
+              <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>${monthReport.moneySaved.toFixed(0)}</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Saved</div>
+            </div>
+            <div>
+              <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--expired)' }}>{monthReport.tossedCount}</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Tossed</div>
+            </div>
+            <div>
+              <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>{monthReport.saveRate.toFixed(0)}%</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Save rate</div>
+            </div>
+          </div>
+          <div style={{
+            marginTop: '14px', padding: '12px 14px', borderRadius: '12px',
+            background: 'rgba(74, 124, 89, 0.06)', border: '1px solid rgba(74, 124, 89, 0.14)',
+            display: 'flex', gap: '10px', alignItems: 'flex-start',
+          }}>
+            <AvocadoMascot size={26} />
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{monthReport.tip}</div>
+          </div>
+        </div>
+
+        {!isPro() && (
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: '10px',
+            background: 'rgba(0,0,0,0.04)',
+          }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, textAlign: 'center', padding: '0 20px' }}>
+              🔒 See your full monthly report with Pro
+            </div>
+            <button
+              onClick={() => setShowUpgrade(true)}
+              style={{
+                padding: '10px 20px', borderRadius: '11px', border: 'none',
+                background: 'var(--accent)', color: '#fff', fontWeight: 700,
+                fontFamily: "'Cormorant Garamond', serif", fontSize: '14px', cursor: 'pointer',
+              }}
+            >Unlock report</button>
+          </div>
+        )}
       </Card>
 
       {/* Action breakdown */}
@@ -362,6 +458,13 @@ export function ImpactScreen() {
         </div>
       </Card>
 
+      {showUpgrade && (
+        <UpgradeModal
+          feature="report"
+          onClose={() => setShowUpgrade(false)}
+          onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+        />
+      )}
     </div>
   );
 }

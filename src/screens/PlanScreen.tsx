@@ -412,6 +412,9 @@ function createWasteLogId() {
   return `w-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
 }
 
+// How long cooked leftovers keep in the fridge before the reminder fires.
+const LEFTOVER_SHELF_DAYS = 4;
+
 const RECIPE_SEARCH_STOP_WORDS = new Set([
   'and', 'with', 'the', 'for', 'fresh', 'frozen', 'organic', 'natural',
   'pack', 'count', 'ct', 'oz', 'lb', 'lbs', 'lite', 'large', 'small',
@@ -429,7 +432,7 @@ export function PlanScreen() {
   const {
     mealPlan, recipes, pantryItems, browseRecipes, user,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
-    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
+    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan, addPantryItem,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -598,7 +601,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
     setAddingToList(null);
   };
 
-  const handleCookFinish = (recipe: Recipe, usedItemIds: string[]) => {
+  const handleCookFinish = (recipe: Recipe, usedItemIds: string[], saveLeftovers = false) => {
     usedItemIds.forEach(id => {
       const item = pantryItems.find(p => p.id === id);
       if (!item) return;
@@ -613,6 +616,27 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       });
       removePantryItem(id);
     });
+    // Leftover Timer: drop the cooked dish back into the pantry so it doesn't get
+    // forgotten in the fridge. Auto 4-day "use by" (a safety date) + a reminder
+    // comes for free via addPantryItem's notification scheduling.
+    if (saveLeftovers) {
+      const now = new Date();
+      const expires = new Date(now);
+      expires.setDate(expires.getDate() + LEFTOVER_SHELF_DAYS);
+      addPantryItem({
+        id: `p-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`,
+        name: `Leftovers — ${recipe.name}`,
+        category: 'Other',
+        location: 'fridge',
+        quantity: 1,
+        unit: 'serving',
+        addedDate: formatLocalDate(now),
+        expirationDate: formatLocalDate(expires),
+        estimatedValue: 0,
+        dateType: 'use-by',
+        notes: 'Cooked leftovers',
+      });
+    }
     setCookingRecipe(null);
     setExpandedRecipe(recipe.id);
   };
@@ -1664,7 +1688,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   recipe: Recipe;
   pantryItems: PantryItem[];
   onClose: () => void;
-  onFinish: (recipe: Recipe, usedItemIds: string[]) => void;
+  onFinish: (recipe: Recipe, usedItemIds: string[], saveLeftovers: boolean) => void;
 }) {
   const matchedItems = useMemo(() => matchedPantryItemsForRecipe(recipe, pantryItems), [recipe, pantryItems]);
   const stepTimes = useMemo(() => estimateStepTimes(recipe), [recipe]);
@@ -1673,6 +1697,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   const [finale, setFinale] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const [usedIds, setUsedIds] = useState<string[]>(() => matchedItems.map(item => item.id));
+  const [saveLeftovers, setSaveLeftovers] = useState(false);
   const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / Math.max(1, recipe.steps.length)) * 100;
   const activeStep = recipe.steps[currentStep] ?? recipe.steps[0] ?? 'Cook and enjoy.';
 
@@ -1909,6 +1934,39 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
                 No pantry items matched this recipe by name — nothing to auto-log.
               </div>
             )}
+
+            {/* Leftover Timer — one tap sends the cooked dish back to the pantry
+                with a 4-day reminder so it doesn't get forgotten in the fridge. */}
+            <button
+              onClick={() => setSaveLeftovers(v => !v)}
+              role="switch"
+              aria-checked={saveLeftovers}
+              style={{
+                marginTop: '12px',
+                padding: '11px 14px',
+                borderRadius: '10px',
+                border: saveLeftovers ? '1px solid var(--accent)' : '1px solid var(--tab-border)',
+                background: saveLeftovers ? 'var(--accent-dim)' : 'transparent',
+                display: 'flex', alignItems: 'center', gap: '10px',
+                color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left', width: '100%',
+              }}
+            >
+              <span style={{
+                width: 20, height: 20, borderRadius: '6px',
+                background: saveLeftovers ? 'var(--accent)' : 'transparent',
+                border: saveLeftovers ? 'none' : '1px solid var(--tab-border)',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11px', fontWeight: 800, flexShrink: 0,
+              }}>{saveLeftovers ? '✓' : ''}</span>
+              <span style={{ fontSize: '18px' }}>🥡</span>
+              <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, lineHeight: 1.35 }}>
+                Save leftovers to my pantry
+                <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>
+                  Adds “Leftovers — {recipe.name}” with a {LEFTOVER_SHELF_DAYS}-day reminder
+                </span>
+              </span>
+            </button>
+
             {/* Buttons inside the review card */}
             <div style={{
               display: 'grid',
@@ -1931,7 +1989,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
                 }}
               >← Back</button>
               <button
-                onClick={() => onFinish(recipe, usedIds)}
+                onClick={() => onFinish(recipe, usedIds, saveLeftovers)}
                 style={{
                   padding: '13px',
                   borderRadius: '11px',
