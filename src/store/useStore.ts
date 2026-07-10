@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
+import { formatLocalDate, FREE_LIMITS, isAvoTrialActive, AVO_TRIAL_CONSUMED } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import * as debug from '../lib/debug';
@@ -495,13 +495,23 @@ export const useStore = create<ShelfLifeStore>()(
         const { supabaseUserId } = useStore.getState();
         let nextUser: User | null = null;
         set((s) => {
-          nextUser = s.user ? { ...s.user, subscriptionTier: tier } : null;
-          return { user: nextUser };
+          if (!s.user) { nextUser = null; return { user: null }; }
+          let u: User = { ...s.user, subscriptionTier: tier };
+          // Reaching Pro consumes the one-time free trial. Without this, a
+          // Pro-from-signup user (who never started a trial) would be granted a
+          // brand-new 7-day trial the instant they cancel and message Avo —
+          // every time they cancel.
+          if (tier === 'pro' && !u.avoTrialStartedAt) u = { ...u, avoTrialStartedAt: AVO_TRIAL_CONSUMED };
+          nextUser = u;
+          return { user: u };
         });
         if (supabaseUserId && nextUser) {
           // Awaited so the cloud write can't be orphaned by a sign-out or
           // navigation that happens immediately after an upgrade/cancel.
-          await syncProfileUpdates(supabaseUserId, { subscription_tier: tier });
+          await syncProfileUpdates(supabaseUserId, {
+            subscription_tier: tier,
+            avo_trial_started_at: (nextUser as User).avoTrialStartedAt,
+          });
         }
       },
       incrementAvoChat: (): boolean => {
@@ -516,6 +526,11 @@ export const useStore = create<ShelfLifeStore>()(
         let startedTrial = false;
         if (user.subscriptionTier !== 'pro' && !user.avoTrialStartedAt) {
           user = { ...user, avoTrialStartedAt: today };
+          startedTrial = true;
+        } else if (user.subscriptionTier === 'pro' && !user.avoTrialStartedAt) {
+          // A Pro user (e.g. loaded straight from the cloud) who never started a
+          // trial: mark it consumed now so a later cancel can't grant one.
+          user = { ...user, avoTrialStartedAt: AVO_TRIAL_CONSUMED };
           startedTrial = true;
         }
 
@@ -577,6 +592,12 @@ export const useStore = create<ShelfLifeStore>()(
         const s = useStore.getState();
         if (!s.user) return false;
         if (s.user.subscriptionTier === 'pro') return true;
+        // Household members are exempt from the free cap: creating a household
+        // is server-side gated to Pro (create_household RPC), so anyone in a
+        // household is under a Pro owner's shared pantry. This also stops the
+        // odd case where a free member was blocked at 20 on a pantry the Pro
+        // owner had already grown past 20.
+        if (s.household) return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },
       isPro: (): boolean => {

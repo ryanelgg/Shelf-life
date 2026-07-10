@@ -166,16 +166,34 @@ function parseSegment(segment: string, today: Date): ParsedVoiceItem | null {
   return { quantity: quantity > 0 ? quantity : 1, unit, name, expirationDate };
 }
 
+// Common foods whose name literally contains "and" — we must NOT split these
+// into two items. Matched case-insensitively as whole phrases.
+const COMPOUND_FOODS = [
+  'mac and cheese', 'macaroni and cheese', 'chips and salsa', 'salt and pepper',
+  'peanut butter and jelly', 'surf and turf', 'fish and chips', 'bread and butter',
+  'biscuits and gravy', 'rice and beans', 'beans and rice', 'oil and vinegar',
+  'sweet and sour', 'cookies and cream', 'bangers and mash', 'ham and cheese',
+];
+
 /**
  * Parse a full utterance into one or more items. Splits on commas and the word
- * "and" so "milk, eggs and 2 yogurts expiring friday" yields three items.
+ * "and" so "milk, eggs and 2 yogurts expiring friday" yields three items —
+ * except for known compound food names like "mac and cheese".
  */
 export function parseVoiceItems(transcript: string, today: Date = new Date()): ParsedVoiceItem[] {
   if (!transcript || !transcript.trim()) return [];
-  const cleaned = transcript.trim().replace(LEAD_COMMANDS, '');
+  let cleaned = transcript.trim().replace(LEAD_COMMANDS, '');
+
+  // Shield compound names from the "and" splitter by swapping their "and" for a
+  // placeholder, then restoring it in each finished segment.
+  const AND_PLACEHOLDER = '@@AND@@';
+  for (const phrase of COMPOUND_FOODS) {
+    cleaned = cleaned.replace(new RegExp(phrase, 'gi'), m => m.replace(/ and /gi, ` ${AND_PLACEHOLDER} `));
+  }
+
   const segments = cleaned
     .split(/\s*,\s*|\s+and\s+/i)
-    .map(s => s.trim())
+    .map(s => s.replace(/@@AND@@/g, 'and').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
   const items: ParsedVoiceItem[] = [];

@@ -14,6 +14,9 @@ const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || 'https://pl
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const hostedUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/fridge-scan`;
 
+// A stalled/half-open mobile connection must not hang the scan spinner forever.
+const REQUEST_TIMEOUT_MS = 30000;
+
 /**
  * "Snap your fridge" — send one photo of an open fridge/shelf and get back the
  * food items the AI can see, ready to review and add to the pantry. Mirrors the
@@ -27,11 +30,24 @@ export async function scanFridge(base64Image: string): Promise<FridgeItem[]> {
     Object.assign(headers, await getAiAuthHeaders(supabaseAnonKey));
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ image: base64Image }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ image: base64Image }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Fridge scan timed out. Please try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({})) as FridgeScanResponse;

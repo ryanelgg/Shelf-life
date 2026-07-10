@@ -136,7 +136,10 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode, household } = useStore();
+  // Household members share a Pro owner's pantry, so the free item cap doesn't
+  // apply to them (see canAddPantryItem). Treat "unlimited" the same in the UI.
+  const unlimitedItems = isPro() || !!household;
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
 
   useEffect(() => {
@@ -1071,7 +1074,7 @@ export function AddItemScreen() {
             </div>
             <button
               onClick={() => {
-                const slotsLeft = isPro()
+                const slotsLeft = unlimitedItems
                   ? receiptItems.length
                   : Math.max(0, FREE_LIMITS.pantryItems - pantryItems.length);
                 const toAdd = receiptItems.slice(0, slotsLeft);
@@ -1233,7 +1236,7 @@ export function AddItemScreen() {
       )}
 
       {/* Pantry limit indicator for free users */}
-      {!isPro() && (
+      {!unlimitedItems && (
         <div style={{
           textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)',
           padding: '8px 0',

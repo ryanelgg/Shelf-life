@@ -53,6 +53,12 @@ export function isAvoTrialActive(
   return avoTrialDaysLeft(u, now) > 0;
 }
 
+// Stamped into avoTrialStartedAt when a user reaches Pro without ever starting
+// the one-time free trial. It's a fixed past date, so isAvoTrialActive() reads
+// it as already spent — this stops a day-one Pro user from being handed a fresh
+// 7-day trial the moment they cancel and message Avo.
+export const AVO_TRIAL_CONSUMED = '2000-01-01';
+
 export type ThemeMode = 'dark' | 'light';
 
 export type DietaryPref = 'vegetarian' | 'vegan' | 'gluten-free' | 'dairy-free' | 'nut-free' | 'none';
@@ -272,7 +278,11 @@ export function getDaysUntilExpiration(expirationDate: string): number {
 // and "tomatoes" matches "tomato". Intentionally conservative.
 function foldPlural(word: string): string {
   if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y';
-  if (word.length > 3 && word.endsWith('es')) return word.slice(0, -2);
+  // "-es" only collapses to the bare stem after a sibilant or "o" (boxes→box,
+  // dishes→dish, tomatoes→tomato). For a plain "-e" + "s" plural (apples,
+  // grapes, limes, dates) we must strip only the "s", or the old rule mangled
+  // "apples" → "appl" and silently broke recipe-ingredient matching.
+  if (word.length > 3 && /[sxzho]es$/.test(word)) return word.slice(0, -2);
   if (word.length > 2 && word.endsWith('s')) return word.slice(0, -1);
   return word;
 }
