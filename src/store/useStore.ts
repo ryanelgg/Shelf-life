@@ -410,6 +410,7 @@ export const useStore = create<ShelfLifeStore>()(
       addWasteLog: (log) => {
         const { supabaseUserId, household } = useStore.getState();
         if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
+        const prevStreak = useStore.getState().user?.streakDays ?? 0;
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
@@ -446,7 +447,10 @@ export const useStore = create<ShelfLifeStore>()(
         const { notificationsEnabled, user } = useStore.getState();
         if (notificationsEnabled && user) {
           void scheduleStreakProtection(user.streakDays, user.name);
-          if ([3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
+          // Only celebrate when the streak actually advanced into a milestone in
+          // THIS log — otherwise a second/third save on a milestone day would
+          // re-fire the same "N-day!" push.
+          if (user.streakDays !== prevStreak && [3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
             void celebrateStreakMilestone(user.streakDays);
           }
           void scheduleReEngagement(user.name);

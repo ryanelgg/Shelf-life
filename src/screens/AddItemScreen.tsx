@@ -344,6 +344,7 @@ export function AddItemScreen() {
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
       estimatedValue: Number.isFinite(item.price) ? item.price : 0,
+      dateType: getDefaultDateType(item.category),
     }, 'receipt');
   };
 
