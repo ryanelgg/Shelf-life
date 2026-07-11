@@ -214,16 +214,30 @@ export const useStore = create<ShelfLifeStore>()(
         if (supabaseUserId) syncPantryRemove(id);
         void cancelItemNotifications(id);
       },
-      upsertPantryItemLocal: (item) => set((s) => {
-        const idx = s.pantryItems.findIndex(i => i.id === item.id);
-        if (idx === -1) return { pantryItems: [...s.pantryItems, item] };
-        const next = s.pantryItems.slice();
-        next[idx] = item;
-        return { pantryItems: next };
-      }),
-      removePantryItemLocal: (id) => set((s) => ({
-        pantryItems: s.pantryItems.filter(i => i.id !== id),
-      })),
+      upsertPantryItemLocal: (item) => {
+        const { notificationsEnabled, user, pantryItems } = useStore.getState();
+        const existing = pantryItems.find(i => i.id === item.id);
+        set((s) => {
+          const idx = s.pantryItems.findIndex(i => i.id === item.id);
+          if (idx === -1) return { pantryItems: [...s.pantryItems, item] };
+          const next = s.pantryItems.slice();
+          next[idx] = item;
+          return { pantryItems: next };
+        });
+        // Schedule expiry reminders on THIS device too, so every household member
+        // is reminded — not just whoever added the item. Only (re)schedule when
+        // the item is new or its expiry changed, so idempotent realtime echoes
+        // (including this device's own writes) don't churn notifications.
+        if (notificationsEnabled && item.expirationDate &&
+            (!existing || existing.expirationDate !== item.expirationDate)) {
+          void rescheduleItemNotifications(item, user?.name);
+        }
+      },
+      removePantryItemLocal: (id) => {
+        set((s) => ({ pantryItems: s.pantryItems.filter(i => i.id !== id) }));
+        // A member removed a shared item — drop its reminders on this device too.
+        void cancelItemNotifications(id);
+      },
       clearPantry: () => {
         set({ pantryItems: [] });
         void cancelAllNotifications();

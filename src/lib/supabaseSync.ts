@@ -5,7 +5,44 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { SignInWithApple } from './appleSignIn';
 import * as debug from './debug';
-import { enqueueOutbox, flushOutbox, outboxPending, type OutboxOp } from './syncOutbox';
+import { enqueueOutbox, flushOutbox, outboxPending, outboxHasPendingAdd, type OutboxOp } from './syncOutbox';
+
+// Ids whose pantryAdd is currently being attempted live (before it has landed
+// server-side). While an add is unconfirmed — either in-flight here or queued in
+// the outbox — a later edit/delete must be ordered BEHIND the add rather than run
+// as an independent live write, which would match 0 rows, look like success, and
+// then be clobbered when the add finally lands.
+const liveAddInFlight = new Set<string>();
+// Edits/deletes that arrived while a live add was still in flight. We can't route
+// them yet (we don't know if the add will land live or fall back to the outbox),
+// so we defer them until the add settles, then route each with correct ordering.
+const deferredAfterAdd = new Map<string, Array<() => void>>();
+
+// Route a pantry edit/delete so it can never be lost to the add→edit race.
+function routePantryMutation(id: string, op: OutboxOp, live: () => PromiseLike<{ error: { message: string } | null }>, label: string): void {
+  if (liveAddInFlight.has(id)) {
+    // Add still in flight — defer; on settle we'll know whether to go live or
+    // queue behind an add that fell back to the outbox.
+    const list = deferredAfterAdd.get(id) ?? [];
+    list.push(() => routePantryMutation(id, op, live, label));
+    deferredAfterAdd.set(id, list);
+    return;
+  }
+  if (outboxHasPendingAdd(id)) {
+    // Add is queued offline — FIFO puts this edit/delete right after it.
+    enqueueOutbox(op);
+    return;
+  }
+  syncWrite(live, label, op);
+}
+
+// Called when a live add settles (landed or fell back to the outbox); drains any
+// edits/deletes that were waiting on it, now routed with the add's real state.
+function drainDeferredAfterAdd(id: string): void {
+  const list = deferredAfterAdd.get(id);
+  deferredAfterAdd.delete(id);
+  list?.forEach(fn => fn());
+}
 
 // Re-export so callers (App.tsx) can flush queued offline writes on boot from a
 // single sync surface.
@@ -27,6 +64,7 @@ function syncWrite(
   outboxOp?: OutboxOp,
   maxRetries = 2,
   delayMs = 2000,
+  onSettled?: (ok: boolean) => void,
 ): void {
   void (async () => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -34,11 +72,13 @@ function syncWrite(
       const { error } = await fn();
       if (!error) {
         if (outboxPending() > 0) void flushOutbox();
+        onSettled?.(true);
         return;
       }
       if (attempt === maxRetries) {
         debug.error(`[sync] ${label} failed after ${maxRetries + 1} attempts:`, error.message);
         if (outboxOp) enqueueOutbox(outboxOp);
+        onSettled?.(false);
       }
     }
   })();
@@ -415,7 +455,14 @@ export function syncPantryAdd(item: PantryItem, userId: string, householdId?: st
     frozen: item.frozen ?? false,
     date_type: item.dateType ?? null,
   };
-  syncWrite(() => supabase.from('pantry_items').insert(row), 'pantryAdd', { kind: 'pantryAdd', row });
+  liveAddInFlight.add(item.id);
+  syncWrite(
+    () => supabase.from('pantry_items').insert(row),
+    'pantryAdd',
+    { kind: 'pantryAdd', row },
+    2, 2000,
+    () => { liveAddInFlight.delete(item.id); drainDeferredAfterAdd(item.id); },
+  );
 }
 
 export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
@@ -432,18 +479,20 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
   if (updates.frozen !== undefined)          row.frozen = updates.frozen;
   if (updates.dateType !== undefined)        row.date_type = updates.dateType ?? null;
 
-  syncWrite(
+  routePantryMutation(
+    id,
+    { kind: 'pantryUpdate', id, row },
     () => supabase.from('pantry_items').update(row).eq('id', id),
     'pantryUpdate',
-    { kind: 'pantryUpdate', id, row },
   );
 }
 
 export function syncPantryRemove(id: string) {
-  syncWrite(
+  routePantryMutation(
+    id,
+    { kind: 'pantryRemove', id },
     () => supabase.from('pantry_items').delete().eq('id', id),
     'pantryRemove',
-    { kind: 'pantryRemove', id },
   );
 }
 

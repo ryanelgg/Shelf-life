@@ -54,6 +54,27 @@ const UNITS: Record<string, string> = {
 const LEAD_COMMANDS = /^(?:hey\s+avo[,\s]+)?(?:please\s+)?(?:can you\s+)?(?:add|put|log|track|i(?:'ve| have)?\s+(?:just\s+)?(?:bought|got|have|need|grabbed|picked up))\s+/i;
 const NAME_FILLER = new Set(['of', 'some', 'the', 'my', 'a', 'an', 'fresh', 'more', 'extra']);
 
+// Foods whose name contains "and" — we must NOT split these into two items.
+const COMPOUND_FOODS = [
+  'macaroni and cheese', 'mac and cheese', 'chips and salsa', 'salt and pepper',
+  'peanut butter and jelly', 'rice and beans', 'bread and butter', 'fish and chips',
+  'cookies and cream', 'biscuits and gravy', 'oil and vinegar', 'ham and cheese',
+  'spaghetti and meatballs', 'bangers and mash', 'surf and turf', 'sweet and sour',
+];
+// Placeholder that survives the comma/"and" split; restored before naming.
+const AND_TOKEN = 'ANDJOIN';
+
+// Replace the " and " inside any known compound food with a non-splitting token
+// so "add mac and cheese" stays one item instead of becoming "mac" + "cheese".
+function protectCompounds(text: string): string {
+  let out = text;
+  for (const compound of COMPOUND_FOODS) {
+    const re = new RegExp(compound.replace(/ and /g, '\\s+and\\s+'), 'gi');
+    out = out.replace(re, m => m.replace(/\s+and\s+/gi, ` ${AND_TOKEN} `));
+  }
+  return out;
+}
+
 function addDays(today: Date, n: number): Date {
   const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   d.setDate(d.getDate() + n);
@@ -172,10 +193,10 @@ function parseSegment(segment: string, today: Date): ParsedVoiceItem | null {
  */
 export function parseVoiceItems(transcript: string, today: Date = new Date()): ParsedVoiceItem[] {
   if (!transcript || !transcript.trim()) return [];
-  const cleaned = transcript.trim().replace(LEAD_COMMANDS, '');
+  const cleaned = protectCompounds(transcript.trim().replace(LEAD_COMMANDS, ''));
   const segments = cleaned
     .split(/\s*,\s*|\s+and\s+/i)
-    .map(s => s.trim())
+    .map(s => s.replace(new RegExp(AND_TOKEN, 'gi'), 'and').trim())
     .filter(Boolean);
 
   const items: ParsedVoiceItem[] = [];

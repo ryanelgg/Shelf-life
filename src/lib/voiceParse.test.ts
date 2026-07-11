@@ -26,3 +26,25 @@ describe('parseVoiceItems date parsing', () => {
     expect(expOf('eggs in two days')).toBe('2026-07-04');
   });
 });
+
+describe('parseVoiceItems compound foods', () => {
+  it('keeps "mac and cheese" as a single item', () => {
+    const items = parseVoiceItems('add mac and cheese', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('mac and cheese');
+  });
+
+  it('keeps a compound together while still splitting real separate items', () => {
+    const items = parseVoiceItems('milk, chips and salsa and 2 eggs', TODAY);
+    const names = items.map(i => i.name.toLowerCase());
+    expect(names).toContain('milk');
+    expect(names).toContain('chips and salsa');
+    expect(names).toContain('eggs');
+    expect(items).toHaveLength(3);
+  });
+
+  it('still splits a plain "and" between two foods', () => {
+    const items = parseVoiceItems('bread and milk', TODAY);
+    expect(items.map(i => i.name.toLowerCase())).toEqual(['bread', 'milk']);
+  });
+});

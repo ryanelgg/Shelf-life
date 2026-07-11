@@ -64,6 +64,16 @@ export function outboxPending(): number {
   return readOutbox().length;
 }
 
+/**
+ * True when a `pantryAdd` for this item id is still sitting in the outbox (i.e.
+ * the row hasn't been created server-side yet). Callers use this to route a
+ * later edit/delete through the outbox behind the add, instead of racing a live
+ * write that would match 0 rows and be silently lost.
+ */
+export function outboxHasPendingAdd(id: string): boolean {
+  return readOutbox().some(e => e.op.kind === 'pantryAdd' && (e.op.row as { id?: string }).id === id);
+}
+
 async function replayOp(op: OutboxOp): Promise<boolean> {
   let error: { message: string } | null = null;
   switch (op.kind) {
