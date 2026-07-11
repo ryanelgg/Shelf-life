@@ -42,6 +42,17 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // Leave any shared household FIRST, as the user, via the tested RPC. This
+    // hands ownership to the longest-standing remaining member (or disbands the
+    // household cleanly if they're the last one). Without this, deleting a
+    // household OWNER's auth row cascades through households.owner_id and
+    // silently wipes the whole household — kicking out every member and
+    // unlinking the shared pantry. Members' own items are reclaimed by the RPC.
+    const { error: leaveError } = await userClient.rpc('leave_household');
+    if (leaveError) {
+      return json({ error: `Household hand-off failed: ${leaveError.message}` }, { status: 500 });
+    }
+
     const [pantryRes, wasteRes, profileRes] = await Promise.all([
       admin.from('pantry_items').delete().eq('user_id', userId),
       admin.from('waste_logs').delete().eq('user_id', userId),
