@@ -211,7 +211,9 @@ export function OnboardingFlow() {
       createdAt: new Date().toISOString(),
       onboardingComplete: true,
       streakDays: 0,
-      lastActiveDate: formatLocalDate(new Date()),
+      // Empty, not today: the first "eaten/saved" log then counts as streak
+      // day 1 instead of the streak sticking at 0 on day one.
+      lastActiveDate: '',
       subscriptionTier: chosenTier,
       avoChatCount: 0,
       avoChatResetDate: formatLocalDate(new Date()),
