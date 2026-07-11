@@ -79,3 +79,20 @@ export async function guardAiRequest(
 
   return { ok: true, userId };
 }
+
+/**
+ * Refund one counted use when the downstream provider call fails, so a user
+ * isn't charged against their daily ceiling for a request that never produced a
+ * result. Best-effort: a failed refund must never turn into a failed response.
+ */
+export async function refundAiUsage(userId: string, kind: string): Promise<void> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !serviceRoleKey) return;
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+    await admin.rpc('decrement_ai_usage', { p_user_id: userId, p_kind: kind });
+  } catch {
+    // swallow — the user already got their error; don't compound it
+  }
+}

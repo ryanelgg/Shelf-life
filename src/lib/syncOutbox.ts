@@ -53,8 +53,13 @@ function writeOutbox(entries: OutboxEntry[]): void {
 export function enqueueOutbox(op: OutboxOp): void {
   const entries = readOutbox();
   entries.push({ op, attempts: 0, queuedAt: Date.now() });
-  // Keep only the most recent MAX_ENTRIES if we somehow overflow.
-  if (entries.length > MAX_ENTRIES) entries.splice(0, entries.length - MAX_ENTRIES);
+  // Keep only the most recent MAX_ENTRIES if we somehow overflow. Dropping the
+  // oldest is the least-bad choice (a later edit/delete usually supersedes it),
+  // but never do it silently — a dropped write is lost data.
+  if (entries.length > MAX_ENTRIES) {
+    const dropped = entries.splice(0, entries.length - MAX_ENTRIES);
+    debug.warn(`[outbox] overflow: dropped ${dropped.length} oldest queued write(s) (cap ${MAX_ENTRIES})`);
+  }
   writeOutbox(entries);
   debug.warn(`[outbox] queued ${op.kind} (pending: ${entries.length})`);
 }
