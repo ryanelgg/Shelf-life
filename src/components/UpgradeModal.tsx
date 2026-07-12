@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import posthog from 'posthog-js';
 import { Card } from './Card';
 import { hapticSuccess } from '../lib/haptics';
+import { LegalModal, type LegalDoc } from './LegalModal';
 
 interface UpgradeModalProps {
   feature: 'pantry' | 'chat' | 'receipt' | 'fridge' | 'mealplan' | 'briefing' | 'onboarding';
@@ -54,6 +55,7 @@ const PRO_FEATURES = [
 export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }: UpgradeModalProps) {
   const copy = FEATURE_COPY[feature];
   const [canClose, setCanClose] = useState(closeDelay === 0);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   useEffect(() => {
     posthog.capture('paywall_viewed', { trigger: feature });
@@ -178,10 +180,10 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
         </button>
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', opacity: canClose ? 1 : 0, transition: 'opacity 0.5s ease-out' }}>
-          {[['Privacy Policy', 'https://www.usepantre.me/privacy'], ['Terms of Use', 'https://www.usepantre.me/terms']].map(([label, url]) => (
+          {([['Privacy Policy', 'privacy'], ['Terms of Use', 'terms']] as [string, LegalDoc][]).map(([label, docKey]) => (
             <button
               key={label}
-              onClick={() => window.open(url, '_blank')}
+              onClick={() => setLegalDoc(docKey)}
               style={{
                 background: 'none',
                 border: 'none',
@@ -205,6 +207,10 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
           to { opacity: 1; }
         }
       `}</style>
+
+      {legalDoc && (
+        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
+      )}
     </div>
   );
 }

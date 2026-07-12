@@ -8,6 +8,7 @@ import { publishWidgetData } from './lib/widget';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
@@ -381,6 +382,7 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      <TutorialOverlay />
       <KeyboardScrollManager />
     </div>
   );

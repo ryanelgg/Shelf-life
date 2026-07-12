@@ -5,12 +5,12 @@ import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel, ingredientMatchesItem } from '../types';
+import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
 import { hapticLight } from '../lib/haptics';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
-import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe, DateLabelType } from '../types';
+import type { FoodCategory, StorageLocation, PantryItem, WasteAction, DateLabelType } from '../types';
 
 const LOCATIONS: StorageLocation[] = ['fridge', 'freezer', 'pantry', 'counter'];
 const LOCATION_LABELS: Record<StorageLocation, string> = {
@@ -109,19 +109,8 @@ function dateDaysFromToday(days: number): string {
   return formatLocalDate(d);
 }
 
-function wasLoggedWithinDays(date: string, days: number): boolean {
-  return parseLocalDate(date).getTime() >= dateDaysAgo(days).getTime();
-}
-
-function dateDaysAgo(days: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 export function PantryScreen() {
-  const { user, pantryItems, wasteLogs, recipes, browseRecipes, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
+  const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
@@ -172,48 +161,7 @@ export function PantryScreen() {
       .sort((a, b) => parseLocalDate(a.expirationDate).getTime() - parseLocalDate(b.expirationDate).getTime())
       .slice(0, 3)
   ), [pantryItems]);
-  const weeklySaves = wasteLogs.filter(w => w.action !== 'tossed' && wasLoggedWithinDays(w.date, 7)).length;
 
-  const briefing = useMemo(() => {
-    // 2. Best dinner option — the recipe that matches the most pantry items,
-    //    preferring ones that use food which is expiring soon.
-    const allRecipes = [...recipes, ...browseRecipes];
-    let bestDinner: { recipe: Recipe; matchCount: number; usesExpiring: boolean } | null = null;
-    for (const r of allRecipes) {
-      let matchCount = 0;
-      let usesExpiring = false;
-      for (const ing of r.ingredients) {
-        const m = pantryItems.find(p => ingredientMatchesItem(ing.name, p.name));
-        if (m) {
-          matchCount++;
-          const s = getFreshnessStatus(m.expirationDate);
-          if (s === 'expiring' || s === 'expiring-soon' || s === 'expired') usesExpiring = true;
-        }
-      }
-      if (matchCount === 0) continue;
-      const better =
-        !bestDinner ||
-        (usesExpiring && !bestDinner.usesExpiring) ||
-        (usesExpiring === bestDinner.usesExpiring && matchCount > bestDinner.matchCount);
-      if (better) bestDinner = { recipe: r, matchCount, usesExpiring };
-    }
-
-    // 3. One item worth freezing — expiring soon, not already frozen, and
-    //    freezing actually buys meaningful extra time.
-    // Only suggest items that genuinely freeze well — use the real FoodKeeper
-    // value (null means "don't freeze this"), not the category fallback.
-    const freezeCandidate = pantryItems
-      .filter(i => i.location !== 'freezer' && !i.frozen)
-      .filter(i => {
-        const s = getFreshnessStatus(i.expirationDate);
-        return s === 'expiring' || s === 'expiring-soon' || s === 'expired';
-      })
-      .map(i => ({ item: i, freezerDays: lookupShelfLife(i.name, 'freezer') }))
-      .filter((x): x is { item: PantryItem; freezerDays: number } => x.freezerDays != null && x.freezerDays >= 14)
-      .sort((a, b) => b.freezerDays - a.freezerDays)[0] ?? null;
-
-    return { attention: urgentItems, bestDinner, freezeCandidate };
-  }, [pantryItems, recipes, browseRecipes, urgentItems]);
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
@@ -266,11 +214,6 @@ export function PantryScreen() {
 
   const openRecipesFor = (item: PantryItem) => {
     setRecipeSearchSeed(item.name);
-    setActiveTab('plan');
-  };
-
-  const openRecipe = (recipe: Recipe) => {
-    setRecipeSearchSeed(recipe.name);
     setActiveTab('plan');
   };
 
@@ -412,127 +355,6 @@ export function PantryScreen() {
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>Value</div>
         </Card>
       </div>
-
-      {/* Avo daily briefing */}
-      <Card className="card-enter stagger-2" style={{
-        padding: '16px',
-        background: 'linear-gradient(135deg, rgba(74,124,89,0.10), rgba(196,149,106,0.08))',
-        border: '1px solid rgba(74, 124, 89, 0.16)',
-        overflow: 'hidden',
-        position: 'relative',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          position: 'absolute',
-          right: -28,
-          top: -28,
-          width: 90,
-          height: 90,
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.24)',
-        }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative', marginBottom: '12px' }}>
-          <div className="use-tonight-pulse" style={{ flexShrink: 0 }}>
-            <AvocadoMascot size={34} isStatic />
-          </div>
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Avo Daily Briefing
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '1px' }}>
-              Here's what matters today
-            </div>
-          </div>
-        </div>
-
-        {pantryItems.length === 0 ? (
-          <div style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.45, fontWeight: 600, position: 'relative' }}>
-            Add a few items and I'll start building a nightly save plan around what expires first.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
-            {/* 1. Things that need attention */}
-            <button
-              onClick={() => { setExpiringOnly(true); setListAnimKey(k => k + 1); }}
-              disabled={briefing.attention.length === 0}
-              style={briefingRowStyle(briefing.attention.length === 0)}
-            >
-              <span style={briefingIconStyle('rgba(212,134,11,0.14)')}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--expiring-soon)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-              </span>
-              <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <span style={briefingLabelStyle}>
-                  {briefing.attention.length > 0
-                    ? `${briefing.attention.length} thing${briefing.attention.length === 1 ? '' : 's'} need attention`
-                    : 'Nothing urgent today'}
-                </span>
-                <span style={briefingValueStyle}>
-                  {briefing.attention.length > 0
-                    ? briefing.attention.map(i => i.name).join(', ')
-                    : `$${totalValue.toFixed(0)} in pantry · ${weeklySaves} saved this week`}
-                </span>
-              </span>
-            </button>
-
-            {/* 2. Best dinner option */}
-            {briefing.bestDinner && (
-              <button onClick={() => openRecipe(briefing.bestDinner!.recipe)} style={briefingRowStyle(false)}>
-                <span style={briefingIconStyle('var(--accent-dim)')}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 002-2V2"/><path d="M5 2v20"/><path d="M17 2v20"/><path d="M17 8c0-3 1-6 2-6s2 3 2 6-1 4-2 4-2-1-2-4z"/>
-                  </svg>
-                </span>
-                <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                  <span style={briefingLabelStyle}>Your best dinner option</span>
-                  <span style={briefingValueStyle}>
-                    {briefing.bestDinner.recipe.name}
-                    {briefing.bestDinner.usesExpiring && (
-                      <span style={{ color: 'var(--expiring-soon)', fontWeight: 700 }}> · uses expiring food</span>
-                    )}
-                  </span>
-                </span>
-                <span style={briefingChevronStyle}>›</span>
-              </button>
-            )}
-
-            {/* 3. One item worth freezing */}
-            {briefing.freezeCandidate && (
-              <div style={briefingRowStyle(false)}>
-                <span style={briefingIconStyle('var(--accent-dim)')}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2v20M4.5 5.5L19.5 18.5M19.5 5.5L4.5 18.5"/><path d="M8 2L12 6L16 2M8 22L12 18L16 22M2 8L6 12L2 16M22 8L18 12L22 16"/>
-                  </svg>
-                </span>
-                <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                  <span style={briefingLabelStyle}>One item worth freezing</span>
-                  <span style={briefingValueStyle}>
-                    {briefing.freezeCandidate.item.name} · keeps {briefing.freezeCandidate.freezerDays}d frozen
-                  </span>
-                </span>
-                <button
-                  onClick={() => handleFreezeItem(briefing.freezeCandidate!.item)}
-                  style={{
-                    flexShrink: 0,
-                    padding: '6px 12px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    fontFamily: "'Cormorant Garamond', serif",
-                    cursor: 'pointer',
-                  }}
-                >
-                  Freeze
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
 
       {/* Use it tonight */}
       {urgentItems.length > 0 && (
@@ -1146,61 +968,6 @@ function EditItemModal({ item, onSave, onClose }: {
     </div>
   );
 }
-
-function briefingRowStyle(disabled: boolean): React.CSSProperties {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '13px',
-    background: 'rgba(255,255,255,0.32)',
-    border: '1px solid rgba(74,124,89,0.10)',
-    cursor: disabled ? 'default' : 'pointer',
-    opacity: disabled ? 0.7 : 1,
-    textAlign: 'left',
-    fontFamily: 'inherit',
-  };
-}
-
-function briefingIconStyle(bg: string): React.CSSProperties {
-  return {
-    width: 30,
-    height: 30,
-    borderRadius: '9px',
-    background: bg,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  };
-}
-
-const briefingLabelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: '13px',
-  fontWeight: 700,
-  color: 'var(--text-primary)',
-};
-
-const briefingValueStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: '11px',
-  color: 'var(--text-muted)',
-  fontWeight: 600,
-  marginTop: '1px',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const briefingChevronStyle: React.CSSProperties = {
-  flexShrink: 0,
-  color: 'var(--text-muted)',
-  fontSize: '18px',
-  fontWeight: 700,
-};
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px',
