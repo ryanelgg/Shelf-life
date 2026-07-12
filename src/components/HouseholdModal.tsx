@@ -10,6 +10,7 @@ import {
   getHouseholdMembers,
 } from '../lib/households';
 import { loadAllData } from '../lib/supabaseSync';
+import { flushOutbox } from '../lib/syncOutbox';
 import * as debug from '../lib/debug';
 
 
@@ -66,6 +67,9 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const reloadPantry = async (householdId: string | null) => {
     if (!supabaseUserId) return;
     try {
+      // Flush queued offline writes before pulling cloud data, so a create/join/
+      // leave reload can't overwrite (and lose) changes still sitting in the outbox.
+      await flushOutbox();
       const { pantryItems, wasteLogs } = await loadAllData(supabaseUserId, householdId);
       loadCloudData(pantryItems, wasteLogs);
     } catch (e) {

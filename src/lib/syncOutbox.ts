@@ -132,9 +132,21 @@ export async function flushOutbox(): Promise<void> {
       }
       remaining.push({ ...entry, attempts });
     }
-    writeOutbox(remaining);
-    if (remaining.length > 0) {
-      debug.warn(`[outbox] ${remaining.length} operation(s) still pending after flush`);
+    // Re-read before persisting: a concurrent enqueueOutbox() (e.g. syncWrite's
+    // final-retry failure) may have appended new ops DURING our awaits. Because
+    // we don't write until now, those appends stacked onto the pre-flush
+    // snapshot in localStorage and live beyond its length — capture and keep
+    // them, or writeOutbox(remaining) would silently drop that queued write.
+    const afterFlush = readOutbox();
+    const enqueuedDuringFlush = afterFlush.slice(entries.length);
+    const merged = remaining.concat(enqueuedDuringFlush);
+    if (merged.length > MAX_ENTRIES) {
+      const dropped = merged.splice(0, merged.length - MAX_ENTRIES);
+      debug.warn(`[outbox] overflow after flush: dropped ${dropped.length} oldest queued write(s) (cap ${MAX_ENTRIES})`);
+    }
+    writeOutbox(merged);
+    if (merged.length > 0) {
+      debug.warn(`[outbox] ${merged.length} operation(s) still pending after flush`);
     }
   } finally {
     flushing = false;

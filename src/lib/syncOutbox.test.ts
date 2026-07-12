@@ -4,12 +4,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   result: { error: null as { message: string } | null },
   calls: [] as string[],
+  hook: null as (() => void) | null, // fires once during the next replay (to simulate a concurrent enqueue)
 }));
 
 vi.mock('./supabase', () => ({
   supabase: {
     from: (table: string) => ({
-      upsert: async () => { h.calls.push(`upsert:${table}`); return h.result; },
+      upsert: async () => {
+        h.calls.push(`upsert:${table}`);
+        if (h.hook) { const fn = h.hook; h.hook = null; fn(); }
+        return h.result;
+      },
       update: () => ({ eq: async () => { h.calls.push(`update:${table}`); return h.result; } }),
       delete: () => ({ eq: async () => { h.calls.push(`delete:${table}`); return h.result; } }),
     }),
@@ -37,6 +42,7 @@ beforeEach(() => {
   installLocalStorage();
   h.result = { error: null };
   h.calls = [];
+  h.hook = null;
 });
 
 describe('syncOutbox', () => {
@@ -99,5 +105,22 @@ describe('syncOutbox', () => {
     await flushOutbox();
 
     expect(h.calls).toEqual(['upsert:pantry_items', 'update:pantry_items', 'delete:pantry_items']);
+  });
+
+  it('preserves a write enqueued CONCURRENTLY during a flush (no lost data)', async () => {
+    // Regression: flushOutbox snapshots the queue, then persists only the
+    // survivors of that snapshot. A write queued mid-flush (during an await)
+    // must not be clobbered by that final write.
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Milk' } });
+    h.result = { error: null };
+    // While a1's replay is in flight, a new op gets queued (e.g. an offline
+    // write exhausting its retries).
+    h.hook = () => enqueueOutbox({ kind: 'pantryRemove', id: 'a2' });
+
+    await flushOutbox();
+
+    // a1 drained successfully; a2 was enqueued during the flush and must survive.
+    expect(outboxHasPendingAdd('a1')).toBe(false);
+    expect(outboxPending()).toBe(1);
   });
 });

@@ -136,7 +136,7 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
 
   useEffect(() => {
@@ -1072,7 +1072,11 @@ export function AddItemScreen() {
             </div>
             <button
               onClick={() => {
-                const slotsLeft = isPro()
+                // Free members of a (Pro-owned) household ride the owner's
+                // unlimited pantry — mirror canAddPantryItem() so bulk-add isn't
+                // capped at 20 while the per-item button lets them add freely.
+                const unlimited = isPro() || !!household;
+                const slotsLeft = unlimited
                   ? receiptItems.length
                   : Math.max(0, FREE_LIMITS.pantryItems - pantryItems.length);
                 const toAdd = receiptItems.slice(0, slotsLeft);

@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import type { PantryItemRow, WasteLogRow } from './supabase';
 import { rowToPantryItem, rowToWasteLog, loadAllData } from './supabaseSync';
+import { flushOutbox } from './syncOutbox';
 import { useStore } from '../store/useStore';
 import * as debug from './debug';
 
@@ -29,6 +30,10 @@ async function reloadSharedPantry(householdId: string): Promise<void> {
   const { supabaseUserId, loadCloudData } = useStore.getState();
   if (!supabaseUserId) return;
   try {
+    // Flush any offline writes FIRST so this reload doesn't overwrite local
+    // state with cloud data that predates them (dropping just-added items or
+    // resurrecting locally-deleted ones). Mirrors the boot path in App.tsx.
+    await flushOutbox();
     const { pantryItems, wasteLogs } = await loadAllData(supabaseUserId, householdId);
     loadCloudData(pantryItems, wasteLogs);
   } catch (e) {
