@@ -147,10 +147,15 @@ export function CookScreen() {
       debug.error('[Avo chat error]', err);
       // Rollback the chat credit since the request failed
       decrementAvoChat();
-      const errorMsg = (err as { status?: number })?.status === 401
-        ? "Looks like the API key isn't set up yet."
-        : (err as { status?: number })?.status === 429
+      const status = (err as { status?: number })?.status;
+      const errorMsg = status === 401
+        ? "I couldn't verify your session — try signing out and back in."
+        : status === 429
         ? "I'm getting a lot of questions right now — try again in a moment!"
+        : status === 404
+        ? "My brain isn't hooked up yet — the Avo chat service hasn't been deployed."
+        : status && status >= 500
+        ? "My brain had a hiccup on the server. Try again in a moment!"
         : "Something went wrong connecting to my brain. Try again?";
 
       setMessages(prev => {
