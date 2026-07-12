@@ -69,7 +69,16 @@ function syncWrite(
   void (async () => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
-      const { error } = await fn();
+      // A network-layer failure REJECTS rather than resolving {error}. Without
+      // this catch the IIFE would reject unhandled — onSettled never fires, so
+      // a pantryAdd's id would stay stuck in liveAddInFlight forever and every
+      // later edit/delete to it would be deferred and silently dropped.
+      let error: { message: string } | null;
+      try {
+        ({ error } = await fn());
+      } catch (e) {
+        error = { message: e instanceof Error ? e.message : String(e) };
+      }
       if (!error) {
         if (outboxPending() > 0) void flushOutbox();
         onSettled?.(true);

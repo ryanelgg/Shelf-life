@@ -48,3 +48,23 @@ describe('parseVoiceItems compound foods', () => {
     expect(items.map(i => i.name.toLowerCase())).toEqual(['bread', 'milk']);
   });
 });
+
+describe('parseVoiceItems weekday false-matches (regression)', () => {
+  it('does not read "mon" out of "salmon"', () => {
+    const items = parseVoiceItems('add salmon', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('salmon');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
+
+  it('does not corrupt "cinnamon"', () => {
+    const items = parseVoiceItems('add cinnamon', TODAY);
+    expect(items[0].name.toLowerCase()).toBe('cinnamon');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
+
+  it('still parses a real weekday', () => {
+    // 2026-07-02 is a Thursday; "friday" is the next day.
+    expect(parseVoiceItems('milk friday', TODAY)[0].expirationDate).toBe('2026-07-03');
+  });
+});

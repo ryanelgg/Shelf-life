@@ -129,10 +129,19 @@ export function PantryScreen() {
 
   useEffect(() => {
     if (pantryItems.length === 0) return;
+    let cancelled = false;
     const names = pantryItems.map(i => i.name);
     checkPantryForRecalls(names).then(matches => {
-      setRecallMatches(matches);
+      if (cancelled) return; // a newer check superseded this one
+      setRecallMatches(prev => {
+        // Re-surface the banner only when the set of matched items actually
+        // changed, so a genuinely new recall isn't hidden by an earlier dismiss.
+        const key = (m: RecallMatch[]) => m.map(x => x.id).sort().join('|');
+        if (key(prev) !== key(matches)) setRecallDismissed(false);
+        return matches;
+      });
     }).catch(() => {/* silently ignore - recall check is best-effort */});
+    return () => { cancelled = true; };
   }, [pantryItems]);
 
   const filteredItems = useMemo(() => {

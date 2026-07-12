@@ -70,6 +70,18 @@ export function outboxPending(): number {
 }
 
 /**
+ * Discard all queued operations. Call on user-initiated sign-out so one account's
+ * pending offline writes can't replay under the next account's session.
+ */
+export function clearOutbox(): void {
+  try {
+    localStorage.removeItem(OUTBOX_KEY);
+  } catch (e) {
+    debug.error('[outbox] clear failed:', e);
+  }
+}
+
+/**
  * True when a `pantryAdd` for this item id is still sitting in the outbox (i.e.
  * the row hasn't been created server-side yet). Callers use this to route a
  * later edit/delete through the outbox behind the add, instead of racing a live

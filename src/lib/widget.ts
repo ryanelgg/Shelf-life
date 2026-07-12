@@ -36,11 +36,15 @@ export interface WidgetPayload {
 // Pure + deterministic so it can be unit-tested with an injected `now`.
 export function buildWidgetPayload(items: PantryItem[], now: Date = new Date()): WidgetPayload {
   const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const withDays = items.map(i => {
-    const exp = parseLocalDate(i.expirationDate);
-    const daysLeft = Math.round((exp.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
-    return { name: i.name, expirationDate: i.expirationDate, daysLeft };
-  });
+  const withDays = items
+    // Skip items with no/blank date — parseLocalDate would give NaN days, which
+    // sorts unpredictably and could push a real expiring item off the widget.
+    .filter(i => !!i.expirationDate)
+    .map(i => {
+      const exp = parseLocalDate(i.expirationDate);
+      const daysLeft = Math.round((exp.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
+      return { name: i.name, expirationDate: i.expirationDate, daysLeft };
+    });
   withDays.sort((a, b) => a.daysLeft - b.daysLeft);
   return {
     updatedAt: formatLocalDate(now),

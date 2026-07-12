@@ -68,8 +68,8 @@ export function CookScreen() {
     if (isStreaming) return;
     hapticLight();
     if (!hasProAccess) { setUpgradeReason('briefing'); setShowUpgrade(true); return; }
-    const userMsg: AvoDisplayMessage = { id: `u-${Date.now()}`, role: 'user', text: userText };
-    const avoMsg: AvoDisplayMessage = { id: `a-${Date.now() + 1}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
+    const userMsg: AvoDisplayMessage = { id: `u-${crypto.randomUUID()}`, role: 'user', text: userText };
+    const avoMsg: AvoDisplayMessage = { id: `a-${crypto.randomUUID()}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
     setMessages(prev => {
       const next = [...prev, userMsg, avoMsg];
       setAvoSessionMessages(next);

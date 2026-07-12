@@ -5,6 +5,7 @@ import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, 
 import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
+import { clearOutbox } from '../lib/syncOutbox';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import * as debug from '../lib/debug';
 import {
@@ -162,6 +163,9 @@ export const useStore = create<ShelfLifeStore>()(
       resetOnboarding: () => {
         // Clear persisted storage first so persist middleware doesn't re-write stale data
         localStorage.removeItem('shelf-life-storage-v2');
+        // Drop any queued offline writes so they can't replay under a different
+        // account that signs in on this device next.
+        clearOutbox();
         resetAvoChatSession();
         set({
           user: null,
