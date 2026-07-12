@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { JSX } from 'react';
 import { requestAvoChat } from '../lib/avoApi';
 import { AvocadoMascot } from '../components/AvocadoMascot';
@@ -277,7 +277,9 @@ function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    if (blocked.some(b => ingredNames.includes(b))) return false;
+    // Whole-word match, not substring — otherwise "egg" hides eggplant (vegan),
+    // "wheat" hides buckwheat (gluten-free), and "ham" hides graham crackers.
+    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(ingredNames))) return false;
   }
   return true;
 }
@@ -486,11 +488,18 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
 
       const newPlan: MealPlanDay[] = DAYS.map((day, i) => {
         const entry = parsed.find(p => p.day === day) ?? parsed[i];
+        const meal = entry?.meal ?? 'Flexible night';
+        // Link the day to a real recipe when the name matches one we know, so the
+        // generated day is actually expandable/cookable instead of an inert row.
+        const mealLc = meal.toLowerCase();
+        const match = browseRecipes.find(r => r.name.toLowerCase() === mealLc)
+          ?? browseRecipes.find(r => mealLc.includes(r.name.toLowerCase()) || r.name.toLowerCase().includes(mealLc));
         return {
           day,
-          meal: entry?.meal ?? 'Flexible night',
+          meal,
           pantryItems: Math.max(0, entry?.pantryItems ?? 0),
           toBuy: Math.max(0, entry?.toBuy ?? 0),
+          ...(match ? { recipeId: match.id } : {}),
         };
       });
 
@@ -500,7 +509,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
     } finally {
       setAvoMealPlanLoading(false);
     }
-  }, [avoMealPlanLoading, pantryItems, user, setMealPlan]);
+  }, [avoMealPlanLoading, pantryItems, user, setMealPlan, browseRecipes]);
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
@@ -1674,14 +1683,19 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / Math.max(1, recipe.steps.length)) * 100;
   const activeStep = recipe.steps[currentStep] ?? recipe.steps[0] ?? 'Cook and enjoy.';
 
+  // Track pending animation timers so closing mid-animation doesn't setState on
+  // an unmounted component.
+  const timersRef = useRef<number[]>([]);
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
+
   const goNext = () => {
     if (currentStep >= recipe.steps.length - 1) {
       setFinale(true);
-      window.setTimeout(() => { setReviewing(true); setFinale(false); }, 1350);
+      timersRef.current.push(window.setTimeout(() => { setReviewing(true); setFinale(false); }, 1350));
     } else {
       setIsFlipping(true);
       setCurrentStep(step => step + 1);
-      window.setTimeout(() => setIsFlipping(false), 780);
+      timersRef.current.push(window.setTimeout(() => setIsFlipping(false), 780));
     }
   };
   const goBack = () => setCurrentStep(step => Math.max(0, step - 1));

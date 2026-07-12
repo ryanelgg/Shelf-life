@@ -234,8 +234,11 @@ export default function App() {
           posthog.reset();
           resetOnboarding();
         } else {
-          debug.log('[auth] passive sign-out — keeping local data');
-          setSupabaseUserId(null);
+          // Passive sign-out (token expiry / offline). KEEP supabaseUserId so
+          // edits keep flowing into the offline outbox and replay when the
+          // session refreshes — nulling it made writes skip sync entirely and
+          // then get overwritten by the cloud reload on reconnect.
+          debug.log('[auth] passive sign-out — keeping local data + session id for outbox');
         }
         return;
       }

@@ -447,10 +447,11 @@ export const useStore = create<ShelfLifeStore>()(
         const s = useStore.getState();
         if (!s.user) return false;
         if (s.user.subscriptionTier === 'pro') return true;
-        // Households can only be created by a Pro owner (enforced server-side in
-        // the SECURITY DEFINER RPC), so a free member rides the owner's
-        // unlimited pantry rather than being blocked at the free cap.
-        if (s.household) return true;
+        // Free MEMBERS ride the Pro owner's unlimited pantry (owner Pro is
+        // enforced server-side at creation). But a free OWNER is not exempt —
+        // otherwise someone could subscribe, create a household, cancel Pro, and
+        // keep an unlimited solo pantry forever.
+        if (s.household && s.household.role === 'member') return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },
       isPro: (): boolean => {
