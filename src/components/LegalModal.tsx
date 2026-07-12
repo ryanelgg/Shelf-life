@@ -22,7 +22,7 @@ const PRIVACY_SECTIONS: { heading: string; body: string }[] = [
   },
   {
     heading: 'Avo AI',
-    body: 'When you chat with Avo or scan a receipt or fridge photo, the text or image is sent to our AI provider to generate a response, then discarded. Avo is not medical advice. AI features are optional and can be turned off in Settings.',
+    body: 'When you chat with Avo, your question and pantry item names are sent to Groq to generate a response. When you scan a receipt or fridge photo, that image is sent to Anthropic (Claude). In both cases the data is used only to answer your request and is not retained for training. Avo is not medical advice, and AI features are optional and can be turned off in Settings.',
   },
   {
     heading: 'Camera',

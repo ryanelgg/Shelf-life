@@ -338,7 +338,7 @@ export function SettingsScreen() {
               <div style={{ fontSize: '14px', fontWeight: 600 }}>Avo AI</div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
                 {avoAiConsent === 'granted'
-                  ? 'On — your messages and pantry items are sent to Anthropic to generate responses'
+                  ? 'On — chat is processed by Groq; receipt & fridge photo scans by Anthropic'
                   : avoAiConsent === 'declined'
                   ? 'Off — chat is disabled'
                   : 'Not set — you\'ll be asked when you open chat'}
@@ -486,7 +486,7 @@ export function SettingsScreen() {
               lineHeight: 1.6,
             }}>
               <div style={{ marginBottom: '4px', color: 'var(--text-muted)', fontWeight: 600 }}>Powered by</div>
-              <div>Anthropic Claude · Supabase · Apple · Google</div>
+              <div>Groq · Anthropic Claude · Supabase · Apple · Google</div>
             </div>
           </div>
         </Card>

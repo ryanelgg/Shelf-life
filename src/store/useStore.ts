@@ -108,6 +108,10 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+
+  // First-run tutorial (per-device). Shown once after onboarding.
+  hasSeenTutorial: boolean;
+  setHasSeenTutorial: (seen: boolean) => void;
 }
 
 
@@ -135,6 +139,8 @@ export const useStore = create<ShelfLifeStore>()(
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
       household: null as Household | null,
+      hasSeenTutorial: false,
+      setHasSeenTutorial: (seen) => set({ hasSeenTutorial: seen }),
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
       setHousehold: (household) => set({ household }),
       loadCloudData: (cloudPantry, cloudWaste) => {
@@ -500,6 +506,7 @@ export const useStore = create<ShelfLifeStore>()(
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
         notificationsEnabled: state.notificationsEnabled,
+        hasSeenTutorial: state.hasSeenTutorial,
       }),
     }
   )
