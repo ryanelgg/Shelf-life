@@ -39,7 +39,9 @@ export function avoTrialDaysLeft(
   if (!u.avoTrialStartedAt) return 0;
   const start = parseLocalDate(u.avoTrialStartedAt);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const elapsed = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
+  // round, not floor: a DST transition inside the window shifts the raw ms diff
+  // by ±1h, which floor can push across a day boundary (trial off by a day).
+  const elapsed = Math.round((today.getTime() - start.getTime()) / 86_400_000);
   return Math.max(0, FREE_LIMITS.avoTrialDays - elapsed);
 }
 
@@ -270,7 +272,10 @@ export function getDaysUntilExpiration(expirationDate: string): number {
 // and "tomatoes" matches "tomato". Intentionally conservative.
 function foldPlural(word: string): string {
   if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y';
-  if (word.length > 3 && word.endsWith('es')) return word.slice(0, -2);
+  // Only strip "-es" for true "-es" plurals (sibilant / -o stems): boxes→box,
+  // dishes→dish, tomatoes→tomato. Otherwise a silent-e word like "apples" would
+  // be mangled to "appl" (and "grapes"→"grap", "limes"→"lim"), breaking matches.
+  if (word.length > 3 && word.endsWith('es') && /(s|x|z|ch|sh|o)es$/.test(word)) return word.slice(0, -2);
   if (word.length > 2 && word.endsWith('s')) return word.slice(0, -1);
   return word;
 }

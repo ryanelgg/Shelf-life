@@ -53,8 +53,13 @@ function writeOutbox(entries: OutboxEntry[]): void {
 export function enqueueOutbox(op: OutboxOp): void {
   const entries = readOutbox();
   entries.push({ op, attempts: 0, queuedAt: Date.now() });
-  // Keep only the most recent MAX_ENTRIES if we somehow overflow.
-  if (entries.length > MAX_ENTRIES) entries.splice(0, entries.length - MAX_ENTRIES);
+  // Keep only the most recent MAX_ENTRIES if we somehow overflow. Dropping the
+  // oldest is the least-bad choice (a later edit/delete usually supersedes it),
+  // but never do it silently — a dropped write is lost data.
+  if (entries.length > MAX_ENTRIES) {
+    const dropped = entries.splice(0, entries.length - MAX_ENTRIES);
+    debug.warn(`[outbox] overflow: dropped ${dropped.length} oldest queued write(s) (cap ${MAX_ENTRIES})`);
+  }
   writeOutbox(entries);
   debug.warn(`[outbox] queued ${op.kind} (pending: ${entries.length})`);
 }
@@ -62,6 +67,16 @@ export function enqueueOutbox(op: OutboxOp): void {
 /** Number of operations currently waiting to be flushed. */
 export function outboxPending(): number {
   return readOutbox().length;
+}
+
+/**
+ * True when a `pantryAdd` for this item id is still sitting in the outbox (i.e.
+ * the row hasn't been created server-side yet). Callers use this to route a
+ * later edit/delete through the outbox behind the add, instead of racing a live
+ * write that would match 0 rows and be silently lost.
+ */
+export function outboxHasPendingAdd(id: string): boolean {
+  return readOutbox().some(e => e.op.kind === 'pantryAdd' && (e.op.row as { id?: string }).id === id);
 }
 
 async function replayOp(op: OutboxOp): Promise<boolean> {

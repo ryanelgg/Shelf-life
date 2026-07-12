@@ -1,5 +1,5 @@
 import * as Sentry from "https://deno.land/x/sentry/index.mjs";
-import { corsHeaders, json, guardAiRequest } from '../_shared/aiGuard.ts';
+import { corsHeaders, json, guardAiRequest, refundAiUsage } from '../_shared/aiGuard.ts';
 
 const DAILY_LIMIT = 40;
 
@@ -68,6 +68,7 @@ Deno.serve(async (request) => {
     });
     if (!response.ok) {
       const details = await response.text();
+      await refundAiUsage(guard.userId, 'receipt-ocr');
       return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
     }
     const result = await response.json() as {
@@ -82,6 +83,7 @@ Deno.serve(async (request) => {
     return json({ items });
   } catch (error) {
     Sentry.captureException(error);
+    await refundAiUsage(guard.userId, 'receipt-ocr');
     const message = error instanceof Error ? error.message : 'Unexpected error';
     return json({ error: message }, { status: 500 });
   }

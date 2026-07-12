@@ -1,5 +1,5 @@
 import { AVO_SYSTEM_PROMPT } from '../../../src/lib/avoPrompt.ts';
-import { corsHeaders, json, guardAiRequest } from '../_shared/aiGuard.ts';
+import { corsHeaders, json, guardAiRequest, refundAiUsage } from '../_shared/aiGuard.ts';
 
 type AvoChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -65,6 +65,7 @@ Deno.serve(async (request) => {
       // Log the upstream detail server-side but return a generic message so we
       // don't leak provider internals to the client.
       console.error(`[avo-chat] Groq request failed ${groqResponse.status}:`, await groqResponse.text());
+      await refundAiUsage(guard.userId, 'avo-chat');
       return json({ error: 'Avo is having trouble right now. Please try again.' }, { status: 502 });
     }
 
@@ -74,11 +75,13 @@ Deno.serve(async (request) => {
 
     const text = payload.choices?.[0]?.message?.content?.trim();
     if (!text) {
+      await refundAiUsage(guard.userId, 'avo-chat');
       return json({ error: 'Groq returned an empty response' }, { status: 502 });
     }
 
     return json({ text });
   } catch (error) {
+    await refundAiUsage(guard.userId, 'avo-chat');
     const message = error instanceof Error ? error.message : 'Unexpected function error';
     return json({ error: message }, { status: 500 });
   }

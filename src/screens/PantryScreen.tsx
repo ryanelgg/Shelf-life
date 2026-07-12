@@ -7,6 +7,7 @@ import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel, ingredientMatchesItem } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
+import { hapticLight } from '../lib/haptics';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe, DateLabelType } from '../types';
@@ -241,6 +242,24 @@ export function PantryScreen() {
       expirationDate: dateDaysFromToday(freezerDays),
       frozen: true,
     });
+    setSwipingItem(null);
+    setListAnimKey(k => k + 1);
+  };
+
+  // "Extend" — the item's still good (e.g. opened and fine, or you just don't
+  // trust the printed date), so push its expiry out. Bumps from the later of
+  // today or the current date so an already-expired item moves genuinely
+  // forward. updatePantryItem reschedules this item's reminders automatically.
+  const EXTEND_DAYS = 3;
+  const handleExtendItem = (item: PantryItem) => {
+    const current = parseLocalDate(item.expirationDate);
+    const today = new Date();
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const base = current.getTime() > todayMidnight.getTime() ? current : todayMidnight;
+    const next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + EXTEND_DAYS);
+    updatePantryItem(item.id, { expirationDate: formatLocalDate(next) });
+    posthog.capture('pantry_item_extended', { days: EXTEND_DAYS, category: item.category });
+    hapticLight();
     setSwipingItem(null);
     setListAnimKey(k => k + 1);
   };
@@ -865,6 +884,23 @@ export function PantryScreen() {
                       <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent)', fontFamily: "'Cormorant Garamond', serif" }}>Freeze</span>
                     </button>
                   )}
+                  <button
+                    onClick={() => handleExtendItem(item)}
+                    aria-label={`Extend ${item.name} by ${EXTEND_DAYS} days`}
+                    style={{
+                      flex: 1, padding: '10px 4px', background: 'transparent',
+                      border: '1px solid var(--fresh)',
+                      borderRadius: '10px', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--fresh)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="13" r="8" />
+                      <path d="M12 9v4l2.5 2.5" />
+                      <path d="M12 2v3M9 2h6" />
+                    </svg>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--fresh)', fontFamily: "'Cormorant Garamond', serif" }}>+{EXTEND_DAYS}d</span>
+                  </button>
 	                  <button
                     onClick={() => { setEditingItem(item); setSwipingItem(null); }}
                     style={{

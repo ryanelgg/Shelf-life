@@ -82,9 +82,11 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // A launch-scoped counter reset to 0 on every app start, so two phones in a
+  // shared household adding in the same millisecond could collide and overwrite
+  // each other over live sync. Use a globally-unique id instead.
+  return `p-${crypto.randomUUID()}`;
 }
 
 let nextReceiptRowId = 0;
@@ -342,6 +344,7 @@ export function AddItemScreen() {
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
       estimatedValue: Number.isFinite(item.price) ? item.price : 0,
+      dateType: getDefaultDateType(item.category),
     }, 'receipt');
   };
 

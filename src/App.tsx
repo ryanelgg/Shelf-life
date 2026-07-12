@@ -270,7 +270,9 @@ export default function App() {
           createdAt: profile.created_at,
           onboardingComplete: true,
           streakDays: profile.streak_days,
-          lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
+          // Empty (not today) when the profile has never logged, so the user's
+          // very first save counts as streak day 1 instead of showing 0.
+          lastActiveDate: profile.last_active_date ?? '',
           subscriptionTier: profile.subscription_tier as 'free' | 'pro',
           avoChatCount: profile.avo_chat_count,
           avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),

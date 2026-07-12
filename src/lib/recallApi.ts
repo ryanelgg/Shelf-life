@@ -56,7 +56,11 @@ export async function checkPantryForRecalls(itemNames: string[]): Promise<Recall
       );
       for (const name of itemNames) {
         const nameWords = name.toLowerCase().split(/\W+/).filter(w => w.length > 2);
-        if (nameWords.some(w => recallWords.has(w))) {
+        // Require EVERY significant word of the item to appear in the recall, not
+        // just any one — otherwise "ice cream" matches an "ice packs" recall on
+        // the shared word "ice". This cuts false alarms that erode trust in a
+        // safety feature, while "milk" still matches "whole milk gallon".
+        if (nameWords.length > 0 && nameWords.every(w => recallWords.has(w))) {
           matched.push({
             id: recall.recall_number,
             productDescription: recall.product_description,

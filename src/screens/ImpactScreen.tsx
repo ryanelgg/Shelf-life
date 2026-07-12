@@ -123,10 +123,12 @@ export function ImpactScreen() {
     const itemsSaved = totalItems - tossed.length;
     const co2Saved = (itemsSaved * 0.5).toFixed(1);
 
-    // Money saved — sum estimatedValue of everything that wasn't tossed
+    // Money saved — sum estimatedValue of everything that wasn't tossed.
+    // estimatedValue is the whole-entry value (matches the Pantry total and the
+    // per-item display), so do NOT multiply by quantity here.
     const moneySaved = wasteLogs
       .filter(w => w.action !== 'tossed')
-      .reduce((sum, w) => sum + (w.estimatedValue * w.quantity), 0);
+      .reduce((sum, w) => sum + w.estimatedValue, 0);
 
     return {
       totalItems,
@@ -137,6 +139,20 @@ export function ImpactScreen() {
   }, [wasteLogs]);
 
   const streakDays = user?.streakDays ?? 0;
+
+  // Weekly Challenge — real progress toward saving 3 items this calendar week
+  // (Mon–Sun), counting anything logged as not-tossed. No more hardcoded 66%.
+  const WEEK_GOAL = 3;
+  const weekly = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const mondayIndex = (now.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+    startOfWeek.setDate(startOfWeek.getDate() - mondayIndex);
+    const startStr = formatLocalDate(startOfWeek);
+    const saves = wasteLogs.filter(w => w.action !== 'tossed' && w.date >= startStr).length;
+    return { saves, daysLeft: 7 - mondayIndex };
+  }, [wasteLogs]);
+  const weekProgress = Math.min(100, Math.round((weekly.saves / WEEK_GOAL) * 100));
 
   if (wasteLogs.length === 0) {
     return (
@@ -352,13 +368,13 @@ export function ImpactScreen() {
           <ImpactIcon type="trophy" size={26} color="var(--accent)" />
           <div>
             <div style={{ fontSize: '14px', fontWeight: 700 }}>Weekly Challenge</div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cook 3 meals from expiring ingredients</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Save {WEEK_GOAL} items from the bin this week</div>
           </div>
         </div>
-        <ProgressBar value={66} color="var(--accent)" />
+        <ProgressBar value={weekProgress} color="var(--accent)" />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <span>2 / 3 meals cooked</span>
-          <span style={{ color: 'var(--accent)' }}>4 days left</span>
+          <span>{Math.min(weekly.saves, WEEK_GOAL)} / {WEEK_GOAL} saved{weekly.saves >= WEEK_GOAL ? ' 🎉' : ''}</span>
+          <span style={{ color: 'var(--accent)' }}>{weekly.daysLeft} day{weekly.daysLeft === 1 ? '' : 's'} left</span>
         </div>
       </Card>
 

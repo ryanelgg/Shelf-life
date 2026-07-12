@@ -18,7 +18,7 @@ vi.mock('./supabase', () => ({
 
 vi.mock('./debug', () => ({ error: vi.fn(), warn: vi.fn(), log: vi.fn() }));
 
-import { enqueueOutbox, flushOutbox, outboxPending } from './syncOutbox';
+import { enqueueOutbox, flushOutbox, outboxPending, outboxHasPendingAdd } from './syncOutbox';
 
 // In-memory localStorage (node has none).
 function installLocalStorage() {
@@ -80,5 +80,24 @@ describe('syncOutbox', () => {
     enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Eggs' } });
     await flushOutbox();
     expect(h.calls).toContain('upsert:pantry_items');
+  });
+
+  it('outboxHasPendingAdd detects a queued add for an id', () => {
+    expect(outboxHasPendingAdd('a1')).toBe(false);
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Milk' } });
+    expect(outboxHasPendingAdd('a1')).toBe(true);
+    expect(outboxHasPendingAdd('a2')).toBe(false);
+  });
+
+  it('replays a queued add BEFORE a later edit/delete for the same id (ordering)', async () => {
+    // Simulates the offline add→edit/delete fix: an edit queued behind an add
+    // must replay after it, so the add can never clobber the edit.
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Milk' } });
+    enqueueOutbox({ kind: 'pantryUpdate', id: 'a1', row: { name: 'Oat Milk' } });
+    enqueueOutbox({ kind: 'pantryRemove', id: 'a1' });
+
+    await flushOutbox();
+
+    expect(h.calls).toEqual(['upsert:pantry_items', 'update:pantry_items', 'delete:pantry_items']);
   });
 });
