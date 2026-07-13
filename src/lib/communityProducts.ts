@@ -28,12 +28,19 @@ export async function submitCommunityProduct(
   barcode: string,
   product: { name: string; brand: string; category: FoodCategory },
 ): Promise<void> {
+  // Don't write blank/garbage rows that would then be served to other users.
+  const cleanBarcode = barcode.trim();
+  const cleanName = product.name.trim();
+  if (!cleanBarcode || !cleanName) {
+    debug.warn('[communityProducts] skipped submit: empty barcode or name');
+    return;
+  }
   const { data: { user } } = await supabase.auth.getUser();
   // onConflict: 'barcode' targets the community_products_pkey so a re-scan of
   // a known barcode updates the existing row instead of inserting a duplicate.
   const { error } = await supabase.from('community_products').upsert({
-    barcode,
-    name: product.name.trim(),
+    barcode: cleanBarcode,
+    name: cleanName,
     brand: product.brand.trim() || null,
     category: product.category,
     submitted_by: user?.id ?? null,

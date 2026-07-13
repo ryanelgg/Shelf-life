@@ -50,6 +50,9 @@ export function CookScreen() {
     : (user?.avoFreeChatsUsed ?? 0);
   const chatLimit = hasProAccess ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
   const chatsRemaining = chatLimit - chatsUsed;
+  // Chips are dead when AI is off (declined) — disable them so a tap isn't a
+  // silent no-op. (When consent is null the consent modal is covering the screen.)
+  const chipsDisabled = isStreaming || avoAiConsent === 'declined';
 
   // Reset chat state when the signed-in user changes (prevents history leaking between accounts)
   useEffect(() => {
@@ -68,8 +71,8 @@ export function CookScreen() {
     if (isStreaming) return;
     hapticLight();
     if (!hasProAccess) { setUpgradeReason('briefing'); setShowUpgrade(true); return; }
-    const userMsg: AvoDisplayMessage = { id: `u-${Date.now()}`, role: 'user', text: userText };
-    const avoMsg: AvoDisplayMessage = { id: `a-${Date.now() + 1}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
+    const userMsg: AvoDisplayMessage = { id: `u-${crypto.randomUUID()}`, role: 'user', text: userText };
+    const avoMsg: AvoDisplayMessage = { id: `a-${crypto.randomUUID()}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
     setMessages(prev => {
       const next = [...prev, userMsg, avoMsg];
       setAvoSessionMessages(next);
@@ -148,7 +151,10 @@ export function CookScreen() {
       // Rollback the chat credit since the request failed
       decrementAvoChat();
       const status = (err as { status?: number })?.status;
-      const errorMsg = status === 401
+      const friendly = (err as { friendly?: boolean })?.friendly;
+      const errorMsg = friendly
+        ? (err as Error).message
+        : status === 401
         ? "I couldn't verify your session — try signing out and back in."
         : status === 429
         ? "I'm getting a lot of questions right now — try again in a moment!"
@@ -248,7 +254,7 @@ export function CookScreen() {
       }}>
         <button
           onClick={() => showDailyBriefing()}
-          disabled={isStreaming}
+          disabled={chipsDisabled}
           style={{
             padding: '7px 13px',
             borderRadius: '20px',
@@ -258,11 +264,11 @@ export function CookScreen() {
             fontSize: '11px',
             fontWeight: 700,
             fontFamily: "'Cormorant Garamond', serif",
-            cursor: isStreaming ? 'default' : 'pointer',
+            cursor: chipsDisabled ? 'default' : 'pointer',
             whiteSpace: 'nowrap',
             flexShrink: 0,
             boxShadow: '0 1px 4px rgba(74,124,89,0.2)',
-            opacity: isStreaming ? 0.5 : 1,
+            opacity: chipsDisabled ? 0.5 : 1,
           }}
         >
           🥑 Today's briefing
@@ -271,7 +277,7 @@ export function CookScreen() {
           <button
             key={i}
             onClick={() => sendMessage(s)}
-            disabled={isStreaming}
+            disabled={chipsDisabled}
             style={{
               padding: '7px 13px',
               borderRadius: '20px',
@@ -281,11 +287,11 @@ export function CookScreen() {
               fontSize: '11px',
               fontWeight: 600,
               fontFamily: "'Cormorant Garamond', serif",
-              cursor: isStreaming ? 'default' : 'pointer',
+              cursor: chipsDisabled ? 'default' : 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               boxShadow: '0 1px 4px rgba(74,124,89,0.08)',
-              opacity: isStreaming ? 0.5 : 1,
+              opacity: chipsDisabled ? 0.5 : 1,
             }}
           >
             {s}

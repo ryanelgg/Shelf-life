@@ -21,12 +21,15 @@ Deno.serve(async (request) => {
 
   const groqApiKey = Deno.env.get('GROQ_API_KEY');
   if (!groqApiKey) {
-    return json({ error: 'GROQ_API_KEY is not configured for the avo-chat function' }, { status: 500 });
+    // Server misconfig — don't charge the user's daily quota for it.
+    await refundAiUsage(guard.userId, 'avo-chat');
+    return json({ error: 'Avo is not available right now. Please try again later.' }, { status: 500 });
   }
 
   try {
     const { messages } = await request.json() as { messages?: AvoChatMessage[] };
     if (!messages || messages.length === 0) {
+      await refundAiUsage(guard.userId, 'avo-chat');
       return json({ error: 'No messages provided' }, { status: 400 });
     }
 
@@ -39,6 +42,7 @@ Deno.serve(async (request) => {
     const safeMessages: AvoChatMessage[] = [];
     for (const m of messages) {
       if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') {
+        await refundAiUsage(guard.userId, 'avo-chat');
         return json({ error: 'Invalid message in request' }, { status: 400 });
       }
       safeMessages.push({ role: m.role, content: m.content.slice(0, MAX_CONTENT_CHARS) });
@@ -82,7 +86,9 @@ Deno.serve(async (request) => {
     return json({ text });
   } catch (error) {
     await refundAiUsage(guard.userId, 'avo-chat');
-    const message = error instanceof Error ? error.message : 'Unexpected function error';
-    return json({ error: message }, { status: 500 });
+    // Log the detail server-side; return a generic message so we don't leak
+    // internals to the client.
+    console.error('[avo-chat] error:', error instanceof Error ? error.message : error);
+    return json({ error: 'Avo had a hiccup. Please try again.' }, { status: 500 });
   }
 });

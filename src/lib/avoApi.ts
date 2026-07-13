@@ -32,7 +32,9 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Avo is taking longer than expected. Please try again.');
+      const e = new Error('Avo is taking longer than expected. Please try again.') as Error & { friendly?: boolean };
+      e.friendly = true;
+      throw e;
     }
     throw error;
   } finally {
@@ -53,7 +55,9 @@ async function requestFromUrl(url: string, init: RequestInit) {
 
   const data = await response.json() as AvoChatResponse;
   if (!data.text) {
-    throw new Error('Empty Avo response');
+    const e = new Error("Avo didn't have anything to say there — mind trying again?") as Error & { friendly?: boolean };
+    e.friendly = true;
+    throw e;
   }
 
   return data.text;

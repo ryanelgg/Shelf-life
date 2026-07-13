@@ -13,12 +13,10 @@ import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
 import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
-import { VoiceAddModal } from '../components/VoiceAddModal';
-import type { ParsedVoiceItem } from '../lib/voiceParse';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
 import { scanFridge } from '../lib/fridgeApi';
-import type { FoodCategory, StorageLocation, DateLabelType } from '../types';
+import type { FoodCategory, StorageLocation } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt' | 'fridge';
 type ReceiptListItem = {
@@ -157,8 +155,6 @@ export function AddItemScreen() {
   const [value, setValue] = useState('');
   const [customDays, setCustomDays] = useState('');
   // null = follow the category's safety-first default; set = user override.
-  const [dateTypeOverride, setDateTypeOverride] = useState<DateLabelType | null>(null);
-  const effectiveDateType = dateTypeOverride ?? getDefaultDateType(category);
   useEffect(() => {
     void preloadCoreDatabase();
   }, []);
@@ -166,7 +162,6 @@ export function AddItemScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [successName, setSuccessName] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [showVoice, setShowVoice] = useState(false);
   const addSourceRef = useRef<'manual' | 'barcode'>('manual');
 
   // Category-based freezer fallback days (used when no specific entry found)
@@ -401,7 +396,7 @@ export function AddItemScreen() {
       estimatedValue: Number.isFinite(itemVal)
         ? (itemVal as number)
         : (value.trim() !== '' && Number.isFinite(parseFloat(value)) ? parseFloat(value) : 2.99),
-      dateType: dateTypeOverride ?? getDefaultDateType(cat),
+      dateType: getDefaultDateType(cat),
     }, method);
 
     // Reset form
@@ -409,7 +404,6 @@ export function AddItemScreen() {
     setQuantity('1');
     setValue('');
     setCustomDays('');
-    setDateTypeOverride(null);
     setSuccessName(n);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
@@ -418,42 +412,6 @@ export function AddItemScreen() {
   // Add one or more items parsed from a spoken/typed phrase. Each item's
   // category + location come from the food database; expiry uses the spoken
   // date when given, otherwise the smart shelf-life default.
-  const handleVoiceAdd = (items: ParsedVoiceItem[]) => {
-    let added = 0;
-    let hitLimit = false;
-    for (const it of items) {
-      if (!canAddPantryItem()) { hitLimit = true; break; }
-      const { category: cat, location: loc } = resolveReceiptItem(it.name);
-      let expirationDate = it.expirationDate;
-      if (!expirationDate) {
-        const days = lookupShelfLife(it.name, loc) ?? DEFAULT_SHELF_LIFE[cat];
-        const d = new Date();
-        d.setDate(d.getDate() + days);
-        expirationDate = formatLocalDate(d);
-      }
-      addPantryItem({
-        id: generateItemId(),
-        name: it.name,
-        category: cat,
-        location: loc,
-        quantity: it.quantity > 0 ? it.quantity : 1,
-        unit: it.unit || 'pcs',
-        addedDate: formatLocalDate(new Date()),
-        expirationDate,
-        estimatedValue: 2.99,
-        dateType: getDefaultDateType(cat),
-      }, 'voice');
-      added++;
-    }
-    if (added > 0) {
-      hapticMedium();
-      setSuccessName(added === 1 ? items[0].name : `${added} items`);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 2000);
-    }
-    if (hitLimit) setShowUpgrade(true);
-  };
-
   return (
     <div className="screen-enter" style={{
       flex: 1,
@@ -611,21 +569,6 @@ export function AddItemScreen() {
 
       {mode === 'manual' && (
         <>
-          {/* Speak to add */}
-          <button
-            onClick={() => { hapticLight(); setShowVoice(true); }}
-            className="card-enter stagger-2"
-            aria-label="Speak to add items"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              width: '100%', padding: '12px', borderRadius: '12px', cursor: 'pointer',
-              background: 'var(--accent-dim)', border: '1px dashed var(--accent)',
-              color: 'var(--accent)', fontWeight: 700, fontSize: '14px',
-            }}
-          >
-            🎤 Speak to add — “add 2 milks expiring Friday”
-          </button>
-
           {/* Name input */}
           <Card className="card-enter stagger-3" style={{ position: 'relative', zIndex: 10 }}>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
@@ -863,37 +806,6 @@ export function AddItemScreen() {
               />
             </Card>
           </div>
-
-          <Card className="card-enter stagger-6">
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
-              Date Label
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {([
-                { type: 'best-by' as DateLabelType, label: 'Best if used by', hint: 'Quality' },
-                { type: 'use-by' as DateLabelType, label: 'Use by', hint: 'Safety' },
-              ]).map(opt => {
-                const active = effectiveDateType === opt.type;
-                return (
-                  <button
-                    key={opt.type}
-                    onClick={() => setDateTypeOverride(opt.type)}
-                    aria-pressed={active}
-                    style={{
-                      flex: 1, padding: '8px 6px', borderRadius: '10px',
-                      border: active ? '1.5px solid var(--accent)' : '1px solid var(--input-border)',
-                      background: active ? 'var(--accent-dim)' : 'transparent',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-                      fontFamily: "'Cormorant Garamond', serif",
-                    }}
-                  >
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-primary)' }}>{opt.label}</span>
-                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>{opt.hint}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
 
           {/* Add button */}
           <button
@@ -1254,12 +1166,6 @@ export function AddItemScreen() {
         />
       )}
 
-      {showVoice && (
-        <VoiceAddModal
-          onClose={() => setShowVoice(false)}
-          onConfirm={handleVoiceAdd}
-        />
-      )}
     </div>
   );
 }

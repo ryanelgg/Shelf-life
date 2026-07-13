@@ -28,11 +28,13 @@ Deno.serve(async (request) => {
 
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!anthropicKey) {
-    return json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
+    await refundAiUsage(guard.userId, 'receipt-ocr');
+    return json({ error: 'Receipt scanning is not available right now.' }, { status: 500 });
   }
   try {
     const { image } = await request.json() as { image?: string };
     if (!image) {
+      await refundAiUsage(guard.userId, 'receipt-ocr');
       return json({ error: 'No image provided' }, { status: 400 });
     }
     let mediaType = 'image/jpeg';
@@ -69,7 +71,10 @@ Deno.serve(async (request) => {
     if (!response.ok) {
       const details = await response.text();
       await refundAiUsage(guard.userId, 'receipt-ocr');
-      return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
+      // Log upstream detail server-side; return a generic 502 so a provider 429
+      // isn't mistaken for the app's own daily-limit 429, and internals aren't leaked.
+      console.error(`[receipt-ocr] Anthropic ${response.status}:`, details);
+      return json({ error: 'Receipt scan had trouble. Please try again.' }, { status: 502 });
     }
     const result = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
@@ -84,7 +89,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     Sentry.captureException(error);
     await refundAiUsage(guard.userId, 'receipt-ocr');
-    const message = error instanceof Error ? error.message : 'Unexpected error';
-    return json({ error: message }, { status: 500 });
+    console.error('[receipt-ocr] error:', error instanceof Error ? error.message : error);
+    return json({ error: 'Receipt scan had trouble. Please try again.' }, { status: 500 });
   }
 });

@@ -5,6 +5,7 @@ import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, 
 import { BROWSE_RECIPES } from '../data/recipes';
 import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
+import { clearOutbox } from '../lib/syncOutbox';
 import { resetAvoChatSession } from '../lib/avoChatSession';
 import * as debug from '../lib/debug';
 import {
@@ -162,6 +163,9 @@ export const useStore = create<ShelfLifeStore>()(
       resetOnboarding: () => {
         // Clear persisted storage first so persist middleware doesn't re-write stale data
         localStorage.removeItem('shelf-life-storage-v2');
+        // Drop any queued offline writes so they can't replay under a different
+        // account that signs in on this device next.
+        clearOutbox();
         resetAvoChatSession();
         set({
           user: null,
@@ -443,10 +447,11 @@ export const useStore = create<ShelfLifeStore>()(
         const s = useStore.getState();
         if (!s.user) return false;
         if (s.user.subscriptionTier === 'pro') return true;
-        // Households can only be created by a Pro owner (enforced server-side in
-        // the SECURITY DEFINER RPC), so a free member rides the owner's
-        // unlimited pantry rather than being blocked at the free cap.
-        if (s.household) return true;
+        // Free MEMBERS ride the Pro owner's unlimited pantry (owner Pro is
+        // enforced server-side at creation). But a free OWNER is not exempt —
+        // otherwise someone could subscribe, create a household, cancel Pro, and
+        // keep an unlimited solo pantry forever.
+        if (s.household && s.household.role === 'member') return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },
       isPro: (): boolean => {

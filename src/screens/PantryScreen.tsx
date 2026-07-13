@@ -129,10 +129,19 @@ export function PantryScreen() {
 
   useEffect(() => {
     if (pantryItems.length === 0) return;
+    let cancelled = false;
     const names = pantryItems.map(i => i.name);
     checkPantryForRecalls(names).then(matches => {
-      setRecallMatches(matches);
+      if (cancelled) return; // a newer check superseded this one
+      setRecallMatches(prev => {
+        // Re-surface the banner only when the set of matched items actually
+        // changed, so a genuinely new recall isn't hidden by an earlier dismiss.
+        const key = (m: RecallMatch[]) => m.map(x => x.id).sort().join('|');
+        if (key(prev) !== key(matches)) setRecallDismissed(false);
+        return matches;
+      });
     }).catch(() => {/* silently ignore - recall check is best-effort */});
+    return () => { cancelled = true; };
   }, [pantryItems]);
 
   const filteredItems = useMemo(() => {
@@ -903,9 +912,9 @@ function EditItemModal({ item, onSave, onClose }: {
           { label: 'Name', el: <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /> },
           { label: 'Quantity', el: (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button onClick={() => setQuantity(q => String(Math.max(1, parseFloat(q) - 1)))} style={qBtnStyle}>−</button>
+              <button onClick={() => setQuantity(q => String(Math.max(1, (parseFloat(q) || 0) - 1)))} style={qBtnStyle}>−</button>
               <input value={quantity} onChange={e => setQuantity(e.target.value)} style={{ ...inputStyle, textAlign: 'center', width: '60px' }} />
-              <button onClick={() => setQuantity(q => String(parseFloat(q) + 1))} style={qBtnStyle}>+</button>
+              <button onClick={() => setQuantity(q => String((parseFloat(q) || 0) + 1))} style={qBtnStyle}>+</button>
               <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="unit" style={{ ...inputStyle, width: '70px' }} />
             </div>
           )},
