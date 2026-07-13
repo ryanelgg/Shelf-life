@@ -964,7 +964,19 @@ function EditItemModal({ item, onSave, onClose }: {
         </div>
 
         <button
-          onClick={() => onSave({ name: name.trim(), quantity: parseFloat(quantity) || 1, unit, expirationDate: expDate, estimatedValue: parseFloat(value) || item.estimatedValue, location, dateType })}
+          onClick={() => onSave({
+            name: name.trim(),
+            quantity: parseFloat(quantity) || 1,
+            unit,
+            // A native date input can be cleared to ''; never save an empty/invalid
+            // date (it produces NaN day-math and kills reminders) — keep the old one.
+            expirationDate: expDate.trim() !== '' ? expDate : item.expirationDate,
+            // $0 is a valid price (free/giveaway items); only fall back when the
+            // field is blank or non-numeric, so `|| item.estimatedValue` can't eat a 0.
+            estimatedValue: value.trim() !== '' && Number.isFinite(parseFloat(value)) ? parseFloat(value) : item.estimatedValue,
+            location,
+            dateType,
+          })}
           style={{
             width: '100%', padding: '14px', background: 'var(--accent)', border: 'none',
             borderRadius: '12px', color: '#fff', fontFamily: "'Cormorant Garamond', serif",

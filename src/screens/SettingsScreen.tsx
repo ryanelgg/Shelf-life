@@ -88,7 +88,7 @@ export function SettingsScreen() {
   const handleSaveName = () => {
     if (!name.trim()) return;
     updateUser({ name: name.trim() });
-    if (supabaseUserId) syncProfileUpdates(supabaseUserId, { name: name.trim() });
+    if (supabaseUserId) syncProfileUpdates(supabaseUserId, { name: name.trim() }).catch(debug.error);
   };
 
   const handleDeleteAccount = async () => {
@@ -396,7 +396,7 @@ export function SettingsScreen() {
                         if (next.length === 0) next = ['none'];
                       }
                       updateUser({ dietaryPreferences: next });
-                      if (supabaseUserId) syncProfileUpdates(supabaseUserId, { dietary_preferences: next });
+                      if (supabaseUserId) syncProfileUpdates(supabaseUserId, { dietary_preferences: next }).catch(debug.error);
                     }}
                     style={{
                       padding: '6px 12px', borderRadius: '16px',
