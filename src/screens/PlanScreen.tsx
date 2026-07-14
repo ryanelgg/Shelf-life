@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { predictRestocks } from '../lib/shoppingRadar';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -429,9 +430,10 @@ function recipeSearchTokens(query: string): string[] {
 
 export function PlanScreen() {
   const {
-    mealPlan, recipes, pantryItems, browseRecipes, user,
+    mealPlan, recipes, pantryItems, browseRecipes, user, wasteLogs,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
     isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
+    incrementAvoChat, decrementAvoChat,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -454,6 +456,14 @@ export function PlanScreen() {
 
   const generateAvoMealPlan = useCallback(async () => {
     if (avoMealPlanLoading) return;
+    // Generating a plan is a real AI call, so meter it against the daily Avo
+    // quota (Pro: 20/day) exactly like chat does. If the day's quota is spent,
+    // don't fire the request; refund in the catch below if it fails to produce
+    // a usable plan, so a failed attempt never costs a use.
+    if (!incrementAvoChat()) {
+      setAvoMealPlanError("You've used all your Avo AI for today — it resets tomorrow.");
+      return;
+    }
     setAvoMealPlanLoading(true);
     setAvoMealPlanError(null);
     const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -505,11 +515,13 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
 
       setMealPlan(newPlan);
     } catch (e) {
+      // Refund the metered use — the request didn't yield a usable plan.
+      decrementAvoChat();
       setAvoMealPlanError(e instanceof Error ? e.message : 'Avo couldn\'t generate a plan. Try again!');
     } finally {
       setAvoMealPlanLoading(false);
     }
-  }, [avoMealPlanLoading, pantryItems, user, setMealPlan, browseRecipes]);
+  }, [avoMealPlanLoading, pantryItems, user, setMealPlan, browseRecipes, incrementAvoChat, decrementAvoChat]);
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
@@ -573,6 +585,40 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
 
   const displayedRecipes = showAllRecipes ? filteredRecipes : filteredRecipes.slice(0, 6);
   const totalSavings = plannedRecipes.reduce((sum, recipe) => sum + recipe.savingsEstimate, 0);
+
+  // ── Avo's Shopping Radar (Predictive Restock, PRO) ─────────────────────────
+  // Learned locally from add/use history — no AI call. Recomputes only when the
+  // pantry or waste history changes.
+  const restockPredictions = useMemo(
+    () => predictRestocks(pantryItems, wasteLogs),
+    [pantryItems, wasteLogs],
+  );
+  const [radarAddedCount, setRadarAddedCount] = useState(0);
+  const RADAR_LIST_NAME = '🛰️ Shopping Radar';
+
+  const addRadarToShoppingList = () => {
+    if (restockPredictions.length === 0) return;
+    const newItems: ShoppingItem[] = restockPredictions.map((p, i) => ({
+      id: `sr-${Date.now()}-${i}`,
+      name: p.name,
+      category: p.category,
+      quantity: p.quantity,
+      unit: p.unit || '',
+      checked: false,
+    }));
+    const existing = shoppingLists.find(l => l.name === RADAR_LIST_NAME);
+    if (existing) {
+      // Merge, skipping staples already on the list (case-insensitive) so
+      // re-tapping doesn't pile up duplicates.
+      const have = new Set(existing.items.map(it => it.name.toLowerCase()));
+      const merged = [...existing.items, ...newItems.filter(it => !have.has(it.name.toLowerCase()))];
+      updateShoppingList(existing.id, { items: merged });
+    } else {
+      addShoppingList({ id: `sl-${Date.now()}`, name: RADAR_LIST_NAME, items: newItems, createdDate: formatLocalDate(new Date()) });
+    }
+    setRadarAddedCount(newItems.length);
+    setTimeout(() => setRadarAddedCount(0), 2500);
+  };
 
   const handleCreateList = () => {
     if (!newListName.trim()) return;
@@ -667,6 +713,78 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           </div>
         </div>
       </div>
+
+      {/* Avo's Shopping Radar — predictive restock (PRO) */}
+      {isPro() && restockPredictions.length > 0 && (
+        <Card className="card-enter stagger-1" style={{
+          padding: '16px',
+          border: '1px solid rgba(74, 124, 89, 0.15)',
+          background: 'rgba(74, 124, 89, 0.03)',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Predicted from how fast you use your staples</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {restockPredictions.slice(0, 5).map((p) => {
+              const overdue = p.daysUntilRunOut < 0;
+              const label = overdue ? 'likely out now' : p.daysUntilRunOut === 0 ? 'runs out today' : `~${p.daysUntilRunOut}d left`;
+              const dot = p.confidence === 'high' ? 'var(--accent)' : p.confidence === 'medium' ? '#D4A44A' : 'var(--text-muted)';
+              return (
+                <div key={p.key} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '8px 12px', borderRadius: '10px',
+                  background: 'var(--bg-card)', border: '1px solid rgba(74, 124, 89, 0.08)',
+                }}>
+                  <FoodCategoryIcon category={p.category} size={16} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                    <div style={{ fontSize: '10px', color: overdue ? 'var(--expired)' : 'var(--text-muted)' }}>every ~{p.avgIntervalDays}d · {label}</div>
+                  </div>
+                  <span aria-label={`${p.confidence} confidence`} style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} />
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={addRadarToShoppingList}
+            style={{
+              marginTop: '12px', width: '100%', padding: '10px', borderRadius: '12px',
+              border: 'none', background: 'var(--accent)', color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            {radarAddedCount > 0 ? `✓ Added ${radarAddedCount} to your Shopping Radar list` : `🛒 Add ${restockPredictions.length} to shopping list`}
+          </button>
+        </Card>
+      )}
+
+      {/* Locked teaser for free users */}
+      {!isPro() && (
+        <Card
+          className="card-enter stagger-1"
+          onClick={() => setShowUpgrade(true)}
+          style={{
+            padding: '14px 16px', border: '1px solid rgba(74, 124, 89, 0.15)',
+            background: 'rgba(74, 124, 89, 0.03)', flexShrink: 0, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '10px',
+          }}
+        >
+          <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Avo predicts when you'll run out of staples and builds your list.</div>
+          </div>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '10px',
+            background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff', fontSize: '9px', fontWeight: 700,
+          }}>PRO</div>
+        </Card>
+      )}
 
       {/* Weekly meal plan */}
       <Card className="card-enter stagger-1" style={{
