@@ -100,4 +100,17 @@ describe('syncOutbox', () => {
 
     expect(h.calls).toEqual(['upsert:pantry_items', 'update:pantry_items', 'delete:pantry_items']);
   });
+
+  it('preserves a write enqueued DURING a flush (regression: concurrent add was clobbered)', async () => {
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Milk' } });
+    // Start the flush but do NOT await yet: its body runs synchronously up to
+    // the first replay await, so the queue snapshot is already taken.
+    const p = flushOutbox();
+    // A second write lands while the flush is in flight (e.g. another retry
+    // exhausts and enqueues). Pre-fix this was overwritten and lost.
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a2', name: 'Eggs' } });
+    await p;
+    expect(outboxPending()).toBe(1);
+    expect(outboxHasPendingAdd('a2')).toBe(true);
+  });
 });

@@ -79,6 +79,8 @@ export async function exportUserData(input: ExportInput): Promise<void> {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Defer revoke: revoking synchronously after click() can cancel the
+    // still-in-flight download in Safari/WebKit, yielding an empty file.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }

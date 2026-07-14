@@ -346,12 +346,10 @@ export function AddItemScreen() {
   const addReceiptItem = (item: ReceiptListItem) => {
     if (!canAddPantryItem()) { setShowUpgrade(true); return; }
     addReceiptItemToPantry(item);
-    // Filter by object identity, not name — avoids dropping every row when
-    // a receipt contains two lines with the same product name.
-    setReceiptItems(prev => {
-      const idx = prev.indexOf(item);
-      return prev.filter((_, i) => i !== idx);
-    });
+    // Filter by row id, not name or object identity — avoids dropping every
+    // row when two lines share a product name, and still removes the correct
+    // row after edits have replaced the original object reference.
+    setReceiptItems(prev => prev.filter(r => r.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);

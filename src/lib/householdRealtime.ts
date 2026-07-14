@@ -44,7 +44,7 @@ async function reloadSharedPantry(householdId: string): Promise<void> {
 function openChannel(householdId: string): void {
   const filter = `household_id=eq.${householdId}`;
 
-  channel = supabase
+  const ch = supabase
     .channel(`household:${householdId}`)
     .on(
       'postgres_changes',
@@ -67,6 +67,11 @@ function openChannel(householdId: string): void {
       },
     )
     .subscribe((status) => {
+      // Ignore status callbacks from a channel we've already torn down or
+      // replaced (resubscribe/unsubscribe). Without this, the old channel's
+      // CLOSED slips past the guard below and schedules an endless
+      // resubscribe→teardown→CLOSED→resubscribe loop.
+      if (ch !== channel) return;
       debug.log('[household] realtime status:', status, householdId);
       if (status === 'SUBSCRIBED') {
         const recovering = hadDrop;
@@ -84,6 +89,8 @@ function openChannel(householdId: string): void {
         scheduleResubscribe(householdId);
       }
     });
+
+  channel = ch;
 }
 
 function scheduleResubscribe(householdId: string): void {

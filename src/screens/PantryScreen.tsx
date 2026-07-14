@@ -146,7 +146,7 @@ export function PantryScreen() {
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
-    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expiring' || s === 'expiring-soon'; });
+    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expired' || s === 'expiring' || s === 'expiring-soon'; });
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       items = items.filter(i => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
@@ -160,7 +160,7 @@ export function PantryScreen() {
 
   const expiringCount = pantryItems.filter(i => {
     const status = getFreshnessStatus(i.expirationDate);
-    return status === 'expiring' || status === 'expiring-soon';
+    return status === 'expired' || status === 'expiring' || status === 'expiring-soon';
   }).length;
 
   const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
