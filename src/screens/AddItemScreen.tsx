@@ -134,7 +134,7 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
 
   useEffect(() => {
@@ -346,12 +346,10 @@ export function AddItemScreen() {
   const addReceiptItem = (item: ReceiptListItem) => {
     if (!canAddPantryItem()) { setShowUpgrade(true); return; }
     addReceiptItemToPantry(item);
-    // Filter by object identity, not name — avoids dropping every row when
-    // a receipt contains two lines with the same product name.
-    setReceiptItems(prev => {
-      const idx = prev.indexOf(item);
-      return prev.filter((_, i) => i !== idx);
-    });
+    // Filter by row id, not name or object identity — avoids dropping every
+    // row when two lines share a product name, and still removes the correct
+    // row after edits have replaced the original object reference.
+    setReceiptItems(prev => prev.filter(r => r.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
@@ -984,7 +982,11 @@ export function AddItemScreen() {
             </div>
             <button
               onClick={() => {
-                const slotsLeft = isPro()
+                // Pro users AND free members riding a Pro owner's household get
+                // an unlimited pantry (same rule as single-add's canAddPantryItem);
+                // only a free solo/owner user is capped. Households max out at 4.
+                const hasUnlimited = isPro() || household?.role === 'member';
+                const slotsLeft = hasUnlimited
                   ? receiptItems.length
                   : Math.max(0, FREE_LIMITS.pantryItems - pantryItems.length);
                 const toAdd = receiptItems.slice(0, slotsLeft);

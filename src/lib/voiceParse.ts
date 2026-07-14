@@ -144,7 +144,10 @@ function cleanName(raw: string): string {
 }
 
 function parseSegment(segment: string, today: Date): ParsedVoiceItem | null {
-  let text = segment.trim();
+  // Strip a lead command per-segment too: "add milk and add eggs" splits into
+  // ["milk", "add eggs"] and only the first was stripped up front, so the
+  // second item would otherwise be named literally "Add Eggs".
+  let text = segment.trim().replace(LEAD_COMMANDS, '').trim();
   if (!text) return null;
 
   // 1. Pull out a date phrase (if any) and remove it from the text.

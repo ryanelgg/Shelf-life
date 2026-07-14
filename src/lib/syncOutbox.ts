@@ -144,7 +144,11 @@ export async function flushOutbox(): Promise<void> {
       }
       remaining.push({ ...entry, attempts });
     }
-    writeOutbox(remaining);
+    // A write enqueued DURING this flush lands in localStorage but not in our
+    // `entries` snapshot. Re-read and preserve anything appended past the
+    // snapshot so a concurrent add/edit isn't silently clobbered (data loss).
+    const appendedDuringFlush = readOutbox().slice(entries.length);
+    writeOutbox([...remaining, ...appendedDuringFlush]);
     if (remaining.length > 0) {
       debug.warn(`[outbox] ${remaining.length} operation(s) still pending after flush`);
     }

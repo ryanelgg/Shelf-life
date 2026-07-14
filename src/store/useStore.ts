@@ -185,6 +185,7 @@ export const useStore = create<ShelfLifeStore>()(
           showSettings: false,
           avoAiConsent: null,
           notificationsEnabled: null,
+          hasSeenTutorial: false,
         });
         void cancelAllNotifications();
       },

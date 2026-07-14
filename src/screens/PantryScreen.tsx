@@ -146,7 +146,7 @@ export function PantryScreen() {
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
-    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expiring' || s === 'expiring-soon'; });
+    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expired' || s === 'expiring' || s === 'expiring-soon'; });
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       items = items.filter(i => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
@@ -160,7 +160,7 @@ export function PantryScreen() {
 
   const expiringCount = pantryItems.filter(i => {
     const status = getFreshnessStatus(i.expirationDate);
-    return status === 'expiring' || status === 'expiring-soon';
+    return status === 'expired' || status === 'expiring' || status === 'expiring-soon';
   }).length;
 
   const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
@@ -964,7 +964,20 @@ function EditItemModal({ item, onSave, onClose }: {
         </div>
 
         <button
-          onClick={() => onSave({ name: name.trim(), quantity: parseFloat(quantity) || 1, unit, expirationDate: expDate, estimatedValue: parseFloat(value) || item.estimatedValue, location, dateType })}
+          onClick={() => onSave({
+            name: name.trim(),
+            quantity: parseFloat(quantity) || 1,
+            unit,
+            // A blank date box must NOT save an empty date (→ "NaN days" + dead
+            // reminders); keep the existing date instead.
+            expirationDate: expDate || item.expirationDate,
+            // Respect an explicit $0 (free/giveaway food). Only fall back to the
+            // old value when the field is blank or non-numeric — `|| old` treated
+            // 0 as falsy and silently restored the old price, inflating savings.
+            estimatedValue: value.trim() === '' || isNaN(parseFloat(value)) ? item.estimatedValue : parseFloat(value),
+            location,
+            dateType,
+          })}
           style={{
             width: '100%', padding: '14px', background: 'var(--accent)', border: 'none',
             borderRadius: '12px', color: '#fff', fontFamily: "'Cormorant Garamond', serif",
