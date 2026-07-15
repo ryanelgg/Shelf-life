@@ -4,9 +4,16 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { useStore } from '../store/useStore';
 import { formatLocalDate } from '../types';
 import type { DietaryPref, AuthProvider, SubscriptionTier } from '../types';
-import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError } from '../lib/supabaseSync';
+import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError, verifyEmailOtp, resendEmailOtp } from '../lib/supabaseSync';
+import { meetsMinimumAge, isValidBirthYear } from '../lib/age';
 
-type Step = 'welcome' | 'signin' | 'name' | 'diet' | 'setup' | 'ready';
+type Step = 'welcome' | 'age' | 'under13' | 'signin' | 'name' | 'diet' | 'setup' | 'ready';
+
+// Minimum age. Pantre collects an email + personal food data and includes an AI
+// assistant, so we gate to 13+ (COPPA + App Store age-verification rules). This
+// is a neutral age-screen (ask birth year, don't hint the cutoff) rather than a
+// yes/no toggle, which is the compliant pattern.
+const MIN_AGE = 13;
 
 const SETUP_MESSAGES = [
   'Personalizing your recipes...',
@@ -29,6 +36,8 @@ const DIETS: { id: DietaryPref; label: string; emoji: string }[] = [
 export function OnboardingFlow() {
   const { setUser, oauthNewUser, setOAuthNewUser } = useStore();
   const [step, setStep] = useState<Step>('welcome');
+  const [birthYear, setBirthYear] = useState('');
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [authProvider, setAuthProvider] = useState<AuthProvider>('guest');
   const [email, setEmail] = useState<string | undefined>();
@@ -42,6 +51,25 @@ export function OnboardingFlow() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSubmitting, setEmailSubmitting] = useState(false);
   const [emailNotice, setEmailNotice] = useState<string | null>(null);
+  const [awaitingCode, setAwaitingCode] = useState(false);
+  const [codeValue, setCodeValue] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  function handleAgeContinue() {
+    const year = Number(birthYear.trim());
+    const thisYear = new Date().getFullYear();
+    if (!isValidBirthYear(year, thisYear)) {
+      setAgeError('Please enter your 4-digit birth year.');
+      return;
+    }
+    if (!meetsMinimumAge(year, MIN_AGE, thisYear)) {
+      setStep('under13');
+      return;
+    }
+    setAgeError(null);
+    setStep('signin');
+  }
 
   // After OAuth redirect: auto-skip sign-in and advance to the name step.
   // We don't pre-fill the name — the user types it fresh.
@@ -57,6 +85,12 @@ export function OnboardingFlow() {
 
     return () => window.clearTimeout(timer);
   }, [oauthNewUser, setOAuthNewUser]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = window.setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [resendCooldown]);
 
   const handleSignIn = async (provider: 'apple' | 'google') => {
     setAuthProvider(provider);
@@ -91,7 +125,13 @@ export function OnboardingFlow() {
       } else {
         const { needsConfirmation } = await signUpWithEmail(trimmedEmail, passwordValue);
         if (needsConfirmation) {
-          setEmailNotice(`We sent a confirmation link to ${trimmedEmail}. Open it to finish setting up your account.`);
+          // Switch to the 6-digit code entry screen
+          setPendingEmail(trimmedEmail);
+          setAwaitingCode(true);
+          setCodeValue('');
+          setEmailError(null);
+          setEmailNotice(null);
+          setResendCooldown(60);
           setEmailSubmitting(false);
         }
         // If !needsConfirmation, auth listener will fire SIGNED_IN and route the user
@@ -107,6 +147,44 @@ export function OnboardingFlow() {
       const msg = e instanceof Error ? e.message : 'Something went wrong. Please try again.';
       setEmailError(msg);
       setEmailSubmitting(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    const code = codeValue.trim();
+    if (code.length < 6) {
+      setEmailError('Enter the code from your email');
+      return;
+    }
+    setEmailSubmitting(true);
+    setEmailError(null);
+    setEmailNotice(null);
+    try {
+      setAuthProvider('email');
+      await verifyEmailOtp(pendingEmail, code);
+      // verifyOtp creates a session → SIGNED_IN listener in App.tsx routes the
+      // user into onboarding automatically. Leave the spinner up during that.
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : '';
+      // Supabase surfaces OTP failures as "token" errors — translate to user-friendly copy.
+      const msg = !raw || /token|otp|invalid|expired/i.test(raw)
+        ? 'Expired or invalid code — please try again.'
+        : raw;
+      setEmailError(msg);
+      setEmailSubmitting(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setEmailError(null);
+    setEmailNotice(null);
+    try {
+      await resendEmailOtp(pendingEmail);
+      setResendCooldown(60);
+      setEmailNotice(`New code sent to ${pendingEmail}.`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not resend the code. Please wait a moment and try again.';
+      setEmailError(msg);
     }
   };
 
@@ -133,13 +211,21 @@ export function OnboardingFlow() {
       createdAt: new Date().toISOString(),
       onboardingComplete: true,
       streakDays: 0,
-      lastActiveDate: formatLocalDate(new Date()),
+      // Empty, not today: the first "eaten/saved" log then counts as streak
+      // day 1 instead of the streak sticking at 0 on day one.
+      lastActiveDate: '',
       subscriptionTier: chosenTier,
       avoChatCount: 0,
       avoChatResetDate: formatLocalDate(new Date()),
+      // Trial starts lazily on first Avo chat (see incrementAvoChat), so a user
+      // who never opens Avo doesn't burn their 7 days.
+      avoTrialStartedAt: null,
+      avoFreeChatsUsed: 0,
     };
     setUser(newUser);
-    if (supabaseUserId) upsertProfile(newUser, supabaseUserId);
+    // Fire-and-forget: the user proceeds regardless, but swallow rejections so
+    // a failed upsert doesn't surface as an unhandled promise rejection.
+    if (supabaseUserId) upsertProfile(newUser, supabaseUserId).catch(() => {});
   };
 
   return (
@@ -166,7 +252,7 @@ export function OnboardingFlow() {
           </p>
           <button
             className="btn-solid"
-            onClick={() => setStep('signin')}
+            onClick={() => setStep('age')}
             style={{
               padding: '16px 48px',
               background: 'var(--accent)',
@@ -185,7 +271,82 @@ export function OnboardingFlow() {
         </div>
       )}
 
-      {step === 'signin' && (
+      {step === 'age' && (
+        <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
+          <AvocadoMascot size={70} />
+          <h2 style={{ fontSize: '22px', fontWeight: 800 }}>What year were you born?</h2>
+          <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.5, maxWidth: '280px' }}>
+            We ask to make sure Pantre is right for you. We don't store this.
+          </p>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={birthYear}
+            onChange={e => { setBirthYear(e.target.value); setAgeError(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') handleAgeContinue(); }}
+            placeholder="YYYY"
+            aria-label="Birth year"
+            style={{
+              width: '160px',
+              padding: '14px',
+              fontSize: '18px',
+              textAlign: 'center',
+              borderRadius: '12px',
+              border: '1.5px solid var(--bg-card-hover)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              fontFamily: "'Cormorant Garamond', serif",
+            }}
+          />
+          {ageError && (
+            <p style={{ fontSize: '13px', color: 'var(--tomato)', margin: 0 }}>{ageError}</p>
+          )}
+          <button
+            className="btn-solid"
+            onClick={handleAgeContinue}
+            style={{
+              padding: '14px 48px',
+              background: 'var(--accent)',
+              border: 'none',
+              borderRadius: '14px',
+              color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      )}
+
+      {step === 'under13' && (
+        <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', maxWidth: '300px' }}>
+          <AvocadoMascot size={70} />
+          <h2 style={{ fontSize: '22px', fontWeight: 800 }}>Thanks for stopping by! 🥑</h2>
+          <p style={{ fontSize: '15px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Pantre is built for ages {MIN_AGE} and up, so you can't create an account just yet. Come back when you're a little older — Avo will be here waiting!
+          </p>
+          <button
+            onClick={() => { setStep('age'); setBirthYear(''); setAgeError(null); }}
+            style={{
+              padding: '12px 32px',
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '14px',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+            }}
+          >
+            I entered the wrong year
+          </button>
+        </div>
+      )}
+
+      {step === 'signin' && !awaitingCode && (
         <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
           <AvocadoMascot size={70} />
           <h2 style={{ fontSize: '22px', fontWeight: 800 }}>Sign in to save your data</h2>
@@ -206,8 +367,8 @@ export function OnboardingFlow() {
                 width: '100%',
               }}
             >
-              <svg width="16" height="20" viewBox="0 0 15 18" fill="#fff">
-                <path d="M14.94 12.66c-.29.67-.63 1.28-1.03 1.85-.55.77-1 1.3-1.35 1.6-.54.5-1.12.75-1.73.77-.44 0-.97-.13-1.59-.38-.62-.26-1.19-.38-1.71-.38-.55 0-1.13.12-1.76.38-.63.25-1.13.39-1.53.4-.59.03-1.18-.24-1.77-.79-.38-.33-.85-.89-1.42-1.69-.61-.85-1.11-1.84-1.5-2.97C.18 10.1 0 8.82 0 7.58c0-1.42.31-2.64.92-3.66A5.4 5.4 0 0 1 2.86 2a5.2 5.2 0 0 1 2.6-.74c.47 0 1.08.15 1.84.44.76.29 1.24.44 1.46.44.16 0 .7-.17 1.62-.52.87-.32 1.6-.46 2.2-.4 1.63.13 2.85.78 3.66 1.95-1.46.88-2.18 2.12-2.16 3.7.02 1.24.46 2.27 1.33 3.08.39.38.83.67 1.33.87-.11.31-.22.61-.35.89zM11.15.37c0 .97-.35 1.87-1.06 2.71-.85 1-1.88 1.57-3 1.48a3 3 0 0 1-.02-.37c0-.93.41-1.93 1.13-2.75.36-.41.82-.76 1.38-1.03.55-.27 1.08-.42 1.57-.45.02.14.02.27 0 .41z"/>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
               </svg>
               Sign in with Apple
             </button>
@@ -349,7 +510,7 @@ export function OnboardingFlow() {
                     background: 'var(--accent-dim)',
                     borderRadius: '8px',
                   }}>
-                    ✉ {emailNotice}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>{emailNotice}
                   </div>
                 )}
                 <button
@@ -402,6 +563,110 @@ export function OnboardingFlow() {
           >
             Continue without an account
           </button>
+        </div>
+      )}
+
+      {step === 'signin' && awaitingCode && (
+        <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
+          <AvocadoMascot size={70} />
+          <h2 style={{ fontSize: '22px', fontWeight: 800, textAlign: 'center' }}>Check your email!</h2>
+          <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: '280px', textAlign: 'center' }}>
+            Avo sent a 6-digit code to<br />
+            <strong style={{ color: 'var(--text-primary)' }}>{pendingEmail}</strong>
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px' }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={codeValue}
+              onChange={e => setCodeValue(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && void handleVerifyCode()}
+              placeholder="· · · · · ·"
+              disabled={emailSubmitting}
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '16px',
+                borderRadius: '14px',
+                border: '2px solid var(--accent)',
+                background: 'var(--input-bg)',
+                color: 'var(--text-primary)',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '30px',
+                fontWeight: 700,
+                letterSpacing: '0.4em',
+                textAlign: 'center',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+            {emailError && (
+              <div style={{ fontSize: '12px', color: 'var(--expired)', padding: '2px 4px', lineHeight: 1.4 }}>
+                {emailError}
+              </div>
+            )}
+            {emailNotice && (
+              <div style={{ fontSize: '12px', color: 'var(--accent)', padding: '8px 10px', lineHeight: 1.4, background: 'var(--accent-dim)', borderRadius: '8px' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>{emailNotice}
+              </div>
+            )}
+            <button
+              onClick={() => { void handleVerifyCode(); }}
+              disabled={emailSubmitting || codeValue.length < 6}
+
+              style={{
+                padding: '14px',
+                borderRadius: '14px',
+                border: 'none',
+                background: 'var(--accent)',
+                color: '#fff',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '15px',
+                fontWeight: 700,
+                cursor: (emailSubmitting || codeValue.length < 6) ? 'not-allowed' : 'pointer',
+                opacity: (emailSubmitting || codeValue.length < 6) ? 0.7 : 1,
+                width: '100%',
+              }}
+            >
+              {emailSubmitting ? '…' : "Let's go!"}
+            </button>
+            <button
+              onClick={() => { void handleResendCode(); }}
+              disabled={emailSubmitting || resendCooldown > 0}
+              style={{
+                padding: '12px',
+                borderRadius: '14px',
+                border: '1px solid var(--input-border)',
+                background: 'none',
+                color: resendCooldown > 0 ? 'var(--text-muted)' : 'var(--accent)',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: (emailSubmitting || resendCooldown > 0) ? 'not-allowed' : 'pointer',
+                width: '100%',
+              }}
+            >
+              {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
+            </button>
+            <button
+              onClick={() => { setAwaitingCode(false); setCodeValue(''); setEmailError(null); setEmailNotice(null); setResendCooldown(0); }}
+              disabled={emailSubmitting}
+              style={{
+                padding: '6px',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: emailSubmitting ? 'not-allowed' : 'pointer',
+              }}
+            >
+              ← Use a different email
+            </button>
+          </div>
         </div>
       )}
 

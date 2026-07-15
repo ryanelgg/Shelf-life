@@ -1,12 +1,16 @@
 import { useState, useCallback, useRef } from 'react';
+import posthog from 'posthog-js';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { CancelProModal } from '../components/CancelProModal';
+import { HouseholdModal } from '../components/HouseholdModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SignOutModal } from '../components/SignOutModal';
+import { LegalModal, type LegalDoc } from '../components/LegalModal';
+import { openAppStoreReview } from '../lib/rateApp';
 import type { DietaryPref } from '../types';
-import { deleteAccount, resetCloudUserData, signOut, syncProfileUpdates } from '../lib/supabaseSync';
+import { deleteAccount, signOut, syncProfileUpdates } from '../lib/supabaseSync';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { exportUserData } from '../lib/dataExport';
 import * as debug from '../lib/debug';
@@ -20,14 +24,15 @@ const DIETS: { id: DietaryPref; label: string }[] = [
   { id: 'nut-free', label: 'Nut-free' },
 ];
 
-const APP_STORE_REVIEW_URL = (import.meta.env.VITE_APP_STORE_REVIEW_URL as string | undefined)?.trim();
 
 export function SettingsScreen() {
-  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs } = useStore();
+  const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCancelPro, setShowCancelPro] = useState(false);
+  const [showHousehold, setShowHousehold] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [name, setName] = useState(user?.name || '');
   const [editingDiet, setEditingDiet] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -71,8 +76,10 @@ export function SettingsScreen() {
     }
     const granted = await ensureNotificationPermission();
     if (granted) {
+      posthog.capture('notification_permission_granted');
       setNotificationsEnabled(true);
     } else {
+      posthog.capture('notification_permission_denied');
       // Permission denied — user has to flip it in iOS Settings
       showToast('Notifications are blocked. Go to iOS Settings → Pantre → Notifications to turn them on.');
     }
@@ -91,10 +98,8 @@ export function SettingsScreen() {
   };
 
   const handleSignOut = async () => {
-    const isPro = user?.subscriptionTier === 'pro';
-    if (!isPro && supabaseUserId) {
-      await resetCloudUserData(supabaseUserId);
-    }
+    // Sign-out only ends the session. Cloud data is preserved so the user keeps
+    // their pantry on next login. Permanent deletion lives in handleDeleteAccount.
     await signOut();
     resetOnboarding();
   };
@@ -257,6 +262,41 @@ export function SettingsScreen() {
           )}
         </Card>
 
+        {/* Household sharing (Pro) */}
+        <Card>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+            Household
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ paddingRight: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>
+                {household ? 'Sharing on' : 'Share your pantry'}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {household
+                  ? `Code ${household.inviteCode} · up to 4 members`
+                  : 'One shared pantry for up to 4 people · Pro'}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                // Pro-gated: free users with no household are sent to upgrade.
+                if (household || user?.subscriptionTier === 'pro') setShowHousehold(true);
+                else setShowUpgrade(true);
+              }}
+              style={{
+                padding: '8px 16px', borderRadius: '10px', border: 'none',
+                background: household ? 'var(--accent)' : 'linear-gradient(135deg, #D4A44A, #B8862D)',
+                color: '#fff',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              {household ? 'Manage' : 'Set up'}
+            </button>
+          </div>
+        </Card>
+
         {/* Theme */}
         <Card>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -298,7 +338,7 @@ export function SettingsScreen() {
               <div style={{ fontSize: '14px', fontWeight: 600 }}>Avo AI</div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
                 {avoAiConsent === 'granted'
-                  ? 'On — your messages and pantry items are sent to Anthropic to generate responses'
+                  ? 'On — chat is processed by Groq; receipt & fridge photo scans by Anthropic'
                   : avoAiConsent === 'declined'
                   ? 'Off — chat is disabled'
                   : 'Not set — you\'ll be asked when you open chat'}
@@ -398,29 +438,27 @@ export function SettingsScreen() {
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <SettingsLink
               label="Contact Support"
-              onClick={() => window.open('mailto:support@pantre.app?subject=Pantre%20Support', '_blank')}
+              onClick={() => window.open('mailto:support@usepantre.me?subject=Pantre%20Support', '_blank')}
             />
             <SettingsLink
               label="Send Feedback"
-              onClick={() => window.open('mailto:feedback@pantre.app?subject=Pantre%20Feedback', '_blank')}
+              onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank')}
             />
-            {APP_STORE_REVIEW_URL && (
-              <SettingsLink
-                label="Rate Pantre"
-                onClick={() => window.open(APP_STORE_REVIEW_URL, '_blank')}
-              />
-            )}
+            <SettingsLink
+              label="Rate Pantre"
+              onClick={() => { posthog.capture('rate_app_tapped'); openAppStoreReview(); }}
+            />
             <SettingsLink
               label="Download My Data"
               onClick={() => { void handleExportData(); }}
             />
             <SettingsLink
               label="Privacy Policy"
-              onClick={() => window.open('https://pantre.app/privacy', '_blank')}
+              onClick={() => setLegalDoc('privacy')}
             />
             <SettingsLink
-              label="Terms of Service"
-              onClick={() => window.open('https://pantre.app/terms', '_blank')}
+              label="Terms of Use"
+              onClick={() => setLegalDoc('terms')}
               hideBorder
             />
           </div>
@@ -448,7 +486,7 @@ export function SettingsScreen() {
               lineHeight: 1.6,
             }}>
               <div style={{ marginBottom: '4px', color: 'var(--text-muted)', fontWeight: 600 }}>Powered by</div>
-              <div>Anthropic Claude · Supabase · Apple · Google</div>
+              <div>Groq · Anthropic Claude · Supabase · Apple · Google</div>
             </div>
           </div>
         </Card>
@@ -508,6 +546,10 @@ export function SettingsScreen() {
         />
       )}
 
+      {showHousehold && (
+        <HouseholdModal onClose={() => setShowHousehold(false)} />
+      )}
+
       {showDeleteAccount && (
         <DeleteAccountModal
           onClose={() => setShowDeleteAccount(false)}
@@ -521,6 +563,10 @@ export function SettingsScreen() {
           onClose={() => setShowSignOut(false)}
           onConfirm={handleSignOut}
         />
+      )}
+
+      {legalDoc && (
+        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
       )}
 
       {/* Toast */}

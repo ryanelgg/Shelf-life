@@ -1,16 +1,21 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
-import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { getMyHousehold } from './lib/households';
+import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
+import { publishWidgetData } from './lib/widget';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import * as debug from './lib/debug';
+import posthog from 'posthog-js';
 
 const PantryScreen = lazy(() => import('./screens/PantryScreen').then((module) => ({ default: module.PantryScreen })));
 const AddItemScreen = lazy(() => import('./screens/AddItemScreen').then((module) => ({ default: module.AddItemScreen })));
@@ -39,12 +44,18 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
     {
       label: 'Scan',
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="7" width="4" height="10" rx="1"/>
-          <rect x="9" y="5" width="2" height="14" rx="1"/>
-          <rect x="13" y="7" width="3" height="10" rx="1"/>
-          <rect x="18" y="6" width="2" height="12" rx="1"/>
-          <line x1="1" y1="12" x2="23" y2="12" stroke="none"/>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {/* Corner brackets framing the barcode */}
+          <path d="M3 8V5a2 2 0 0 1 2-2h3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M21 16v3a2 2 0 0 1-2 2h-3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          {/* Variable-width barcode bars */}
+          <line x1="7" y1="8" x2="7" y2="16" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
+          <line x1="10" y1="8" x2="10" y2="16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+          <line x1="13" y1="8" x2="13" y2="16" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="15.5" y1="8" x2="15.5" y2="16" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="18" y1="8" x2="18" y2="16" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
         </svg>
       ),
       action: () => { setOpen(false); onScan(); },
@@ -82,6 +93,7 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
         >
           <button
             onClick={opt.action}
+            aria-label={opt.label}
             style={{
               width: '48px',
               height: '48px',
@@ -115,6 +127,8 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
 
       <button
         onClick={() => setOpen(o => !o)}
+        aria-label={open ? 'Close add menu' : 'Add item'}
+        aria-expanded={open}
         style={{
           position: 'fixed',
           bottom: '86px',
@@ -161,7 +175,7 @@ function ScreenFallback({ label }: { label: string }) {
 }
 
 export default function App() {
-  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser } = useStore();
+  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId } = useStore();
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -173,12 +187,18 @@ export default function App() {
       debug.log('[oauth] deep link received, closing browser');
       await Browser.close();
       const hashParams = new URLSearchParams(url.split('#')[1] ?? '');
+      const queryParams = new URLSearchParams((url.split('?')[1] ?? '').split('#')[0]);
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
-      debug.log('[oauth] tokens present:', { access: !!accessToken, refresh: !!refreshToken });
+      const code = queryParams.get('code');
+      debug.log('[oauth] tokens present:', { access: !!accessToken, refresh: !!refreshToken, code: !!code });
       if (accessToken && refreshToken) {
         const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
         debug.log('[oauth] setSession result:', { user: data.session?.user.id, error: error?.message });
+      } else if (code) {
+        debug.log('[oauth] PKCE code received, exchanging for session');
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        debug.log('[oauth] exchangeCode result:', { user: data.session?.user?.id, error: error?.message });
       } else {
         debug.warn('[oauth] missing tokens — URL was:', url);
       }
@@ -192,16 +212,33 @@ export default function App() {
     if (meta) meta.setAttribute('content', theme === 'dark' ? '#1a1612' : '#faf7f2');
   }, [theme]);
 
+  // Keep the iOS home-screen widget in sync with the pantry (no-op off iOS).
+  const pantryItems = useStore(s => s.pantryItems);
   useEffect(() => {
+    void publishWidgetData(pantryItems);
+  }, [pantryItems]);
+
+  useEffect(() => {
+    // Monotonic token: each auth event claims a number, and any async work
+    // checks it's still the latest before applying state. This stops two
+    // overlapping events (e.g. rapid SIGNED_IN/TOKEN_REFRESHED) from loading
+    // profile/data out of order and clobbering each other.
+    let authSeq = 0;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const mySeq = ++authSeq;
       debug.log('[auth] state change:', event, 'userId:', session?.user?.id);
       if (event === 'SIGNED_OUT') {
         if (wasSignOutUserInitiated()) {
           clearUserInitiatedSignOutFlag();
+          posthog.reset();
           resetOnboarding();
         } else {
-          debug.log('[auth] passive sign-out — keeping local data');
-          setSupabaseUserId(null);
+          // Passive sign-out (token expiry / offline). KEEP supabaseUserId so
+          // edits keep flowing into the offline outbox and replay when the
+          // session refreshes — nulling it made writes skip sync entirely and
+          // then get overwritten by the cloud reload on reconnect.
+          debug.log('[auth] passive sign-out — keeping local data + session id for outbox');
         }
         return;
       }
@@ -210,48 +247,72 @@ export default function App() {
       const sbUser = session.user;
       setSupabaseUserId(sbUser.id);
 
+      // loadProfile throws only on a real error. A null result means the row
+      // genuinely doesn't exist (a new user). So a thrown error here is a
+      // transient failure — bail WITHOUT routing the user into onboarding, so a
+      // returning user keeps their locally-persisted session instead of being
+      // forced to re-onboard on a network blip.
+      let profile;
       try {
-        const profile = await loadProfile(sbUser.id);
-        debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
-        if (profile?.onboarding_complete) {
-          setUser({
-            id: sbUser.id,
-            name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
-            email: profile.email ?? sbUser.email,
-            authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
-            dietaryPreferences: (profile.dietary_preferences ?? []) as never,
-            createdAt: profile.created_at,
-            onboardingComplete: true,
-            streakDays: profile.streak_days,
-            lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
-            subscriptionTier: profile.subscription_tier as 'free' | 'pro',
-            avoChatCount: profile.avo_chat_count,
-            avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
-          });
-          debug.log('[auth] setUser called — transitioning to main app');
-          try {
-            const { pantryItems, wasteLogs } = await loadAllData(sbUser.id);
-            loadCloudData(pantryItems, wasteLogs);
-            debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length });
-          } catch (err) {
-            debug.warn('[auth] loadAllData failed, continuing without cloud data:', err);
-          }
-        } else {
-          const rawProvider = sbUser.app_metadata?.provider;
-          const provider: 'apple' | 'google' | 'email' =
-            rawProvider === 'apple' ? 'apple' :
-            rawProvider === 'google' ? 'google' :
-            'email';
-          debug.log('[auth] no onboarding — calling setOAuthNewUser, provider:', provider);
-          setOAuthNewUser({
-            name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
-            email: sbUser.email ?? '',
-            provider,
-          });
-        }
+        profile = await loadProfile(sbUser.id);
       } catch (err) {
-        debug.error('[auth] handler threw — user will be stranded unless we recover:', err);
-        const provider = sbUser.app_metadata?.provider === 'apple' ? 'apple' : 'google';
+        debug.error('[auth] loadProfile failed (transient) — not routing to onboarding:', err);
+        return;
+      }
+      if (mySeq !== authSeq) return; // superseded by a newer auth event
+
+      debug.log('[auth] loaded profile:', { hasProfile: !!profile, onboardingComplete: profile?.onboarding_complete });
+      if (profile?.onboarding_complete) {
+        // Transition to main app BEFORE loading pantry/waste data — a failed
+        // data load must not leave the user stranded on the sign-in screen.
+        setUser({
+          id: sbUser.id,
+          name: profile.name ?? sbUser.user_metadata?.full_name ?? 'Friend',
+          email: profile.email ?? sbUser.email,
+          authProvider: profile.auth_provider as 'google' | 'apple' | 'guest',
+          dietaryPreferences: (profile.dietary_preferences ?? []) as never,
+          createdAt: profile.created_at,
+          onboardingComplete: true,
+          streakDays: profile.streak_days,
+          // Empty (not today) when the profile has never logged, so the user's
+          // very first save counts as streak day 1 instead of showing 0.
+          lastActiveDate: profile.last_active_date ?? '',
+          subscriptionTier: profile.subscription_tier as 'free' | 'pro',
+          avoChatCount: profile.avo_chat_count,
+          avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
+          avoTrialStartedAt: profile.avo_trial_started_at ?? null,
+          avoFreeChatsUsed: profile.avo_free_chats_used ?? 0,
+        });
+        debug.log('[auth] setUser called — transitioning to main app');
+        posthog.identify(sbUser.id, {
+          email: sbUser.email,
+          tier: profile.subscription_tier,
+          auth_provider: profile.auth_provider,
+        });
+        try {
+          // Resolve the user's household first so we load the SHARED pantry
+          // (every member's items live under the same household_id).
+          const household = await getMyHousehold(sbUser.id);
+          if (mySeq !== authSeq) return; // superseded while loading
+          setHousehold(household);
+          // Push any writes that failed to sync while offline UP to the cloud
+          // BEFORE we read it back — otherwise loadAllData would overwrite local
+          // state and silently drop offline adds / resurrect offline deletes.
+          await flushOutbox();
+          const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
+          if (mySeq !== authSeq) return; // superseded while loading
+          loadCloudData(pantryItems, wasteLogs);
+          debug.log('[auth] cloud data loaded:', { pantryCount: pantryItems.length, wasteCount: wasteLogs.length, household: household?.id ?? null });
+        } catch (err) {
+          debug.warn('[auth] loadAllData failed, keeping local data:', err);
+        }
+      } else {
+        const rawProvider = sbUser.app_metadata?.provider;
+        const provider: 'apple' | 'google' | 'email' =
+          rawProvider === 'apple' ? 'apple' :
+          rawProvider === 'google' ? 'google' :
+          'email';
+        debug.log('[auth] no onboarding — calling setOAuthNewUser, provider:', provider);
         setOAuthNewUser({
           name: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? '',
           email: sbUser.email ?? '',
@@ -261,7 +322,17 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-  }, [loadCloudData, resetOnboarding, setOAuthNewUser, setSupabaseUserId, setUser]);
+  }, [loadCloudData, resetOnboarding, setOAuthNewUser, setSupabaseUserId, setUser, setHousehold]);
+
+  // Live-sync the shared pantry while the user is in a household. Re-subscribes
+  // when the household changes (create/join/leave) and tears down on sign-out.
+  useEffect(() => {
+    if (household?.id && supabaseUserId) {
+      subscribeHousehold(household.id);
+      return () => unsubscribeHousehold();
+    }
+    unsubscribeHousehold();
+  }, [household?.id, supabaseUserId]);
 
   if (!user?.onboardingComplete) {
     return (
@@ -314,6 +385,7 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      <TutorialOverlay />
       <KeyboardScrollManager />
     </div>
   );

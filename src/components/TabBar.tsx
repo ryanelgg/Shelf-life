@@ -60,7 +60,7 @@ function PlanIcon() {
 }
 
 const tabs: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
-  { id: 'pantry', label: 'Pantry', Icon: PantryIcon },
+  { id: 'pantry', label: 'Pantre', Icon: PantryIcon },
   { id: 'add', label: 'Add', Icon: AddIcon },
   { id: 'cook', label: 'Chat', Icon: AvoIcon },
   { id: 'impact', label: 'Impact', Icon: ImpactIcon },
@@ -85,6 +85,8 @@ export function TabBar() {
             key={id}
             className="btn-tab"
             onClick={() => setActiveTab(id)}
+            aria-label={label}
+            aria-current={isActive ? 'page' : undefined}
             style={{
               flex: 1,
               display: 'flex',

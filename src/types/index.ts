@@ -2,8 +2,9 @@ export type SubscriptionTier = 'free' | 'pro';
 
 export const FREE_LIMITS = {
   pantryItems: 20,
-  avoChatTotal: 5,     // free users: 5 chats forever
-  proChatPerDay: 20,   // pro users: 20 chats per day
+  avoChatTotal: 5,     // free users (after any trial): 5 chats forever
+  proChatPerDay: 20,   // pro users AND active-trial users: 20 chats per day
+  avoTrialDays: 7,     // new users get 7 days of Pro-level Avo access
 } as const;
 
 export type AuthProvider = 'apple' | 'google' | 'email' | 'guest';
@@ -19,8 +20,37 @@ export interface User {
   streakDays: number;
   lastActiveDate: string;
   subscriptionTier: SubscriptionTier;
+  // Daily Avo counter — used by Pro users AND users in their active trial.
   avoChatCount: number;
   avoChatResetDate: string;
+  // 7-day Avo trial: the date it started (YYYY-MM-DD), or null if not started.
+  avoTrialStartedAt: string | null;
+  // Lifetime free-tier Avo allotment, counted only AFTER the trial ends. Kept
+  // separate from avoChatCount so a Pro→free or trial→free transition can't
+  // lock the user out with a stale daily count.
+  avoFreeChatsUsed: number;
+}
+
+/** Days remaining in the Avo trial (0 if never started or expired). */
+export function avoTrialDaysLeft(
+  u: { avoTrialStartedAt: string | null },
+  now: Date = new Date(),
+): number {
+  if (!u.avoTrialStartedAt) return 0;
+  const start = parseLocalDate(u.avoTrialStartedAt);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // round, not floor: a DST transition inside the window shifts the raw ms diff
+  // by ±1h, which floor can push across a day boundary (trial off by a day).
+  const elapsed = Math.round((today.getTime() - start.getTime()) / 86_400_000);
+  return Math.max(0, FREE_LIMITS.avoTrialDays - elapsed);
+}
+
+/** True while the user is inside their 7-day Avo trial window. */
+export function isAvoTrialActive(
+  u: { avoTrialStartedAt: string | null },
+  now: Date = new Date(),
+): boolean {
+  return avoTrialDaysLeft(u, now) > 0;
 }
 
 export type ThemeMode = 'dark' | 'light';
@@ -46,6 +76,30 @@ export type StorageLocation = 'fridge' | 'freezer' | 'pantry' | 'counter';
 
 export type FreshnessStatus = 'fresh' | 'good' | 'expiring-soon' | 'expiring' | 'expired';
 
+// AB 660-aligned date semantics. "Use by" = a safety date (don't eat after);
+// "Best if used by" = a quality date (fine after, just degraded). Stored
+// per-item; optional so items created before this field fall back to the
+// category default via resolveDateType().
+export type DateLabelType = 'use-by' | 'best-by';
+
+// ── Household sharing (Pro feature, up to 4 members) ─────────────────────────
+export type HouseholdRole = 'owner' | 'member';
+
+export const HOUSEHOLD_MAX_MEMBERS = 4;
+
+export interface Household {
+  id: string;
+  inviteCode: string;
+  ownerId: string;
+  role: HouseholdRole;
+}
+
+export interface HouseholdMember {
+  userId: string;
+  name: string | null;
+  role: HouseholdRole;
+}
+
 export interface PantryItem {
   id: string;
   name: string;
@@ -58,6 +112,7 @@ export interface PantryItem {
   estimatedValue: number;
   notes?: string;
   frozen?: boolean;
+  dateType?: DateLabelType;
 }
 
 export type WasteAction = 'eaten' | 'tossed' | 'composted' | 'donated' | 'shared';
@@ -213,6 +268,36 @@ export function getDaysUntilExpiration(expirationDate: string): number {
   return Math.round((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// Fold a simple English plural to its singular form so "eggs" matches "egg"
+// and "tomatoes" matches "tomato". Intentionally conservative.
+function foldPlural(word: string): string {
+  if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y';
+  // Only strip "-es" for true "-es" plurals (sibilant / -o stems): boxes→box,
+  // dishes→dish, tomatoes→tomato. Otherwise a silent-e word like "apples" would
+  // be mangled to "appl" (and "grapes"→"grap", "limes"→"lim"), breaking matches.
+  if (word.length > 3 && word.endsWith('es') && /(s|x|z|ch|sh|o)es$/.test(word)) return word.slice(0, -2);
+  if (word.length > 2 && word.endsWith('s')) return word.slice(0, -1);
+  return word;
+}
+
+function ingredientWords(name: string): string[] {
+  return name.toLowerCase().split(/[^a-z]+/).filter(Boolean).map(foldPlural);
+}
+
+// Word-level matcher between a recipe ingredient name and a pantry item name.
+// Replaces loose substring matching (which made "egg" match "eggplant" and
+// "milk" match "buttermilk"). A match means one name's words are fully
+// contained in the other's — so "egg" ↔ "free-range eggs" and
+// "chicken" ↔ "chicken breast" still match, but unrelated words don't.
+export function ingredientMatchesItem(ingredientName: string, itemName: string): boolean {
+  const ing = ingredientWords(ingredientName);
+  const item = ingredientWords(itemName);
+  if (ing.length === 0 || item.length === 0) return false;
+  const ingSet = new Set(ing);
+  const itemSet = new Set(item);
+  return ing.every(w => itemSet.has(w)) || item.every(w => ingSet.has(w));
+}
+
 export const DEFAULT_SHELF_LIFE: Record<FoodCategory, number> = {
   Produce: 7,
   Dairy: 14,
@@ -228,3 +313,41 @@ export const DEFAULT_SHELF_LIFE: Record<FoodCategory, number> = {
   Deli: 5,
   Other: 30,
 };
+
+// Safety-first defaults: animal/prepared products that pose a real safety
+// risk past their date default to "Use by"; everything else is a quality
+// ("Best if used by") date. Users can override per item.
+export const DEFAULT_DATE_TYPE: Record<FoodCategory, DateLabelType> = {
+  Produce: 'best-by',
+  Dairy: 'use-by',
+  Meat: 'use-by',
+  Seafood: 'use-by',
+  Grains: 'best-by',
+  Frozen: 'best-by',
+  Canned: 'best-by',
+  Snacks: 'best-by',
+  Beverages: 'best-by',
+  Condiments: 'best-by',
+  Bakery: 'best-by',
+  Deli: 'use-by',
+  Other: 'best-by',
+};
+
+export function getDefaultDateType(category: FoodCategory): DateLabelType {
+  return DEFAULT_DATE_TYPE[category];
+}
+
+/** An item's date type, defaulting from its category when unset (older items). */
+export function resolveDateType(item: { dateType?: DateLabelType; category: FoodCategory }): DateLabelType {
+  return item.dateType ?? getDefaultDateType(item.category);
+}
+
+/** Full AB 660 phrasing for prominent display. */
+export function dateTypeLabel(t: DateLabelType): string {
+  return t === 'use-by' ? 'Use by' : 'Best if used by';
+}
+
+/** Compact phrasing for tight list rows. */
+export function dateTypeShortLabel(t: DateLabelType): string {
+  return t === 'use-by' ? 'Use by' : 'Best by';
+}

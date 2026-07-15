@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
+import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AvoConsentModal } from '../components/AvoConsentModal';
-import { FREE_LIMITS, formatLocalDate } from '../types';
+import { FREE_LIMITS, formatLocalDate, getDaysUntilExpiration, isAvoTrialActive, avoTrialDaysLeft } from '../types';
+import { BROWSE_RECIPES } from '../data/recipes';
+import type { Recipe } from '../types';
 import {
   getAvoSession,
   setAvoSessionHistory,
@@ -30,17 +33,26 @@ export function CookScreen() {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState<'chat' | 'briefing'>('chat');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<AvoChatMessage[]>(getAvoSession(sessionOwnerId).history);
 
   const isProUser = user?.subscriptionTier === 'pro';
+  const trialActive = user ? isAvoTrialActive(user) : false;
+  const trialDaysLeft = user ? avoTrialDaysLeft(user) : 0;
+  // Pro users and users inside their 7-day trial both get the daily allowance;
+  // free users past the trial fall back to the lifetime allotment.
+  const hasProAccess = isProUser || trialActive;
   const today = formatLocalDate(new Date());
-  const chatsUsed = isProUser
+  const chatsUsed = hasProAccess
     ? (user?.avoChatResetDate === today ? (user?.avoChatCount ?? 0) : 0)
-    : (user?.avoChatCount ?? 0);
-  const chatLimit = isProUser ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
+    : (user?.avoFreeChatsUsed ?? 0);
+  const chatLimit = hasProAccess ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
   const chatsRemaining = chatLimit - chatsUsed;
+  // Chips are dead when AI is off (declined) — disable them so a tap isn't a
+  // silent no-op. (When consent is null the consent modal is covering the screen.)
+  const chipsDisabled = isStreaming || avoAiConsent === 'declined';
 
   // Reset chat state when the signed-in user changes (prevents history leaking between accounts)
   useEffect(() => {
@@ -53,6 +65,22 @@ export function CookScreen() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Pull the daily briefing up INSIDE the chat, on demand. Computed locally, so
+  // it costs no AI call and can't fail — Avo just posts it as a message.
+  const showDailyBriefing = (userText = "What's my daily briefing?") => {
+    if (isStreaming) return;
+    hapticLight();
+    if (!hasProAccess) { setUpgradeReason('briefing'); setShowUpgrade(true); return; }
+    const userMsg: AvoDisplayMessage = { id: `u-${crypto.randomUUID()}`, role: 'user', text: userText };
+    const avoMsg: AvoDisplayMessage = { id: `a-${crypto.randomUUID()}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
+    setMessages(prev => {
+      const next = [...prev, userMsg, avoMsg];
+      setAvoSessionMessages(next);
+      return next;
+    });
+    posthog.capture('avo_daily_briefing_viewed');
+  };
+
   const sendMessage = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || isStreaming) return;
@@ -60,12 +88,18 @@ export function CookScreen() {
     // Block sending if the user hasn't granted AI consent yet
     if (avoAiConsent !== 'granted') return;
 
+    // "briefing" is answered locally — no AI round-trip needed.
+    if (/\bbrief(ing)?\b/i.test(trimmed)) { showDailyBriefing(trimmed); setInput(''); return; }
+
     hapticLight();
 
     if (!incrementAvoChat()) {
+      setUpgradeReason('chat');
       setShowUpgrade(true);
       return;
     }
+
+    posthog.capture('avo_chat_sent', { message_length: trimmed.length, conversation_length: messages.length });
 
     // Add user message to display
     const userMsgId = `u-${Date.now()}`;
@@ -116,10 +150,18 @@ export function CookScreen() {
       debug.error('[Avo chat error]', err);
       // Rollback the chat credit since the request failed
       decrementAvoChat();
-      const errorMsg = (err as { status?: number })?.status === 401
-        ? "Looks like the API key isn't set up yet."
-        : (err as { status?: number })?.status === 429
+      const status = (err as { status?: number })?.status;
+      const friendly = (err as { friendly?: boolean })?.friendly;
+      const errorMsg = friendly
+        ? (err as Error).message
+        : status === 401
+        ? "I couldn't verify your session — try signing out and back in."
+        : status === 429
         ? "I'm getting a lot of questions right now — try again in a moment!"
+        : status === 404
+        ? "My brain isn't hooked up yet — the Avo chat service hasn't been deployed."
+        : status && status >= 500
+        ? "My brain had a hiccup on the server. Try again in a moment!"
         : "Something went wrong connecting to my brain. Try again?";
 
       setMessages(prev => {
@@ -175,10 +217,12 @@ export function CookScreen() {
             color: chatsRemaining <= 1 ? 'var(--expiring)' : 'var(--text-muted)',
             fontWeight: 600,
           }}>
-            {chatsRemaining}/{FREE_LIMITS.avoChatTotal} free chats
+            {trialActive
+              ? `✨ Avo trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left · ${chatsRemaining} chats today`
+              : `${chatsRemaining}/${FREE_LIMITS.avoChatTotal} free chats`}
           </div>
           <button
-            onClick={() => setShowUpgrade(true)}
+            onClick={() => { setUpgradeReason('chat'); setShowUpgrade(true); }}
             style={{
               marginLeft: 'auto',
               padding: '4px 10px',
@@ -208,11 +252,32 @@ export function CookScreen() {
         scrollbarWidth: 'none' as const,
         msOverflowStyle: 'none' as const,
       }}>
+        <button
+          onClick={() => showDailyBriefing()}
+          disabled={chipsDisabled}
+          style={{
+            padding: '7px 13px',
+            borderRadius: '20px',
+            border: 'none',
+            background: 'var(--accent)',
+            color: '#fff',
+            fontSize: '11px',
+            fontWeight: 700,
+            fontFamily: "'Cormorant Garamond', serif",
+            cursor: chipsDisabled ? 'default' : 'pointer',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            boxShadow: '0 1px 4px rgba(74,124,89,0.2)',
+            opacity: chipsDisabled ? 0.5 : 1,
+          }}
+        >
+          🥑 Today's briefing
+        </button>
         {SUGGESTIONS.map((s, i) => (
           <button
             key={i}
             onClick={() => sendMessage(s)}
-            disabled={isStreaming}
+            disabled={chipsDisabled}
             style={{
               padding: '7px 13px',
               borderRadius: '20px',
@@ -222,11 +287,11 @@ export function CookScreen() {
               fontSize: '11px',
               fontWeight: 600,
               fontFamily: "'Cormorant Garamond', serif",
-              cursor: isStreaming ? 'default' : 'pointer',
+              cursor: chipsDisabled ? 'default' : 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               boxShadow: '0 1px 4px rgba(74,124,89,0.08)',
-              opacity: isStreaming ? 0.5 : 1,
+              opacity: chipsDisabled ? 0.5 : 1,
             }}
           >
             {s}
@@ -270,6 +335,7 @@ export function CookScreen() {
               color: msg.role === 'avo' ? 'var(--text-primary)' : '#fff',
               fontSize: '13px',
               lineHeight: 1.55,
+              whiteSpace: 'pre-wrap',
               boxShadow: msg.role === 'avo' ? '0 1px 6px rgba(74,124,89,0.07)' : '0 2px 8px rgba(74,124,89,0.25)',
             }}>
               {msg.text || (msg.streaming ? <StreamingDots /> : '')}
@@ -370,7 +436,7 @@ export function CookScreen() {
 
       {showUpgrade && (
         <UpgradeModal
-          feature="chat"
+          feature={upgradeReason}
           onClose={() => setShowUpgrade(false)}
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
@@ -406,4 +472,66 @@ function StreamingDots() {
       ))}
     </div>
   );
+}
+
+// ─── Avo's Daily Briefing ─────────────────────────────────────────────────────
+// Pro feature. Pulls expiring items + a recipe pick keyed to the time of day,
+// then ties them together with a friendly Avo-voiced line.
+
+interface PantryItemLite {
+  id: string;
+  name: string;
+  expirationDate: string;
+}
+
+
+function getMealOfDay(): 'breakfast' | 'lunch' | 'dinner' {
+  const h = new Date().getHours();
+  if (h < 11) return 'breakfast';
+  if (h < 16) return 'lunch';
+  return 'dinner';
+}
+
+function dayOfYear(d: Date): number {
+  const start = new Date(d.getFullYear(), 0, 0);
+  return Math.floor((d.getTime() - start.getTime()) / 86400000);
+}
+
+function pickRecipeOfDay(meal: 'breakfast' | 'lunch' | 'dinner'): Recipe | null {
+  const pool = BROWSE_RECIPES.filter(r => r.tags?.includes(meal));
+  if (pool.length === 0) return null;
+  // Stable for the whole day (won't flip mid-scroll)
+  return pool[dayOfYear(new Date()) % pool.length];
+}
+
+
+// Build Avo's daily briefing as a chat message: expiring items + a time-of-day
+// recipe pick, in Avo's voice. Pure/local — no AI call, so it never fails.
+function buildDailyBriefingText(pantryItems: PantryItemLite[], userName?: string): string {
+  const meal = getMealOfDay();
+  const recipe = pickRecipeOfDay(meal);
+  const greeting = meal === 'breakfast' ? 'Good morning' : meal === 'lunch' ? 'Good afternoon' : 'Good evening';
+  const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const mealLabel = meal === 'breakfast' ? "Today's breakfast pick" : meal === 'lunch' ? "Today's lunch pick" : "Tonight's dinner pick";
+
+  const lines: string[] = [`${greeting}${userName ? `, ${userName}` : ''}! Here's your briefing for ${dateLabel}. 🥑`];
+
+  if (pantryItems.length === 0) {
+    lines.push("Your pantry's empty right now — add a few items and I'll build you a real plan around what expires first.");
+    return lines.join('\n\n');
+  }
+
+  const expiringSoon = pantryItems.filter(item => {
+    const days = getDaysUntilExpiration(item.expirationDate);
+    return days >= 0 && days <= 3;
+  });
+
+  if (expiringSoon.length === 0) lines.push('✅ Everything in your pantry is still fresh — nice work.');
+  else if (expiringSoon.length === 1) lines.push(`⏳ ${expiringSoon[0].name} could use you in the next few days — let's not waste it.`);
+  else lines.push(`⏳ ${expiringSoon.length} items could use you soon: ${expiringSoon.slice(0, 5).map(i => i.name).join(', ')}.`);
+
+  if (recipe) lines.push(`🍽️ ${mealLabel}: ${recipe.name} — ${recipe.cookTime} min, ${recipe.difficulty}.`);
+
+  lines.push('Want a recipe for any of these, or a shopping list? Just ask.');
+  return lines.join('\n\n');
 }

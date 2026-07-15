@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import posthog from 'posthog-js';
 import { Card } from './Card';
 import { hapticSuccess } from '../lib/haptics';
+import { LegalModal, type LegalDoc } from './LegalModal';
 
 interface UpgradeModalProps {
-  feature: 'pantry' | 'chat' | 'receipt' | 'mealplan' | 'onboarding';
+  feature: 'pantry' | 'chat' | 'receipt' | 'fridge' | 'mealplan' | 'briefing' | 'onboarding';
   onClose: () => void;
   onUpgrade: () => void;
   /** Delay in ms before the close button appears. 0 = immediate. */
@@ -23,9 +25,17 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
     title: 'Receipt scanning is a Pro feature',
     description: 'Snap a photo of your grocery receipt and auto-add items to your pantry.',
   },
+  fridge: {
+    title: 'Snap Your Fridge is a Pro feature',
+    description: 'Take one photo of your fridge or shelf and let Avo add everything to your pantry in seconds.',
+  },
   mealplan: {
     title: 'Advanced meal planning is Pro',
     description: 'Get personalized weekly meal plans and budget-optimized shopping lists.',
+  },
+  briefing: {
+    title: "Avo's Daily Briefing is Pro",
+    description: 'Wake up to a personalized rundown from Avo — what to cook today, what to use up first, and a fresh recipe pick.',
   },
   onboarding: {
     title: 'Get more from Pantre',
@@ -36,6 +46,7 @@ const FEATURE_COPY: Record<string, { title: string; description: string }> = {
 const PRO_FEATURES = [
   'Unlimited pantry items',
   '20 Avo chats per day',
+  "Avo's Daily Briefing",
   'Receipt scanning',
   'Personalized meal plans',
   'Budget-optimized shopping lists',
@@ -44,6 +55,11 @@ const PRO_FEATURES = [
 export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }: UpgradeModalProps) {
   const copy = FEATURE_COPY[feature];
   const [canClose, setCanClose] = useState(closeDelay === 0);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
+
+  useEffect(() => {
+    posthog.capture('paywall_viewed', { trigger: feature });
+  }, [feature]);
 
   useEffect(() => {
     if (closeDelay > 0) {
@@ -112,7 +128,7 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
         </Card>
 
         <button
-          onClick={() => { hapticSuccess(); onUpgrade(); }}
+          onClick={() => { hapticSuccess(); posthog.capture('pro_purchase_started', { product_id: 'pantre_pro_monthly' }); onUpgrade(); }}
           style={{
             padding: '16px',
             borderRadius: '14px',
@@ -129,6 +145,21 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
         >
           Upgrade to Pro — $5.99/mo
         </button>
+
+        <p
+          style={{
+            margin: '0 8px',
+            textAlign: 'center',
+            color: 'var(--text-muted)',
+            fontFamily: "'Cormorant Garamond', serif",
+            fontSize: '11px',
+            lineHeight: 1.45,
+          }}
+        >
+          $5.99/month. Auto-renews monthly until canceled. Payment is charged to
+          your Apple ID at confirmation of purchase. Cancel anytime in your Apple
+          ID Settings at least 24 hours before the end of the period.
+        </p>
 
         <button
           onClick={canClose ? onClose : undefined}
@@ -149,10 +180,10 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
         </button>
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', opacity: canClose ? 1 : 0, transition: 'opacity 0.5s ease-out' }}>
-          {[['Privacy Policy', 'https://pantre.app/privacy'], ['Terms of Use', 'https://pantre.app/terms']].map(([label, url]) => (
+          {([['Privacy Policy', 'privacy'], ['Terms of Use', 'terms']] as [string, LegalDoc][]).map(([label, docKey]) => (
             <button
               key={label}
-              onClick={() => window.open(url, '_blank')}
+              onClick={() => setLegalDoc(docKey)}
               style={{
                 background: 'none',
                 border: 'none',
@@ -176,6 +207,10 @@ export function UpgradeModal({ feature, onClose, onUpgrade, closeDelay = 3000 }:
           to { opacity: 1; }
         }
       `}</style>
+
+      {legalDoc && (
+        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
+      )}
     </div>
   );
 }
