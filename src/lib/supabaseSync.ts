@@ -415,6 +415,7 @@ export function rowToWasteLog(r: WasteLogRow): WasteLog {
     date: r.date,
     estimatedValue: r.estimated_value,
     quantity: r.quantity,
+    userId: r.user_id,
   };
 }
 

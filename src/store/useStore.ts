@@ -19,6 +19,7 @@ import {
   scheduleRecipeNudge,
   celebrateStreakMilestone,
 } from '../lib/notifications';
+import { requestInAppReview } from '../lib/appReview';
 
 // A long-past date used to mark the one-time Avo trial "already used" for a user
 // who reached Pro without starting it, so cancelling Pro can't grant a fresh
@@ -109,6 +110,9 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+  // Whether we've already shown the App Store rating prompt (ask at most once).
+  reviewPrompted: boolean;
+  setReviewPrompted: () => void;
 
   // First-run tutorial (per-device). Shown once after onboarding.
   hasSeenTutorial: boolean;
@@ -139,6 +143,7 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      reviewPrompted: false,
       household: null as Household | null,
       hasSeenTutorial: false,
       setHasSeenTutorial: (seen) => set({ hasSeenTutorial: seen }),
@@ -256,11 +261,14 @@ export const useStore = create<ShelfLifeStore>()(
 
       addWasteLog: (log) => {
         const { supabaseUserId, household } = useStore.getState();
-        if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
+        // Attribute the entry to its author so the household leaderboard can
+        // credit it. syncWasteLog already persists user_id server-side.
+        const stamped: WasteLog = supabaseUserId ? { ...log, userId: log.userId ?? supabaseUserId } : log;
+        if (supabaseUserId) syncWasteLog(stamped, supabaseUserId, household?.id);
         const prevStreak = useStore.getState().user?.streakDays ?? 0;
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
-          if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
+          if (!s.user) return { wasteLogs: [...s.wasteLogs, stamped] };
           const today = formatLocalDate(new Date());
           const yesterday = (() => {
             const d = new Date();
@@ -281,7 +289,7 @@ export const useStore = create<ShelfLifeStore>()(
             last_active_date: lastActiveDate,
           };
           return {
-            wasteLogs: [...s.wasteLogs, log],
+            wasteLogs: [...s.wasteLogs, stamped],
             user: { ...s.user, streakDays, lastActiveDate },
           };
         });
@@ -306,6 +314,15 @@ export const useStore = create<ShelfLifeStore>()(
             // don't bug them about cooking right after a successful meal.
             void scheduleRecipeNudge(user.name);
           }
+        }
+
+        // Ask for an App Store rating at a genuine high point: the first time
+        // they hit a meaningful zero-waste streak milestone. Once only (the OS
+        // also rate-limits), and independent of notification permission.
+        const after = useStore.getState();
+        if (!after.reviewPrompted && after.user && [7, 14, 30, 50, 100, 365].includes(after.user.streakDays)) {
+          after.setReviewPrompted();
+          void requestInAppReview();
         }
       },
       addWasteLogLocal: (log) => set((s) => (
@@ -466,6 +483,7 @@ export const useStore = create<ShelfLifeStore>()(
       setTheme: (theme: ThemeMode) => set({ theme }),
       setShowSettings: (show: boolean) => set({ showSettings: show }),
       setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),
+      setReviewPrompted: () => set({ reviewPrompted: true }),
       setNotificationsEnabled: (enabled) => {
         set({ notificationsEnabled: enabled });
         const { pantryItems, user } = useStore.getState();
@@ -511,6 +529,7 @@ export const useStore = create<ShelfLifeStore>()(
         mealPlan: state.mealPlan,
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
+        reviewPrompted: state.reviewPrompted,
         notificationsEnabled: state.notificationsEnabled,
         hasSeenTutorial: state.hasSeenTutorial,
       }),

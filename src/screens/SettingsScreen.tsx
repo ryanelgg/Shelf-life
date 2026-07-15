@@ -8,11 +8,11 @@ import { HouseholdModal } from '../components/HouseholdModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SignOutModal } from '../components/SignOutModal';
 import { LegalModal, type LegalDoc } from '../components/LegalModal';
-import { openAppStoreReview } from '../lib/rateApp';
 import type { DietaryPref } from '../types';
 import { deleteAccount, signOut, syncProfileUpdates } from '../lib/supabaseSync';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { exportUserData } from '../lib/dataExport';
+import { openAppStoreReview } from '../lib/appReview';
 import * as debug from '../lib/debug';
 
 const DIETS: { id: DietaryPref; label: string }[] = [
@@ -445,8 +445,8 @@ export function SettingsScreen() {
               onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank')}
             />
             <SettingsLink
-              label="Rate Pantre"
-              onClick={() => { posthog.capture('rate_app_tapped'); openAppStoreReview(); }}
+              label="⭐ Rate Pantre"
+              onClick={() => { posthog.capture('rate_app_tapped'); void openAppStoreReview(); }}
             />
             <SettingsLink
               label="Download My Data"

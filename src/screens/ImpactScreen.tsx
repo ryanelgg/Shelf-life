@@ -7,7 +7,7 @@ import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
 import { getHouseholdMembers } from '../lib/households';
 import { formatLocalDate } from '../types';
-import type { WasteLog } from '../types';
+import type { WasteLog, HouseholdMember } from '../types';
 
 /** Consecutive days (ending today or yesterday) with at least one "save"
  * (any non-toss action) anywhere in the household. Computed from the shared
@@ -85,20 +85,42 @@ function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string;
 }
 
 export function ImpactScreen() {
-  const { wasteLogs, user, household } = useStore();
+  const { wasteLogs, user, household, supabaseUserId } = useStore();
 
-  // Member count for the "Saved Together" card. Only fetched when in a household.
-  const [memberCount, setMemberCount] = useState(0);
+  // Household members for the "Saved Together" card + leaderboard. Only fetched
+  // when in a household; the cards that use this are gated on `household` too.
+  const [members, setMembers] = useState<HouseholdMember[]>([]);
   useEffect(() => {
-    // Only fetch when in a household; the card that uses this is gated on
-    // `household` too, so a stale count while solo is never shown.
     if (!household) return;
     let cancelled = false;
-    getHouseholdMembers().then(members => { if (!cancelled) setMemberCount(members.length); });
+    getHouseholdMembers().then(m => { if (!cancelled) setMembers(m); });
     return () => { cancelled = true; };
   }, [household]);
 
   const sharedStreak = useMemo(() => computeSharedStreak(wasteLogs), [wasteLogs]);
+
+  // Per-member tally: items saved (non-toss actions) + dollars saved, keyed by
+  // userId, joined to member names. Sorted by items saved, desc.
+  const leaderboard = useMemo(() => {
+    if (!household) return [];
+    const byUser = new Map<string, { saved: number; money: number }>();
+    for (const log of wasteLogs) {
+      if (log.action === 'tossed' || !log.userId) continue;
+      const cur = byUser.get(log.userId) ?? { saved: 0, money: 0 };
+      cur.saved += 1;
+      cur.money += log.estimatedValue * log.quantity;
+      byUser.set(log.userId, cur);
+    }
+    return members
+      .map(m => ({
+        userId: m.userId,
+        name: m.userId === supabaseUserId ? 'You' : (m.name ?? 'Member'),
+        isYou: m.userId === supabaseUserId,
+        saved: byUser.get(m.userId)?.saved ?? 0,
+        money: byUser.get(m.userId)?.money ?? 0,
+      }))
+      .sort((a, b) => b.saved - a.saved);
+  }, [household, members, wasteLogs, supabaseUserId]);
 
   const stats = useMemo(() => {
     const eaten = wasteLogs.filter(w => w.action === 'eaten');
@@ -321,7 +343,7 @@ export function ImpactScreen() {
             <div>
               <div style={{ fontSize: '14px', fontWeight: 700 }}>Saved Together</div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {memberCount > 0 ? `Your household of ${memberCount}` : 'Your household'}
+                {members.length > 0 ? `Your household of ${members.length}` : 'Your household'}
               </div>
             </div>
           </div>
@@ -356,6 +378,34 @@ export function ImpactScreen() {
               ? `${sharedStreak} day${sharedStreak === 1 ? '' : 's'} running — keep the household streak alive!`
               : 'Log a save today to start your household streak.'}
           </div>
+
+          {leaderboard.length > 1 && (
+            <div style={{ marginTop: '16px', borderTop: '1px solid var(--accent-dim)', paddingTop: '12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                Who's saving the most
+              </div>
+              {leaderboard.map((m, i) => (
+                <div key={m.userId} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '6px 8px', borderRadius: '8px',
+                  background: m.isYou ? 'rgba(74, 124, 89, 0.10)' : 'transparent',
+                }}>
+                  <span className="mono" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>
+                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                  </span>
+                  <span style={{ flex: 1, fontSize: '13px', fontWeight: m.isYou ? 700 : 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {m.name}
+                  </span>
+                  <span className="mono" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
+                    {m.saved} saved
+                  </span>
+                  <span className="mono" style={{ fontSize: '12px', color: 'var(--text-muted)', width: '48px', textAlign: 'right' }}>
+                    ${m.money.toFixed(0)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 
