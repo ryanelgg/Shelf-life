@@ -1,16 +1,7 @@
 import * as Sentry from "https://deno.land/x/sentry/index.mjs";
+import { corsHeaders, json, guardAiRequest, refundAiUsage } from '../_shared/aiGuard.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-function json(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...(init.headers ?? {}) },
-  });
-}
+const DAILY_LIMIT = 40;
 
 const FRIDGE_PROMPT = `You are a kitchen-inventory vision system. Look at this photo of an open fridge, freezer, or pantry shelf and list the distinct food/drink items you can see.
 Return ONLY a JSON array of objects with "name" and "quantity" fields. Example:
@@ -33,13 +24,18 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
+  const guard = await guardAiRequest(request, 'fridge-scan', DAILY_LIMIT);
+  if (!guard.ok) return guard.response;
+
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!anthropicKey) {
-    return json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
+    await refundAiUsage(guard.userId, 'fridge-scan');
+    return json({ error: 'Fridge scanning is not available right now.' }, { status: 500 });
   }
   try {
     const { image } = await request.json() as { image?: string };
     if (!image) {
+      await refundAiUsage(guard.userId, 'fridge-scan');
       return json({ error: 'No image provided' }, { status: 400 });
     }
     let mediaType = 'image/jpeg';
@@ -75,7 +71,9 @@ Deno.serve(async (request) => {
     });
     if (!response.ok) {
       const details = await response.text();
-      return json({ error: details || `Anthropic API error ${response.status}` }, { status: response.status });
+      await refundAiUsage(guard.userId, 'fridge-scan');
+      console.error(`[fridge-scan] Anthropic ${response.status}:`, details);
+      return json({ error: 'Fridge scan had trouble. Please try again.' }, { status: 502 });
     }
     const result = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
@@ -89,7 +87,8 @@ Deno.serve(async (request) => {
     return json({ items });
   } catch (error) {
     Sentry.captureException(error);
-    const message = error instanceof Error ? error.message : 'Unexpected error';
-    return json({ error: message }, { status: 500 });
+    await refundAiUsage(guard.userId, 'fridge-scan');
+    console.error('[fridge-scan] error:', error instanceof Error ? error.message : error);
+    return json({ error: 'Fridge scan had trouble. Please try again.' }, { status: 500 });
   }
 });

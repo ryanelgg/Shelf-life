@@ -1,12 +1,14 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
-import { loadProfile, loadAllData, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
+import { publishWidgetData } from './lib/widget';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
@@ -185,12 +187,18 @@ export default function App() {
       debug.log('[oauth] deep link received, closing browser');
       await Browser.close();
       const hashParams = new URLSearchParams(url.split('#')[1] ?? '');
+      const queryParams = new URLSearchParams((url.split('?')[1] ?? '').split('#')[0]);
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
-      debug.log('[oauth] tokens present:', { access: !!accessToken, refresh: !!refreshToken });
+      const code = queryParams.get('code');
+      debug.log('[oauth] tokens present:', { access: !!accessToken, refresh: !!refreshToken, code: !!code });
       if (accessToken && refreshToken) {
         const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
         debug.log('[oauth] setSession result:', { user: data.session?.user.id, error: error?.message });
+      } else if (code) {
+        debug.log('[oauth] PKCE code received, exchanging for session');
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        debug.log('[oauth] exchangeCode result:', { user: data.session?.user?.id, error: error?.message });
       } else {
         debug.warn('[oauth] missing tokens — URL was:', url);
       }
@@ -203,6 +211,12 @@ export default function App() {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme === 'dark' ? '#1a1612' : '#faf7f2');
   }, [theme]);
+
+  // Keep the iOS home-screen widget in sync with the pantry (no-op off iOS).
+  const pantryItems = useStore(s => s.pantryItems);
+  useEffect(() => {
+    void publishWidgetData(pantryItems);
+  }, [pantryItems]);
 
   useEffect(() => {
     // Monotonic token: each auth event claims a number, and any async work
@@ -220,8 +234,11 @@ export default function App() {
           posthog.reset();
           resetOnboarding();
         } else {
-          debug.log('[auth] passive sign-out — keeping local data');
-          setSupabaseUserId(null);
+          // Passive sign-out (token expiry / offline). KEEP supabaseUserId so
+          // edits keep flowing into the offline outbox and replay when the
+          // session refreshes — nulling it made writes skip sync entirely and
+          // then get overwritten by the cloud reload on reconnect.
+          debug.log('[auth] passive sign-out — keeping local data + session id for outbox');
         }
         return;
       }
@@ -257,10 +274,14 @@ export default function App() {
           createdAt: profile.created_at,
           onboardingComplete: true,
           streakDays: profile.streak_days,
-          lastActiveDate: profile.last_active_date ?? formatLocalDate(new Date()),
+          // Empty (not today) when the profile has never logged, so the user's
+          // very first save counts as streak day 1 instead of showing 0.
+          lastActiveDate: profile.last_active_date ?? '',
           subscriptionTier: profile.subscription_tier as 'free' | 'pro',
           avoChatCount: profile.avo_chat_count,
           avoChatResetDate: profile.avo_chat_reset_date ?? formatLocalDate(new Date()),
+          avoTrialStartedAt: profile.avo_trial_started_at ?? null,
+          avoFreeChatsUsed: profile.avo_free_chats_used ?? 0,
         });
         debug.log('[auth] setUser called — transitioning to main app');
         posthog.identify(sbUser.id, {
@@ -274,6 +295,10 @@ export default function App() {
           const household = await getMyHousehold(sbUser.id);
           if (mySeq !== authSeq) return; // superseded while loading
           setHousehold(household);
+          // Push any writes that failed to sync while offline UP to the cloud
+          // BEFORE we read it back — otherwise loadAllData would overwrite local
+          // state and silently drop offline adds / resurrect offline deletes.
+          await flushOutbox();
           const { pantryItems, wasteLogs } = await loadAllData(sbUser.id, household?.id ?? null);
           if (mySeq !== authSeq) return; // superseded while loading
           loadCloudData(pantryItems, wasteLogs);
@@ -360,6 +385,7 @@ export default function App() {
       )}
       <TabBar />
       {showSettings && <SettingsScreen />}
+      <TutorialOverlay />
       <KeyboardScrollManager />
     </div>
   );

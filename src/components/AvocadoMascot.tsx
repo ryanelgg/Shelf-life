@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 type Expression = 'happy' | 'excited' | 'sleepy' | 'surprised' | 'wink' | 'love' | 'thinking' | 'normal' | 'sick';
 
@@ -25,6 +25,14 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: A
   const [splatted, setSplatted] = useState(false);
   const tapTimesRef = useRef<number[]>([]);
   const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The smash sequence chains bare setTimeouts; track them so they can be
+  // cleared on unmount (otherwise a mid-animation unmount setStates a dead node).
+  const smashTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => () => {
+    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    smashTimeoutsRef.current.forEach(clearTimeout);
+  }, []);
 
   const s = size;
 
@@ -50,11 +58,11 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: A
       // Sick face + shake, then SMASH flat into guac
       setExpression('sick');
       setAnimClass('avo-shake');
-      setTimeout(() => {
+      smashTimeoutsRef.current.push(setTimeout(() => {
         setAnimClass('avo-smash');
         // Splat appears at the exact moment avo is fully squished
-        setTimeout(() => setSplatted(true), 250);
-      }, 500);
+        smashTimeoutsRef.current.push(setTimeout(() => setSplatted(true), 250));
+      }, 500));
       animTimeoutRef.current = setTimeout(() => {
         setSplatted(false);
         setExpression('happy');

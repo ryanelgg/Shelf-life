@@ -1,4 +1,5 @@
 import type { AvoChatMessage } from './avoChatSession';
+import { getAiAuthHeaders } from './authHeaders';
 import * as debug from './debug';
 
 interface AvoChatResponse {
@@ -31,7 +32,9 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Avo is taking longer than expected. Please try again.');
+      const e = new Error('Avo is taking longer than expected. Please try again.') as Error & { friendly?: boolean };
+      e.friendly = true;
+      throw e;
     }
     throw error;
   } finally {
@@ -42,24 +45,31 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
 async function requestFromUrl(url: string, init: RequestInit) {
   const response = await fetchWithTimeout(url, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    // Attach the HTTP status so callers can distinguish "not signed in" (401),
+    // "rate limited" (429), and server misconfig (5xx) instead of collapsing
+    // every failure into one generic message.
+    const err = new Error(await parseErrorMessage(response)) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
 
   const data = await response.json() as AvoChatResponse;
   if (!data.text) {
-    throw new Error('Empty Avo response');
+    const e = new Error("Avo didn't have anything to say there — mind trying again?") as Error & { friendly?: boolean };
+    e.friendly = true;
+    throw e;
   }
 
   return data.text;
 }
 
-function requestFromHostedFunction(messages: AvoChatMessage[]) {
+async function requestFromHostedFunction(messages: AvoChatMessage[]) {
+  const authHeaders = await getAiAuthHeaders(supabaseAnonKey);
   return requestFromUrl(hostedAvoChatUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
+      ...authHeaders,
     },
     body: JSON.stringify({ messages }),
   });

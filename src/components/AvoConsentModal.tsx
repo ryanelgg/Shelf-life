@@ -43,8 +43,8 @@ export function AvoConsentModal({ onAccept, onDecline }: AvoConsentModalProps) {
         <div style={{ textAlign: 'center' }}>
           <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>Meet Avo, your nutrition guide</h2>
           <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Ask anything about what's in your pantry — calories, meal ideas, what to eat before a workout. Your pantry list is processed by{' '}
-            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Anthropic's Claude AI</span>{' '}
+            Ask anything about what's in your pantry — calories, meal ideas, what to eat before a workout. Your question and pantry list are processed by{' '}
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Groq's Llama AI</span>{' '}
             to give you personalized answers.
           </p>
         </div>
@@ -84,7 +84,7 @@ export function AvoConsentModal({ onAccept, onDecline }: AvoConsentModalProps) {
                   color: 'var(--text-muted)',
                   lineHeight: 1.55,
                 }}>
-                  When you chat with Avo, we send your question plus a short summary of your pantry (item names only — no dates, quantities, or personal info) to Anthropic's Claude API. Claude does not retain your messages, and Anthropic does not use them for model training.
+                  When you chat with Avo, we send your question plus a short summary of your pantry (item names only — no dates, quantities, or personal info) to Groq's Llama API. Photo features (scanning a receipt or your fridge) send that image to Anthropic's Claude API instead. Neither provider retains your data or uses it to train models.
                 </div>
               )}
             </div>

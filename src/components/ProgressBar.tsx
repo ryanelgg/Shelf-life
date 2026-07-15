@@ -14,11 +14,16 @@ export function ProgressBar({ value, color = 'var(--accent)', height = 6 }: Prog
       overflow: 'hidden',
     }}>
       <div style={{
-        width: `${Math.min(100, Math.max(0, value))}%`,
+        // Animate transform (GPU-composited) rather than width, so the fill
+        // glides smoothly instead of pixel-stepping/reflowing each frame. The
+        // parent's rounded overflow:hidden clips this into a clean bar.
+        width: '100%',
         height: '100%',
-        borderRadius: height / 2,
         background: color,
-        transition: 'width 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
+        transformOrigin: 'left center',
+        transform: `scaleX(${Math.min(100, Math.max(0, value)) / 100})`,
+        transition: 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
+        willChange: 'transform',
       }} />
     </div>
   );

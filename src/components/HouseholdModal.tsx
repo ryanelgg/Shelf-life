@@ -12,6 +12,7 @@ import {
 import { loadAllData } from '../lib/supabaseSync';
 import * as debug from '../lib/debug';
 
+
 interface HouseholdModalProps {
   onClose: () => void;
 }
@@ -72,8 +73,7 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     }
   };
 
-  const handleCreate = async () => {
-    if (busy) return;
+  const doCreate = async () => {
     setBusy(true); setError(null);
     try {
       const hh = await createHousehold();
@@ -86,8 +86,8 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     }
   };
 
-  const handleJoin = async () => {
-    if (busy || !code.trim()) return;
+  const doJoin = async () => {
+    if (!code.trim()) return;
     setBusy(true); setError(null);
     try {
       const hh = await joinHousehold(code.trim());
@@ -99,6 +99,9 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
       setBusy(false);
     }
   };
+
+  const handleCreate = () => { if (!busy) void doCreate(); };
+  const handleJoin = () => { if (!busy && code.trim()) void doJoin(); };
 
   const handleLeave = async () => {
     if (busy) return;

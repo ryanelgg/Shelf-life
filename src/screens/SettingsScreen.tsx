@@ -7,6 +7,7 @@ import { CancelProModal } from '../components/CancelProModal';
 import { HouseholdModal } from '../components/HouseholdModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SignOutModal } from '../components/SignOutModal';
+import { LegalModal, type LegalDoc } from '../components/LegalModal';
 import type { DietaryPref } from '../types';
 import { deleteAccount, signOut, syncProfileUpdates } from '../lib/supabaseSync';
 import { ensureNotificationPermission } from '../lib/notifications';
@@ -23,6 +24,7 @@ const DIETS: { id: DietaryPref; label: string }[] = [
   { id: 'nut-free', label: 'Nut-free' },
 ];
 
+
 export function SettingsScreen() {
   const { user, theme, setTheme, setShowSettings, updateUser, resetOnboarding, setSubscriptionTier, supabaseUserId, avoAiConsent, setAvoAiConsent, notificationsEnabled, setNotificationsEnabled, pantryItems, wasteLogs, household } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -30,6 +32,7 @@ export function SettingsScreen() {
   const [showHousehold, setShowHousehold] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [name, setName] = useState(user?.name || '');
   const [editingDiet, setEditingDiet] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -335,7 +338,7 @@ export function SettingsScreen() {
               <div style={{ fontSize: '14px', fontWeight: 600 }}>Avo AI</div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
                 {avoAiConsent === 'granted'
-                  ? 'On — your messages and pantry items are sent to Anthropic to generate responses'
+                  ? 'On — chat is processed by Groq; receipt & fridge photo scans by Anthropic'
                   : avoAiConsent === 'declined'
                   ? 'Off — chat is disabled'
                   : 'Not set — you\'ll be asked when you open chat'}
@@ -443,7 +446,7 @@ export function SettingsScreen() {
             />
             <SettingsLink
               label="⭐ Rate Pantre"
-              onClick={() => { void openAppStoreReview(); }}
+              onClick={() => { posthog.capture('rate_app_tapped'); void openAppStoreReview(); }}
             />
             <SettingsLink
               label="Download My Data"
@@ -451,11 +454,11 @@ export function SettingsScreen() {
             />
             <SettingsLink
               label="Privacy Policy"
-              onClick={() => window.open('https://www.usepantre.me/privacy', '_blank')}
+              onClick={() => setLegalDoc('privacy')}
             />
             <SettingsLink
-              label="Terms of Service"
-              onClick={() => window.open('https://www.usepantre.me/terms', '_blank')}
+              label="Terms of Use"
+              onClick={() => setLegalDoc('terms')}
               hideBorder
             />
           </div>
@@ -483,7 +486,7 @@ export function SettingsScreen() {
               lineHeight: 1.6,
             }}>
               <div style={{ marginBottom: '4px', color: 'var(--text-muted)', fontWeight: 600 }}>Powered by</div>
-              <div>Anthropic Claude · Supabase · Apple · Google</div>
+              <div>Groq · Anthropic Claude · Supabase · Apple · Google</div>
             </div>
           </div>
         </Card>
@@ -560,6 +563,10 @@ export function SettingsScreen() {
           onClose={() => setShowSignOut(false)}
           onConfirm={handleSignOut}
         />
+      )}
+
+      {legalDoc && (
+        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
       )}
 
       {/* Toast */}

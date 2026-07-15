@@ -16,7 +16,7 @@ import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
 import { scanFridge } from '../lib/fridgeApi';
-import type { FoodCategory, StorageLocation, DateLabelType } from '../types';
+import type { FoodCategory, StorageLocation } from '../types';
 
 type AddMode = 'manual' | 'scan' | 'receipt' | 'fridge';
 type ReceiptListItem = {
@@ -80,9 +80,11 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // A launch-scoped counter reset to 0 on every app start, so two phones in a
+  // shared household adding in the same millisecond could collide and overwrite
+  // each other over live sync. Use a globally-unique id instead.
+  return `p-${crypto.randomUUID()}`;
 }
 
 let nextReceiptRowId = 0;
@@ -132,7 +134,7 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
 
   useEffect(() => {
@@ -153,8 +155,6 @@ export function AddItemScreen() {
   const [value, setValue] = useState('');
   const [customDays, setCustomDays] = useState('');
   // null = follow the category's safety-first default; set = user override.
-  const [dateTypeOverride, setDateTypeOverride] = useState<DateLabelType | null>(null);
-  const effectiveDateType = dateTypeOverride ?? getDefaultDateType(category);
   useEffect(() => {
     void preloadCoreDatabase();
   }, []);
@@ -231,7 +231,10 @@ export function AddItemScreen() {
         return;
       }
       posthog.capture('receipt_ocr_succeeded', { item_count: items.length });
-      setReceiptItems(items.map(createReceiptListItem));
+      // Drop malformed rows (missing/blank/non-string name) so one bad entry
+      // from the model can't throw and abort the entire scan.
+      const validItems = items.filter(it => it && typeof it.name === 'string' && it.name.trim());
+      setReceiptItems(validItems.map(createReceiptListItem));
       setMode('receipt');
     } catch (err) {
       debug.error('Receipt OCR error:', err);
@@ -286,7 +289,10 @@ export function AddItemScreen() {
         return;
       }
       posthog.capture('fridge_scan_succeeded', { item_count: items.length });
-      setReceiptItems(items.map(createFridgeListItem));
+      // Drop malformed rows (missing/blank/non-string name) so one bad entry
+      // from the model can't throw and abort the entire scan.
+      const validItems = items.filter(it => it && typeof it.name === 'string' && it.name.trim());
+      setReceiptItems(validItems.map(createFridgeListItem));
       setMode('fridge');
     } catch (err) {
       debug.error('Fridge scan error:', err);
@@ -333,18 +339,17 @@ export function AddItemScreen() {
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
       estimatedValue: Number.isFinite(item.price) ? item.price : 0,
+      dateType: getDefaultDateType(item.category),
     }, 'receipt');
   };
 
   const addReceiptItem = (item: ReceiptListItem) => {
     if (!canAddPantryItem()) { setShowUpgrade(true); return; }
     addReceiptItemToPantry(item);
-    // Filter by object identity, not name — avoids dropping every row when
-    // a receipt contains two lines with the same product name.
-    setReceiptItems(prev => {
-      const idx = prev.indexOf(item);
-      return prev.filter((_, i) => i !== idx);
-    });
+    // Filter by row id, not name or object identity — avoids dropping every
+    // row when two lines share a product name, and still removes the correct
+    // row after edits have replaced the original object reference.
+    setReceiptItems(prev => prev.filter(r => r.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
@@ -382,8 +387,14 @@ export function AddItemScreen() {
       unit: itemUnit || unit,
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
-      estimatedValue: itemVal || parseFloat(value) || 2.99,
-      dateType: dateTypeOverride ?? getDefaultDateType(cat),
+      // Respect an explicit $0 (free/giveaway item) instead of forcing $2.99,
+      // which would inflate the Impact "money saved" stat. A finite itemVal
+      // (incl. 0) from a picked food wins; else a non-empty typed value (incl.
+      // 0) wins; else fall back to the default estimate.
+      estimatedValue: Number.isFinite(itemVal)
+        ? (itemVal as number)
+        : (value.trim() !== '' && Number.isFinite(parseFloat(value)) ? parseFloat(value) : 2.99),
+      dateType: getDefaultDateType(cat),
     }, method);
 
     // Reset form
@@ -391,12 +402,14 @@ export function AddItemScreen() {
     setQuantity('1');
     setValue('');
     setCustomDays('');
-    setDateTypeOverride(null);
     setSuccessName(n);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
   };
 
+  // Add one or more items parsed from a spoken/typed phrase. Each item's
+  // category + location come from the food database; expiry uses the spoken
+  // date when given, otherwise the smart shelf-life default.
   return (
     <div className="screen-enter" style={{
       flex: 1,
@@ -792,37 +805,6 @@ export function AddItemScreen() {
             </Card>
           </div>
 
-          <Card className="card-enter stagger-6">
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
-              Date Label
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {([
-                { type: 'best-by' as DateLabelType, label: 'Best if used by', hint: 'Quality' },
-                { type: 'use-by' as DateLabelType, label: 'Use by', hint: 'Safety' },
-              ]).map(opt => {
-                const active = effectiveDateType === opt.type;
-                return (
-                  <button
-                    key={opt.type}
-                    onClick={() => setDateTypeOverride(opt.type)}
-                    aria-pressed={active}
-                    style={{
-                      flex: 1, padding: '8px 6px', borderRadius: '10px',
-                      border: active ? '1.5px solid var(--accent)' : '1px solid var(--input-border)',
-                      background: active ? 'var(--accent-dim)' : 'transparent',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-                      fontFamily: "'Cormorant Garamond', serif",
-                    }}
-                  >
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-primary)' }}>{opt.label}</span>
-                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>{opt.hint}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-
           {/* Add button */}
           <button
             className="btn-solid card-enter stagger-6"
@@ -1000,7 +982,11 @@ export function AddItemScreen() {
             </div>
             <button
               onClick={() => {
-                const slotsLeft = isPro()
+                // Pro users AND free members riding a Pro owner's household get
+                // an unlimited pantry (same rule as single-add's canAddPantryItem);
+                // only a free solo/owner user is capped. Households max out at 4.
+                const hasUnlimited = isPro() || household?.role === 'member';
+                const slotsLeft = hasUnlimited
                   ? receiptItems.length
                   : Math.max(0, FREE_LIMITS.pantryItems - pantryItems.length);
                 const toAdd = receiptItems.slice(0, slotsLeft);
@@ -1181,6 +1167,7 @@ export function AddItemScreen() {
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
+
     </div>
   );
 }

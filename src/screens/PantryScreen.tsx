@@ -1,13 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { checkPantryForRecalls } from '../lib/recallApi';
+import type { RecallMatch } from '../lib/recallApi';
 import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
 import { lookupShelfLife } from '../data/shelfLife';
+import { hapticLight } from '../lib/haptics';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
-import type { FoodCategory, StorageLocation, PantryItem, WasteAction, Recipe, DateLabelType } from '../types';
+import type { FoodCategory, StorageLocation, PantryItem, WasteAction, DateLabelType } from '../types';
 
 const LOCATIONS: StorageLocation[] = ['fridge', 'freezer', 'pantry', 'counter'];
 const LOCATION_LABELS: Record<StorageLocation, string> = {
@@ -106,19 +109,8 @@ function dateDaysFromToday(days: number): string {
   return formatLocalDate(d);
 }
 
-function wasLoggedWithinDays(date: string, days: number): boolean {
-  return parseLocalDate(date).getTime() >= dateDaysAgo(days).getTime();
-}
-
-function dateDaysAgo(days: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 export function PantryScreen() {
-  const { user, pantryItems, wasteLogs, recipes, browseRecipes, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
+  const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
@@ -132,10 +124,29 @@ export function PantryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
+  const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
+  const [recallDismissed, setRecallDismissed] = useState(false);
+
+  useEffect(() => {
+    if (pantryItems.length === 0) return;
+    let cancelled = false;
+    const names = pantryItems.map(i => i.name);
+    checkPantryForRecalls(names).then(matches => {
+      if (cancelled) return; // a newer check superseded this one
+      setRecallMatches(prev => {
+        // Re-surface the banner only when the set of matched items actually
+        // changed, so a genuinely new recall isn't hidden by an earlier dismiss.
+        const key = (m: RecallMatch[]) => m.map(x => x.id).sort().join('|');
+        if (key(prev) !== key(matches)) setRecallDismissed(false);
+        return matches;
+      });
+    }).catch(() => {/* silently ignore - recall check is best-effort */});
+    return () => { cancelled = true; };
+  }, [pantryItems]);
 
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
-    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expiring' || s === 'expiring-soon'; });
+    if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expired' || s === 'expiring' || s === 'expiring-soon'; });
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       items = items.filter(i => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
@@ -149,7 +160,7 @@ export function PantryScreen() {
 
   const expiringCount = pantryItems.filter(i => {
     const status = getFreshnessStatus(i.expirationDate);
-    return status === 'expiring' || status === 'expiring-soon';
+    return status === 'expired' || status === 'expiring' || status === 'expiring-soon';
   }).length;
 
   const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
@@ -159,52 +170,7 @@ export function PantryScreen() {
       .sort((a, b) => parseLocalDate(a.expirationDate).getTime() - parseLocalDate(b.expirationDate).getTime())
       .slice(0, 3)
   ), [pantryItems]);
-  const weeklySaves = wasteLogs.filter(w => w.action !== 'tossed' && wasLoggedWithinDays(w.date, 7)).length;
 
-  const briefing = useMemo(() => {
-    // 2. Best dinner option — the recipe that matches the most pantry items,
-    //    preferring ones that use food which is expiring soon.
-    const allRecipes = [...recipes, ...browseRecipes];
-    let bestDinner: { recipe: Recipe; matchCount: number; usesExpiring: boolean } | null = null;
-    for (const r of allRecipes) {
-      let matchCount = 0;
-      let usesExpiring = false;
-      for (const ing of r.ingredients) {
-        const b = ing.name.toLowerCase();
-        const m = pantryItems.find(p => {
-          const a = p.name.toLowerCase();
-          return a.includes(b) || b.includes(a);
-        });
-        if (m) {
-          matchCount++;
-          const s = getFreshnessStatus(m.expirationDate);
-          if (s === 'expiring' || s === 'expiring-soon' || s === 'expired') usesExpiring = true;
-        }
-      }
-      if (matchCount === 0) continue;
-      const better =
-        !bestDinner ||
-        (usesExpiring && !bestDinner.usesExpiring) ||
-        (usesExpiring === bestDinner.usesExpiring && matchCount > bestDinner.matchCount);
-      if (better) bestDinner = { recipe: r, matchCount, usesExpiring };
-    }
-
-    // 3. One item worth freezing — expiring soon, not already frozen, and
-    //    freezing actually buys meaningful extra time.
-    // Only suggest items that genuinely freeze well — use the real FoodKeeper
-    // value (null means "don't freeze this"), not the category fallback.
-    const freezeCandidate = pantryItems
-      .filter(i => i.location !== 'freezer' && !i.frozen)
-      .filter(i => {
-        const s = getFreshnessStatus(i.expirationDate);
-        return s === 'expiring' || s === 'expiring-soon' || s === 'expired';
-      })
-      .map(i => ({ item: i, freezerDays: lookupShelfLife(i.name, 'freezer') }))
-      .filter((x): x is { item: PantryItem; freezerDays: number } => x.freezerDays != null && x.freezerDays >= 14)
-      .sort((a, b) => b.freezerDays - a.freezerDays)[0] ?? null;
-
-    return { attention: urgentItems, bestDinner, freezeCandidate };
-  }, [pantryItems, recipes, browseRecipes, urgentItems]);
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
@@ -237,13 +203,26 @@ export function PantryScreen() {
     setListAnimKey(k => k + 1);
   };
 
-  const openRecipesFor = (item: PantryItem) => {
-    setRecipeSearchSeed(item.name);
-    setActiveTab('plan');
+  // "Extend" — the item's still good (e.g. opened and fine, or you just don't
+  // trust the printed date), so push its expiry out. Bumps from the later of
+  // today or the current date so an already-expired item moves genuinely
+  // forward. updatePantryItem reschedules this item's reminders automatically.
+  const EXTEND_DAYS = 3;
+  const handleExtendItem = (item: PantryItem) => {
+    const current = parseLocalDate(item.expirationDate);
+    const today = new Date();
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const base = current.getTime() > todayMidnight.getTime() ? current : todayMidnight;
+    const next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + EXTEND_DAYS);
+    updatePantryItem(item.id, { expirationDate: formatLocalDate(next) });
+    posthog.capture('pantry_item_extended', { days: EXTEND_DAYS, category: item.category });
+    hapticLight();
+    setSwipingItem(null);
+    setListAnimKey(k => k + 1);
   };
 
-  const openRecipe = (recipe: Recipe) => {
-    setRecipeSearchSeed(recipe.name);
+  const openRecipesFor = (item: PantryItem) => {
+    setRecipeSearchSeed(item.name);
     setActiveTab('plan');
   };
 
@@ -324,6 +303,52 @@ export function PantryScreen() {
         </button>
       </div>
 
+      {/* FDA Recall Alert Banner */}
+      {recallMatches.length > 0 && !recallDismissed && (
+        <div style={{
+          background: 'rgba(205,92,92,0.08)',
+          border: '1.5px solid rgba(205,92,92,0.3)',
+          borderRadius: '14px',
+          padding: '12px 14px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '10px',
+          animation: 'card-enter 0.3s ease-out',
+        }}>
+          <span style={{ fontSize: '20px', flexShrink: 0, marginTop: '1px' }}>🚨</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expired)', marginBottom: '4px' }}>
+              FDA Recall Alert
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              {recallMatches.length === 1
+                ? <><strong>{recallMatches[0]!.matchedItem}</strong>{` may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`}</>
+                : `${recallMatches.length} items in your pantry may be affected by active FDA recalls.`
+              }
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+              {recallMatches.slice(0, 3).map(m => (
+                <span key={m.id} style={{
+                  fontSize: '10px', fontWeight: 600,
+                  padding: '2px 8px', borderRadius: '8px',
+                  background: 'rgba(205,92,92,0.12)',
+                  color: 'var(--expired)',
+                }}>{m.matchedItem}</span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => setRecallDismissed(true)}
+            aria-label="Dismiss recall alert"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: '16px', flexShrink: 0,
+              padding: '2px', lineHeight: 1,
+            }}
+          >✕</button>
+        </div>
+      )}
+
       {/* Stats row — tappable as filters */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
         <Card className="card-enter stagger-1" onClick={() => { setExpiringOnly(false); setSearchQuery(''); setListAnimKey(k => k + 1); }} style={{ padding: '14px', textAlign: 'center', cursor: 'pointer', outline: (!expiringOnly && !searchQuery) ? '2px solid var(--accent)' : 'none', outlineOffset: '-2px' }}>
@@ -339,127 +364,6 @@ export function PantryScreen() {
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>Value</div>
         </Card>
       </div>
-
-      {/* Avo daily briefing */}
-      <Card className="card-enter stagger-2" style={{
-        padding: '16px',
-        background: 'linear-gradient(135deg, rgba(74,124,89,0.10), rgba(196,149,106,0.08))',
-        border: '1px solid rgba(74, 124, 89, 0.16)',
-        overflow: 'hidden',
-        position: 'relative',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          position: 'absolute',
-          right: -28,
-          top: -28,
-          width: 90,
-          height: 90,
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.24)',
-        }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative', marginBottom: '12px' }}>
-          <div className="use-tonight-pulse" style={{ flexShrink: 0 }}>
-            <AvocadoMascot size={34} isStatic />
-          </div>
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Avo Daily Briefing
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '1px' }}>
-              Here's what matters today
-            </div>
-          </div>
-        </div>
-
-        {pantryItems.length === 0 ? (
-          <div style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.45, fontWeight: 600, position: 'relative' }}>
-            Add a few items and I'll start building a nightly save plan around what expires first.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
-            {/* 1. Things that need attention */}
-            <button
-              onClick={() => { setExpiringOnly(true); setListAnimKey(k => k + 1); }}
-              disabled={briefing.attention.length === 0}
-              style={briefingRowStyle(briefing.attention.length === 0)}
-            >
-              <span style={briefingIconStyle('rgba(212,134,11,0.14)')}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--expiring-soon)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-              </span>
-              <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <span style={briefingLabelStyle}>
-                  {briefing.attention.length > 0
-                    ? `${briefing.attention.length} thing${briefing.attention.length === 1 ? '' : 's'} need attention`
-                    : 'Nothing urgent today'}
-                </span>
-                <span style={briefingValueStyle}>
-                  {briefing.attention.length > 0
-                    ? briefing.attention.map(i => i.name).join(', ')
-                    : `$${totalValue.toFixed(0)} in pantry · ${weeklySaves} saved this week`}
-                </span>
-              </span>
-            </button>
-
-            {/* 2. Best dinner option */}
-            {briefing.bestDinner && (
-              <button onClick={() => openRecipe(briefing.bestDinner!.recipe)} style={briefingRowStyle(false)}>
-                <span style={briefingIconStyle('var(--accent-dim)')}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 002-2V2"/><path d="M5 2v20"/><path d="M17 2v20"/><path d="M17 8c0-3 1-6 2-6s2 3 2 6-1 4-2 4-2-1-2-4z"/>
-                  </svg>
-                </span>
-                <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                  <span style={briefingLabelStyle}>Your best dinner option</span>
-                  <span style={briefingValueStyle}>
-                    {briefing.bestDinner.recipe.name}
-                    {briefing.bestDinner.usesExpiring && (
-                      <span style={{ color: 'var(--expiring-soon)', fontWeight: 700 }}> · uses expiring food</span>
-                    )}
-                  </span>
-                </span>
-                <span style={briefingChevronStyle}>›</span>
-              </button>
-            )}
-
-            {/* 3. One item worth freezing */}
-            {briefing.freezeCandidate && (
-              <div style={briefingRowStyle(false)}>
-                <span style={briefingIconStyle('var(--accent-dim)')}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2v20M4.5 5.5L19.5 18.5M19.5 5.5L4.5 18.5"/><path d="M8 2L12 6L16 2M8 22L12 18L16 22M2 8L6 12L2 16M22 8L18 12L22 16"/>
-                  </svg>
-                </span>
-                <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                  <span style={briefingLabelStyle}>One item worth freezing</span>
-                  <span style={briefingValueStyle}>
-                    {briefing.freezeCandidate.item.name} · keeps {briefing.freezeCandidate.freezerDays}d frozen
-                  </span>
-                </span>
-                <button
-                  onClick={() => handleFreezeItem(briefing.freezeCandidate!.item)}
-                  style={{
-                    flexShrink: 0,
-                    padding: '6px 12px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    fontFamily: "'Cormorant Garamond', serif",
-                    cursor: 'pointer',
-                  }}
-                >
-                  Freeze
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
 
       {/* Use it tonight */}
       {urgentItems.length > 0 && (
@@ -811,6 +715,23 @@ export function PantryScreen() {
                       <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent)', fontFamily: "'Cormorant Garamond', serif" }}>Freeze</span>
                     </button>
                   )}
+                  <button
+                    onClick={() => handleExtendItem(item)}
+                    aria-label={`Extend ${item.name} by ${EXTEND_DAYS} days`}
+                    style={{
+                      flex: 1, padding: '10px 4px', background: 'transparent',
+                      border: '1px solid var(--fresh)',
+                      borderRadius: '10px', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--fresh)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="13" r="8" />
+                      <path d="M12 9v4l2.5 2.5" />
+                      <path d="M12 2v3M9 2h6" />
+                    </svg>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--fresh)', fontFamily: "'Cormorant Garamond', serif" }}>+{EXTEND_DAYS}d</span>
+                  </button>
 	                  <button
                     onClick={() => { setEditingItem(item); setSwipingItem(null); }}
                     style={{
@@ -991,9 +912,9 @@ function EditItemModal({ item, onSave, onClose }: {
           { label: 'Name', el: <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /> },
           { label: 'Quantity', el: (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button onClick={() => setQuantity(q => String(Math.max(1, parseFloat(q) - 1)))} style={qBtnStyle}>−</button>
+              <button onClick={() => setQuantity(q => String(Math.max(1, (parseFloat(q) || 0) - 1)))} style={qBtnStyle}>−</button>
               <input value={quantity} onChange={e => setQuantity(e.target.value)} style={{ ...inputStyle, textAlign: 'center', width: '60px' }} />
-              <button onClick={() => setQuantity(q => String(parseFloat(q) + 1))} style={qBtnStyle}>+</button>
+              <button onClick={() => setQuantity(q => String((parseFloat(q) || 0) + 1))} style={qBtnStyle}>+</button>
               <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="unit" style={{ ...inputStyle, width: '70px' }} />
             </div>
           )},
@@ -1043,7 +964,20 @@ function EditItemModal({ item, onSave, onClose }: {
         </div>
 
         <button
-          onClick={() => onSave({ name: name.trim(), quantity: parseFloat(quantity) || 1, unit, expirationDate: expDate, estimatedValue: parseFloat(value) || item.estimatedValue, location, dateType })}
+          onClick={() => onSave({
+            name: name.trim(),
+            quantity: parseFloat(quantity) || 1,
+            unit,
+            // A blank date box must NOT save an empty date (→ "NaN days" + dead
+            // reminders); keep the existing date instead.
+            expirationDate: expDate || item.expirationDate,
+            // Respect an explicit $0 (free/giveaway food). Only fall back to the
+            // old value when the field is blank or non-numeric — `|| old` treated
+            // 0 as falsy and silently restored the old price, inflating savings.
+            estimatedValue: value.trim() === '' || isNaN(parseFloat(value)) ? item.estimatedValue : parseFloat(value),
+            location,
+            dateType,
+          })}
           style={{
             width: '100%', padding: '14px', background: 'var(--accent)', border: 'none',
             borderRadius: '12px', color: '#fff', fontFamily: "'Cormorant Garamond', serif",
@@ -1056,61 +990,6 @@ function EditItemModal({ item, onSave, onClose }: {
     </div>
   );
 }
-
-function briefingRowStyle(disabled: boolean): React.CSSProperties {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '13px',
-    background: 'rgba(255,255,255,0.32)',
-    border: '1px solid rgba(74,124,89,0.10)',
-    cursor: disabled ? 'default' : 'pointer',
-    opacity: disabled ? 0.7 : 1,
-    textAlign: 'left',
-    fontFamily: 'inherit',
-  };
-}
-
-function briefingIconStyle(bg: string): React.CSSProperties {
-  return {
-    width: 30,
-    height: 30,
-    borderRadius: '9px',
-    background: bg,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  };
-}
-
-const briefingLabelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: '13px',
-  fontWeight: 700,
-  color: 'var(--text-primary)',
-};
-
-const briefingValueStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: '11px',
-  color: 'var(--text-muted)',
-  fontWeight: 600,
-  marginTop: '1px',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const briefingChevronStyle: React.CSSProperties = {
-  flexShrink: 0,
-  color: 'var(--text-muted)',
-  fontSize: '18px',
-  fontWeight: 700,
-};
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px',
