@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectItemsToSchedule, MAX_SCHEDULED_ITEMS } from './notifications';
+import { selectItemsToSchedule, MAX_SCHEDULED_ITEMS, notificationIdsForItem } from './notifications';
 import type { PantryItem } from '../types';
 
 function item(id: string, expirationDate: string | undefined): PantryItem {
@@ -37,5 +37,22 @@ describe('selectItemsToSchedule', () => {
     expect(picked.length).toBe(MAX_SCHEDULED_ITEMS);
     expect(picked[0].id).toBe('d0');
     expect(picked[picked.length - 1].id).toBe(`d${MAX_SCHEDULED_ITEMS - 1}`);
+  });
+});
+
+describe('notificationIdsForItem', () => {
+  it('gives an item four distinct reminder ids (incl. finish check-in)', () => {
+    const ids = notificationIdsForItem('some-item-id');
+    const values = [ids.twoDays, ids.oneDay, ids.dayOf, ids.finish];
+    expect(new Set(values).size).toBe(4);
+    // finish sits in the +4 slot, one past the day-of reminder.
+    expect(ids.finish).toBe(ids.dayOf + 1);
+  });
+
+  it('does not collide across different items', () => {
+    const a = notificationIdsForItem('item-a');
+    const b = notificationIdsForItem('item-b');
+    const all = [a.twoDays, a.oneDay, a.dayOf, a.finish, b.twoDays, b.oneDay, b.dayOf, b.finish];
+    expect(new Set(all).size).toBe(8);
   });
 });

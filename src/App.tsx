@@ -14,6 +14,7 @@ import { KeyboardScrollManager } from './components/KeyboardScrollManager';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import * as debug from './lib/debug';
 import posthog from 'posthog-js';
 
@@ -207,6 +208,18 @@ export default function App() {
     });
     return () => { listener.then(l => l.remove()); };
   }, []);
+
+  // Route a tapped "Did you finish it?" check-in to the pantry, where the item
+  // is one tap from being logged (Eaten / Tossed). Native only.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const listener = LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+      if (action.notification.extra?.type === 'finishCheckIn') {
+        setActiveTab('pantry');
+      }
+    });
+    return () => { listener.then(l => l.remove()); };
+  }, [setActiveTab]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);

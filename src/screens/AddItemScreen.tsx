@@ -11,6 +11,7 @@ import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS, getDefaultDateType } 
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { useAiConsentGate } from '../components/useAiConsentGate';
 import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
@@ -135,6 +136,7 @@ function isCancelledError(error: unknown): boolean {
 
 export function AddItemScreen() {
   const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { ensureConsent, consentModal } = useAiConsentGate();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
 
   useEffect(() => {
@@ -200,6 +202,9 @@ export function AddItemScreen() {
 
   const handleReceiptTap = async () => {
     if (!isPro()) { setShowUpgrade(true); return; }
+    // Receipt OCR sends the photo to a third-party AI — gate it on Avo-AI
+    // consent (prompt first, like chat), then resume once granted.
+    if (useStore.getState().avoAiConsent !== 'granted') { ensureConsent(() => void handleReceiptTap()); return; }
     if (Capacitor.isNativePlatform()) {
       try {
         const photo = await Camera.getPhoto({
@@ -259,6 +264,8 @@ export function AddItemScreen() {
   // ── "Snap your fridge" (Pro): one photo → AI lists everything to add ─────────
   const handleFridgeTap = async () => {
     if (!isPro()) { setShowUpgrade(true); return; }
+    // Fridge scan sends the photo to a third-party AI — same consent gate.
+    if (useStore.getState().avoAiConsent !== 'granted') { ensureConsent(() => void handleFridgeTap()); return; }
     if (Capacitor.isNativePlatform()) {
       try {
         const photo = await Camera.getPhoto({
@@ -1167,6 +1174,8 @@ export function AddItemScreen() {
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
+
+      {consentModal}
 
     </div>
   );

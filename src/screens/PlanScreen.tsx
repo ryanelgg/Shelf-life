@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { useAiConsentGate } from '../components/useAiConsentGate';
 import { predictRestocks } from '../lib/shoppingRadar';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
@@ -457,6 +458,7 @@ export function PlanScreen() {
     isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
     incrementAvoChat, decrementAvoChat,
   } = useStore();
+  const { ensureConsent, consentModal } = useAiConsentGate();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newListName, setNewListName] = useState('');
@@ -887,7 +889,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
         {isPro() && (
           <div style={{ marginBottom: '10px' }}>
             <button
-              onClick={() => void generateAvoMealPlan()}
+              onClick={() => ensureConsent(() => void generateAvoMealPlan())}
               disabled={avoMealPlanLoading}
               style={{
                 width: '100%',
@@ -1779,6 +1781,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
+      {consentModal}
       {cookingRecipe && (
         <CookModeOverlay
           recipe={cookingRecipe}
