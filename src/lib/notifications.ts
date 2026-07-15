@@ -30,32 +30,32 @@ const TWO_DAYS_BEFORE = [
 const ONE_DAY_BEFORE = [
   (u: string, n: string) => ({ title: `🥑 ${u}, tomorrow's the day!`, body: `Your ${n} expires tomorrow — let's give it the spotlight 🌟` }),
   (_u: string, n: string) => ({ title: 'Avo says hi 👋', body: `Your ${n} expires tomorrow! Got 5 minutes for a quick recipe?` }),
-  (u: string, n: string) => ({ title: '💚 Quick heads up', body: `Hey ${u}, your ${n} won\'t make it past tomorrow. Need help cooking it?` }),
+  (u: string, n: string) => ({ title: '💚 Quick heads up', body: `Hey ${u}, your ${n} won't make it past tomorrow. Need help cooking it?` }),
   (u: string, n: string) => ({ title: `🥑 ${u}, listen…`, body: `Your ${n} expires tomorrow. We can do this together!` }),
-  (_u: string, n: string) => ({ title: 'One day to go ⏳', body: `Your ${n} is on its last day tomorrow. Avo\'s rooting for it!` }),
-  (u: string, n: string) => ({ title: '🥑 Tomorrow\'s the deadline', body: `${u}, your ${n} expires tomorrow. Let\'s make a plan together!` }),
+  (_u: string, n: string) => ({ title: 'One day to go ⏳', body: `Your ${n} is on its last day tomorrow. Avo's rooting for it!` }),
+  (u: string, n: string) => ({ title: '🥑 Tomorrow\'s the deadline', body: `${u}, your ${n} expires tomorrow. Let's make a plan together!` }),
   (_u: string, n: string) => ({ title: 'Last call vibes 🌅', body: `Your ${n} expires tomorrow — time to shine ✨` }),
 ];
 
 // ── Expiration: day of ──────────────────────────────────────────────────────
 const DAY_OF = [
-  (u: string, n: string) => ({ title: `🥑 ${u}, it\'s go time!`, body: `Your ${n} expires today. You\'ve got this!` }),
-  (_u: string, n: string) => ({ title: 'Today\'s the day 💚', body: `Your ${n} expires today. Let\'s give it a great send-off.` }),
-  (u: string, n: string) => ({ title: `Avo believes in you, ${u}`, body: `Your ${n} expires today — quick! What\'s for dinner?` }),
+  (u: string, n: string) => ({ title: `🥑 ${u}, it's go time!`, body: `Your ${n} expires today. You've got this!` }),
+  (_u: string, n: string) => ({ title: 'Today\'s the day 💚', body: `Your ${n} expires today. Let's give it a great send-off.` }),
+  (u: string, n: string) => ({ title: `Avo believes in you, ${u}`, body: `Your ${n} expires today — quick! What's for dinner?` }),
   (_u: string, n: string) => ({ title: '🥑 Last call!', body: `Your ${n} expires today. One quick meal can save it ✨` }),
   (u: string, n: string) => ({ title: 'Final stretch! 🏁', body: `${u}, your ${n} expires today. Cook it, freeze it, anything goes!` }),
-  (_u: string, n: string) => ({ title: '🌿 It\'s now or never', body: `Your ${n} expires today. Let\'s do this!` }),
+  (_u: string, n: string) => ({ title: '🌿 It\'s now or never', body: `Your ${n} expires today. Let's do this!` }),
   (u: string, n: string) => ({ title: '🥑 Hero hour', body: `${u}, your ${n} expires today. Be its hero?` }),
 ];
 
 // ── Streak protection (fires 7pm if streak at risk) ─────────────────────────
 const STREAK_PROTECTION = [
-  (_u: string, s: number) => ({ title: `🔥 Your ${s}-day streak!`, body: `Don\'t break it now — log a meal before midnight 💚` }),
+  (_u: string, s: number) => ({ title: `🔥 Your ${s}-day streak!`, body: `Don't break it now — log a meal before midnight 💚` }),
   (u: string, s: number) => ({ title: 'Avo\'s hyping you up 🥑', body: `${s} days strong, ${u}! Keep the streak alive today.` }),
   (u: string, s: number) => ({ title: `🔥 ${u}, the streak!`, body: `${s} days of saving food. Ready for day ${s + 1}?` }),
-  (u: string, s: number) => ({ title: 'Streak alert 🔔', body: `${u}, you\'re on day ${s}. Just one log to keep it rolling!` }),
-  (_u: string, s: number) => ({ title: '🥑 We\'ve come so far!', body: `${s} days strong — let\'s not let today be the day.` }),
-  (u: string, s: number) => ({ title: '🔥 Almost there!', body: `Day ${s} of your streak, ${u}. Avo\'s cheering for you!` }),
+  (u: string, s: number) => ({ title: 'Streak alert 🔔', body: `${u}, you're on day ${s}. Just one log to keep it rolling!` }),
+  (_u: string, s: number) => ({ title: '🥑 We\'ve come so far!', body: `${s} days strong — let's not let today be the day.` }),
+  (u: string, s: number) => ({ title: '🔥 Almost there!', body: `Day ${s} of your streak, ${u}. Avo's cheering for you!` }),
 ];
 
 // ── Streak milestones (fires immediately when hit) ──────────────────────────
@@ -74,8 +74,8 @@ const RE_ENGAGEMENT = [
   (u: string) => ({ title: `🥑 Avo misses you, ${u}`, body: 'Haven\'t seen you in a few days — what\'s in the fridge?' }),
   (u: string) => ({ title: `Hey ${u} 👋`, body: 'It\'s been a minute! Your pantry\'s getting curious.' }),
   (_u: string) => ({ title: '🥑 Just checking in!', body: 'Avo\'s been waiting. Got something to log?' }),
-  (u: string) => ({ title: 'Hi! 💚', body: `Hey ${u}, Avo\'s keeping watch over your pantry. Wanna peek in?` }),
-  (u: string) => ({ title: `🥑 Where\'d you go, ${u}?`, body: 'Avo\'s been holding down the fort. Come say hi!' }),
+  (u: string) => ({ title: 'Hi! 💚', body: `Hey ${u}, Avo's keeping watch over your pantry. Wanna peek in?` }),
+  (u: string) => ({ title: `🥑 Where'd you go, ${u}?`, body: 'Avo\'s been holding down the fort. Come say hi!' }),
   (_u: string) => ({ title: 'Pssst 👀', body: 'Avo wonders if anything new came home from the store?' }),
 ];
 
@@ -163,6 +163,30 @@ function reEngagementTime(daysFromNow: number, hour = 18): Date {
   return t;
 }
 
+// ── Capacity limits ─────────────────────────────────────────────────────────
+//
+// iOS silently keeps only 64 pending local notifications and drops the rest.
+// Each dated item schedules up to 3 reminders and engagement adds a few fixed
+// ones, so we cap how many items we schedule (soonest-expiring first) and refuse
+// to schedule a single item once we're near the ceiling.
+
+// 18 items × 3 reminders = 54, leaving headroom for engagement notifications.
+export const MAX_SCHEDULED_ITEMS = 18;
+// Hard ceiling for a single-item schedule check (leaves ~4 slots for engagement).
+const MAX_PENDING_NOTIFICATIONS = 60;
+
+/**
+ * Given the pantry, pick the items whose reminders we should actually schedule:
+ * only those with an expiration date, soonest-expiring first, capped at `max`.
+ * Pure + exported so the prioritization is unit-testable.
+ */
+export function selectItemsToSchedule(items: PantryItem[], max: number = MAX_SCHEDULED_ITEMS): PantryItem[] {
+  return items
+    .filter(i => !!i.expirationDate)
+    .sort((a, b) => (a.expirationDate! < b.expirationDate! ? -1 : a.expirationDate! > b.expirationDate! ? 1 : 0))
+    .slice(0, max);
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export async function ensureNotificationPermission(): Promise<boolean> {
@@ -210,6 +234,15 @@ export async function scheduleItemNotifications(item: PantryItem, userName?: str
     }
 
     if (toSchedule.length > 0) {
+      // If we're near iOS's 64-notification ceiling (e.g. a big receipt scan
+      // just added many dated items), skip this item's reminders rather than
+      // letting iOS silently drop an arbitrary subset. rescheduleAllNotifications
+      // reconciles by soonest-expiring, so the most urgent items win.
+      const pending = await LocalNotifications.getPending();
+      if (pending.notifications.length + toSchedule.length > MAX_PENDING_NOTIFICATIONS) {
+        debug.warn(`[notifications] near capacity (${pending.notifications.length} pending) — skipping reminders for "${item.name}"`);
+        return;
+      }
       await LocalNotifications.schedule({ notifications: toSchedule });
     }
   } catch (e) {
@@ -357,7 +390,15 @@ interface RescheduleContext {
 export async function rescheduleAllNotifications(ctx: RescheduleContext): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   await cancelAllNotifications();
-  for (const item of ctx.items) {
+  // Only schedule the soonest-expiring items so we stay under iOS's 64-pending
+  // ceiling. Items beyond the cap (further-out expirations) are intentionally
+  // skipped — they'll get reminders once nearer items are consumed and this
+  // reconcile runs again.
+  const toSchedule = selectItemsToSchedule(ctx.items);
+  if (toSchedule.length < ctx.items.filter(i => i.expirationDate).length) {
+    debug.warn(`[notifications] scheduling soonest ${toSchedule.length} dated items (capacity cap)`);
+  }
+  for (const item of toSchedule) {
     await scheduleItemNotifications(item, ctx.userName);
   }
   await scheduleStreakProtection(ctx.streakDays, ctx.userName);

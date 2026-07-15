@@ -1,23 +1,11 @@
 import { AVO_SYSTEM_PROMPT } from '../../../src/lib/avoPrompt.ts';
+import { corsHeaders, json, guardAiRequest, refundAiUsage } from '../_shared/aiGuard.ts';
 
 type AvoChatMessage = { role: 'user' | 'assistant'; content: string };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...corsHeaders,
-      ...(init.headers ?? {}),
-    },
-  });
-}
+// Per-user daily ceiling. Sits ABOVE the in-app free/Pro chat limits — this is
+// the abuse/cost backstop, not the product paywall.
+const DAILY_LIMIT = 60;
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
@@ -28,16 +16,38 @@ Deno.serve(async (request) => {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
 
+  const guard = await guardAiRequest(request, 'avo-chat', DAILY_LIMIT);
+  if (!guard.ok) return guard.response;
+
   const groqApiKey = Deno.env.get('GROQ_API_KEY');
   if (!groqApiKey) {
-    return json({ error: 'GROQ_API_KEY is not configured for the avo-chat function' }, { status: 500 });
+    // Server misconfig — don't charge the user's daily quota for it.
+    await refundAiUsage(guard.userId, 'avo-chat');
+    return json({ error: 'Avo is not available right now. Please try again later.' }, { status: 500 });
   }
 
   try {
     const { messages } = await request.json() as { messages?: AvoChatMessage[] };
     if (!messages || messages.length === 0) {
+      await refundAiUsage(guard.userId, 'avo-chat');
       return json({ error: 'No messages provided' }, { status: 400 });
     }
+
+    // Validate the client payload before forwarding it to Groq. The system
+    // prompt is set server-side only: reject any client-supplied 'system' (or
+    // otherwise malformed) role so a user can't override Avo's instructions,
+    // and cap the count/size so a single request can't run up the token bill.
+    const MAX_MESSAGES = 40;
+    const MAX_CONTENT_CHARS = 4000;
+    const safeMessages: AvoChatMessage[] = [];
+    for (const m of messages) {
+      if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') {
+        await refundAiUsage(guard.userId, 'avo-chat');
+        return json({ error: 'Invalid message in request' }, { status: 400 });
+      }
+      safeMessages.push({ role: m.role, content: m.content.slice(0, MAX_CONTENT_CHARS) });
+    }
+    const trimmedMessages = safeMessages.slice(-MAX_MESSAGES);
 
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -50,14 +60,17 @@ Deno.serve(async (request) => {
         max_tokens: 200,
         messages: [
           { role: 'system', content: AVO_SYSTEM_PROMPT },
-          ...messages,
+          ...trimmedMessages,
         ],
       }),
     });
 
     if (!groqResponse.ok) {
-      const details = await groqResponse.text();
-      return json({ error: details || `Groq request failed with ${groqResponse.status}` }, { status: groqResponse.status });
+      // Log the upstream detail server-side but return a generic message so we
+      // don't leak provider internals to the client.
+      console.error(`[avo-chat] Groq request failed ${groqResponse.status}:`, await groqResponse.text());
+      await refundAiUsage(guard.userId, 'avo-chat');
+      return json({ error: 'Avo is having trouble right now. Please try again.' }, { status: 502 });
     }
 
     const payload = await groqResponse.json() as {
@@ -66,12 +79,16 @@ Deno.serve(async (request) => {
 
     const text = payload.choices?.[0]?.message?.content?.trim();
     if (!text) {
+      await refundAiUsage(guard.userId, 'avo-chat');
       return json({ error: 'Groq returned an empty response' }, { status: 502 });
     }
 
     return json({ text });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected function error';
-    return json({ error: message }, { status: 500 });
+    await refundAiUsage(guard.userId, 'avo-chat');
+    // Log the detail server-side; return a generic message so we don't leak
+    // internals to the client.
+    console.error('[avo-chat] error:', error instanceof Error ? error.message : error);
+    return json({ error: 'Avo had a hiccup. Please try again.' }, { status: 500 });
   }
 });

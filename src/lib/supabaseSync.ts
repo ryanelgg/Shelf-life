@@ -5,28 +5,117 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { SignInWithApple } from './appleSignIn';
 import * as debug from './debug';
+import { enqueueOutbox, flushOutbox, outboxPending, outboxHasPendingAdd, type OutboxOp } from './syncOutbox';
+
+// Ids whose pantryAdd is currently being attempted live (before it has landed
+// server-side). While an add is unconfirmed — either in-flight here or queued in
+// the outbox — a later edit/delete must be ordered BEHIND the add rather than run
+// as an independent live write, which would match 0 rows, look like success, and
+// then be clobbered when the add finally lands.
+const liveAddInFlight = new Set<string>();
+// Edits/deletes that arrived while a live add was still in flight. We can't route
+// them yet (we don't know if the add will land live or fall back to the outbox),
+// so we defer them until the add settles, then route each with correct ordering.
+const deferredAfterAdd = new Map<string, Array<() => void>>();
+
+// Route a pantry edit/delete so it can never be lost to the add→edit race.
+function routePantryMutation(id: string, op: OutboxOp, live: () => PromiseLike<{ error: { message: string } | null }>, label: string): void {
+  if (liveAddInFlight.has(id)) {
+    // Add still in flight — defer; on settle we'll know whether to go live or
+    // queue behind an add that fell back to the outbox.
+    const list = deferredAfterAdd.get(id) ?? [];
+    list.push(() => routePantryMutation(id, op, live, label));
+    deferredAfterAdd.set(id, list);
+    return;
+  }
+  if (outboxHasPendingAdd(id)) {
+    // Add is queued offline — FIFO puts this edit/delete right after it.
+    enqueueOutbox(op);
+    return;
+  }
+  syncWrite(live, label, op);
+}
+
+// Called when a live add settles (landed or fell back to the outbox); drains any
+// edits/deletes that were waiting on it, now routed with the add's real state.
+function drainDeferredAfterAdd(id: string): void {
+  const list = deferredAfterAdd.get(id);
+  deferredAfterAdd.delete(id);
+  list?.forEach(fn => fn());
+}
+
+// Re-export so callers (App.tsx) can flush queued offline writes on boot from a
+// single sync surface.
+export { flushOutbox } from './syncOutbox';
 
 /**
  * Fire-and-forget Supabase write with automatic retry.
  * Retries up to `maxRetries` times with exponential back-off (2s, 4s).
  * Errors are surfaced via debug.error so they're visible in production logs.
+ *
+ * If `outboxOp` is supplied, a write that exhausts all retries is queued to the
+ * offline outbox and replayed on the next boot with connectivity — so an offline
+ * add/edit/delete is never silently lost or resurrected. On a successful write we
+ * opportunistically drain any backlog (we're clearly online again).
  */
 function syncWrite(
   fn: () => PromiseLike<{ error: { message: string } | null }>,
   label: string,
+  outboxOp?: OutboxOp,
   maxRetries = 2,
   delayMs = 2000,
+  onSettled?: (ok: boolean) => void,
 ): void {
   void (async () => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
-      const { error } = await fn();
-      if (!error) return;
+      // A network-layer failure REJECTS rather than resolving {error}. Without
+      // this catch the IIFE would reject unhandled — onSettled never fires, so
+      // a pantryAdd's id would stay stuck in liveAddInFlight forever and every
+      // later edit/delete to it would be deferred and silently dropped.
+      let error: { message: string } | null;
+      try {
+        ({ error } = await fn());
+      } catch (e) {
+        error = { message: e instanceof Error ? e.message : String(e) };
+      }
+      if (!error) {
+        if (outboxPending() > 0) void flushOutbox();
+        onSettled?.(true);
+        return;
+      }
       if (attempt === maxRetries) {
         debug.error(`[sync] ${label} failed after ${maxRetries + 1} attempts:`, error.message);
+        if (outboxOp) enqueueOutbox(outboxOp);
+        onSettled?.(false);
       }
     }
   })();
+}
+
+/**
+ * Awaitable Supabase write with retry + visible error logging.
+ * Unlike syncWrite (fire-and-forget), this resolves only after the write
+ * succeeds or all retries are exhausted, so callers that `await` it (e.g. a
+ * subscription-tier change) get a settled result. Failures are logged rather
+ * than thrown — a transient blip must never crash the caller — but they are no
+ * longer silently swallowed. Returns true on success, false if all retries fail.
+ */
+async function awaitableWrite(
+  fn: () => PromiseLike<{ error: { message: string } | null }>,
+  label: string,
+  maxRetries = 2,
+  delayMs = 1000,
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
+    const { error } = await fn();
+    if (!error) return true;
+    if (attempt === maxRetries) {
+      debug.error(`[sync] ${label} failed after ${maxRetries + 1} attempts:`, error.message);
+    }
+  }
+  return false;
 }
 
 async function sha256hex(str: string): Promise<string> {
@@ -67,21 +156,32 @@ export async function signInWithGoogle() {
       });
       if (error) throw error;
       if (data.url) {
+        // Clear the in-flight guard when the in-app browser is actually
+        // dismissed (success deep-link OR user cancel), not on a fixed timer.
+        // A real OAuth flow can take far longer than the old 2s reset, which
+        // let a second tap start a duplicate flow.
+        const handle = await Browser.addListener('browserFinished', () => {
+          googleSignInInFlight = false;
+          void handle.remove();
+        });
         await Browser.open({ url: data.url, presentationStyle: 'popover' });
+      } else {
+        googleSignInInFlight = false;
       }
     } else {
+      // Web: the page navigates away to the provider, tearing down this JS
+      // context, so the guard resets naturally on redirect.
       await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: window.location.origin },
       });
     }
   } catch (e) {
+    googleSignInInFlight = false;
     if (!isCancelledAuthError(e)) {
       debug.error('signInWithGoogle error:', e);
+      throw e;
     }
-  } finally {
-    // Reset after a short delay so the iOS deep-link callback can close the browser first
-    setTimeout(() => { googleSignInInFlight = false; }, 2000);
   }
 }
 
@@ -231,11 +331,17 @@ export async function loadProfile(userId: string): Promise<ProfileRow | null> {
     .eq('id', userId)
     .maybeSingle();
   debug.log('[loadProfile] result:', { hasData: !!data, errorCode: error?.code, errorMsg: error?.message });
+  // Throw on a real DB/network error so callers can tell it apart from a
+  // genuinely missing row (null). A returning user must NOT be treated as new
+  // — and pushed back into onboarding — just because the network blipped.
+  if (error) throw error;
   return data ?? null;
 }
 
 export async function upsertProfile(user: User, supabaseUserId: string) {
-  await supabase.from('profiles').upsert({
+  // Retried + logged: a dropped profile upsert here means onboarding_complete
+  // never lands, which sends the user back through onboarding next launch.
+  await awaitableWrite(() => supabase.from('profiles').upsert({
     id: supabaseUserId,
     name: user.name,
     email: user.email ?? null,
@@ -246,15 +352,20 @@ export async function upsertProfile(user: User, supabaseUserId: string) {
     last_active_date: user.lastActiveDate,
     avo_chat_count: user.avoChatCount,
     avo_chat_reset_date: user.avoChatResetDate,
+    avo_trial_started_at: user.avoTrialStartedAt,
+    avo_free_chats_used: user.avoFreeChatsUsed,
     onboarding_complete: user.onboardingComplete,
-  });
+  }), 'upsertProfile');
 }
 
 export async function syncProfileUpdates(
   supabaseUserId: string,
   updates: Partial<ProfileRow>
 ) {
-  await supabase.from('profiles').update(updates).eq('id', supabaseUserId);
+  await awaitableWrite(
+    () => supabase.from('profiles').update(updates).eq('id', supabaseUserId),
+    'syncProfileUpdates',
+  );
 }
 
 export async function resetCloudUserData(userId: string) {
@@ -277,16 +388,9 @@ export async function resetCloudUserData(userId: string) {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 
-export async function loadAllData(userId: string): Promise<{
-  pantryItems: PantryItem[];
-  wasteLogs: WasteLog[];
-}> {
-  const [itemsRes, logsRes] = await Promise.all([
-    supabase.from('pantry_items').select('*').eq('user_id', userId),
-    supabase.from('waste_logs').select('*').eq('user_id', userId),
-  ]);
-
-  const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => ({
+// Row → app-type mappers (shared by the initial load and the realtime listener).
+export function rowToPantryItem(r: PantryItemRow): PantryItem {
+  return {
     id: r.id,
     name: r.name,
     category: r.category as PantryItem['category'],
@@ -298,9 +402,12 @@ export async function loadAllData(userId: string): Promise<{
     estimatedValue: r.estimated_value,
     notes: r.notes ?? undefined,
     frozen: r.frozen,
-  }));
+    dateType: (r.date_type as PantryItem['dateType']) ?? undefined,
+  };
+}
 
-  const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => ({
+export function rowToWasteLog(r: WasteLogRow): WasteLog {
+  return {
     id: r.id,
     itemName: r.item_name,
     category: r.category as WasteLog['category'],
@@ -308,17 +415,43 @@ export async function loadAllData(userId: string): Promise<{
     date: r.date,
     estimatedValue: r.estimated_value,
     quantity: r.quantity,
-  }));
+  };
+}
+
+export async function loadAllData(userId: string, householdId?: string | null): Promise<{
+  pantryItems: PantryItem[];
+  wasteLogs: WasteLog[];
+}> {
+  // In a household, load the shared pantry (every member's items live under the
+  // same household_id). Solo users still load by user_id.
+  const [itemsRes, logsRes] = await Promise.all([
+    householdId
+      ? supabase.from('pantry_items').select('*').eq('household_id', householdId)
+      : supabase.from('pantry_items').select('*').eq('user_id', userId),
+    householdId
+      ? supabase.from('waste_logs').select('*').eq('household_id', householdId)
+      : supabase.from('waste_logs').select('*').eq('user_id', userId),
+  ]);
+
+  // Throw on error rather than coercing to []. A failed read must not look
+  // identical to "0 items" — otherwise the caller would overwrite a populated
+  // local pantry with a blank one on a network blip.
+  if (itemsRes.error) throw itemsRes.error;
+  if (logsRes.error) throw logsRes.error;
+
+  const pantryItems: PantryItem[] = (itemsRes.data ?? []).map((r: PantryItemRow) => rowToPantryItem(r));
+  const wasteLogs: WasteLog[] = (logsRes.data ?? []).map((r: WasteLogRow) => rowToWasteLog(r));
 
   return { pantryItems, wasteLogs };
 }
 
 // ── Pantry sync ───────────────────────────────────────────────────────────────
 
-export function syncPantryAdd(item: PantryItem, userId: string) {
-  syncWrite(() => supabase.from('pantry_items').insert({
+export function syncPantryAdd(item: PantryItem, userId: string, householdId?: string | null) {
+  const row = {
     id: item.id,
     user_id: userId,
+    household_id: householdId ?? null,
     name: item.name,
     category: item.category,
     location: item.location,
@@ -329,7 +462,16 @@ export function syncPantryAdd(item: PantryItem, userId: string) {
     estimated_value: item.estimatedValue,
     notes: item.notes ?? null,
     frozen: item.frozen ?? false,
-  }), 'pantryAdd');
+    date_type: item.dateType ?? null,
+  };
+  liveAddInFlight.add(item.id);
+  syncWrite(
+    () => supabase.from('pantry_items').insert(row),
+    'pantryAdd',
+    { kind: 'pantryAdd', row },
+    2, 2000,
+    () => { liveAddInFlight.delete(item.id); drainDeferredAfterAdd(item.id); },
+  );
 }
 
 export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
@@ -344,25 +486,38 @@ export function syncPantryUpdate(id: string, updates: Partial<PantryItem>) {
   if (updates.estimatedValue !== undefined)  row.estimated_value = updates.estimatedValue;
   if (updates.notes !== undefined)           row.notes = updates.notes ?? null;
   if (updates.frozen !== undefined)          row.frozen = updates.frozen;
+  if (updates.dateType !== undefined)        row.date_type = updates.dateType ?? null;
 
-  syncWrite(() => supabase.from('pantry_items').update(row).eq('id', id), 'pantryUpdate');
+  routePantryMutation(
+    id,
+    { kind: 'pantryUpdate', id, row },
+    () => supabase.from('pantry_items').update(row).eq('id', id),
+    'pantryUpdate',
+  );
 }
 
 export function syncPantryRemove(id: string) {
-  syncWrite(() => supabase.from('pantry_items').delete().eq('id', id), 'pantryRemove');
+  routePantryMutation(
+    id,
+    { kind: 'pantryRemove', id },
+    () => supabase.from('pantry_items').delete().eq('id', id),
+    'pantryRemove',
+  );
 }
 
 // ── Waste log sync ────────────────────────────────────────────────────────────
 
-export function syncWasteLog(log: WasteLog, userId: string) {
-  syncWrite(() => supabase.from('waste_logs').insert({
+export function syncWasteLog(log: WasteLog, userId: string, householdId?: string | null) {
+  const row = {
     id: log.id,
     user_id: userId,
+    household_id: householdId ?? null,
     item_name: log.itemName,
     category: log.category,
     action: log.action,
     date: log.date,
     estimated_value: log.estimatedValue,
     quantity: log.quantity,
-  }), 'wasteLogAdd');
+  };
+  syncWrite(() => supabase.from('waste_logs').insert(row), 'wasteLogAdd', { kind: 'wasteLogAdd', row });
 }

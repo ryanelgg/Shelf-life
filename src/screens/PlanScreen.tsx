@@ -1,14 +1,16 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { JSX } from 'react';
+import { requestAvoChat } from '../lib/avoApi';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
-import { formatLocalDate, getFreshnessStatus } from '../types';
+import { formatLocalDate, getFreshnessStatus, ingredientMatchesItem } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
-import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref } from '../types';
+import { predictRestocks } from '../lib/shoppingRadar';
+import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
 
@@ -276,7 +278,9 @@ function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    if (blocked.some(b => ingredNames.includes(b))) return false;
+    // Whole-word match, not substring — otherwise "egg" hides eggplant (vegan),
+    // "wheat" hides buckwheat (gluten-free), and "ham" hides graham crackers.
+    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(ingredNames))) return false;
   }
   return true;
 }
@@ -393,11 +397,7 @@ function getIngredientStatus(
 }
 
 function findPantryMatch(ingredientName: string, pantryItems: PantryItem[]): PantryItem | undefined {
-  const nameL = ingredientName.toLowerCase();
-  return pantryItems.find(item => {
-    const itemL = item.name.toLowerCase();
-    return itemL.includes(nameL) || nameL.includes(itemL);
-  });
+  return pantryItems.find(item => ingredientMatchesItem(ingredientName, item.name));
 }
 
 function matchedPantryItemsForRecipe(recipe: Recipe, pantryItems: PantryItem[]): PantryItem[] {
@@ -430,9 +430,10 @@ function recipeSearchTokens(query: string): string[] {
 
 export function PlanScreen() {
   const {
-    mealPlan, recipes, pantryItems, browseRecipes, user,
+    mealPlan, recipes, pantryItems, browseRecipes, user, wasteLogs,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
-    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem,
+    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
+    incrementAvoChat, decrementAvoChat,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -440,6 +441,8 @@ export function PlanScreen() {
   const [newItemName, setNewItemName] = useState('');
   const [addingToList, setAddingToList] = useState<string | null>(null);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [avoMealPlanLoading, setAvoMealPlanLoading] = useState(false);
+  const [avoMealPlanError, setAvoMealPlanError] = useState<string | null>(null);
   const [recipeFilter, setRecipeFilter] = useState('all');
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => recipeSearchSeed ?? '');
@@ -450,6 +453,75 @@ export function PlanScreen() {
     if (!recipeSearchSeed) return;
     setRecipeSearchSeed(null);
   }, [recipeSearchSeed, setRecipeSearchSeed]);
+
+  const generateAvoMealPlan = useCallback(async () => {
+    if (avoMealPlanLoading) return;
+    // Generating a plan is a real AI call, so meter it against the daily Avo
+    // quota (Pro: 20/day) exactly like chat does. If the day's quota is spent,
+    // don't fire the request; refund in the catch below if it fails to produce
+    // a usable plan, so a failed attempt never costs a use.
+    if (!incrementAvoChat()) {
+      setAvoMealPlanError("You've used all your Avo AI for today — it resets tomorrow.");
+      return;
+    }
+    setAvoMealPlanLoading(true);
+    setAvoMealPlanError(null);
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    try {
+      const expiringItems = pantryItems
+        .slice()
+        .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate))
+        .slice(0, 15)
+        .map(i => `${i.name} (expires ${i.expirationDate})`);
+      const prefs = user?.dietaryPreferences?.filter(p => p !== 'none').join(', ') || 'none';
+
+      const prompt = `You are Avo, Pantre's friendly AI food assistant. Generate a creative 7-day meal plan that uses the user's expiring pantry items.
+
+Pantry items (sorted by soonest expiry):
+${expiringItems.join('\n')}
+
+Dietary preferences: ${prefs}
+
+Reply with ONLY a valid JSON array of 7 objects, no other text. Format exactly:
+[{"day":"Mon","meal":"Meal Name Here","pantryItems":3,"toBuy":1},{"day":"Tue","meal":"Meal Name Here","pantryItems":2,"toBuy":2},{"day":"Wed","meal":"Meal Name Here","pantryItems":4,"toBuy":0},{"day":"Thu","meal":"Meal Name Here","pantryItems":3,"toBuy":1},{"day":"Fri","meal":"Meal Name Here","pantryItems":5,"toBuy":0},{"day":"Sat","meal":"Meal Name Here","pantryItems":2,"toBuy":3},{"day":"Sun","meal":"Meal Name Here","pantryItems":3,"toBuy":1}]
+
+Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, toBuy = extra items needed. Keep it practical and tasty.`;
+
+      const response = await requestAvoChat([{ role: 'user', content: prompt }]);
+
+      // Extract JSON from response (Avo might wrap it in text)
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('Could not parse Avo\'s response');
+
+      const parsed = JSON.parse(jsonMatch[0]) as Array<{ day: string; meal: string; pantryItems: number; toBuy: number }>;
+      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Invalid plan format');
+
+      const newPlan: MealPlanDay[] = DAYS.map((day, i) => {
+        const entry = parsed.find(p => p.day === day) ?? parsed[i];
+        const meal = entry?.meal ?? 'Flexible night';
+        // Link the day to a real recipe when the name matches one we know, so the
+        // generated day is actually expandable/cookable instead of an inert row.
+        const mealLc = meal.toLowerCase();
+        const match = browseRecipes.find(r => r.name.toLowerCase() === mealLc)
+          ?? browseRecipes.find(r => mealLc.includes(r.name.toLowerCase()) || r.name.toLowerCase().includes(mealLc));
+        return {
+          day,
+          meal,
+          pantryItems: Math.max(0, entry?.pantryItems ?? 0),
+          toBuy: Math.max(0, entry?.toBuy ?? 0),
+          ...(match ? { recipeId: match.id } : {}),
+        };
+      });
+
+      setMealPlan(newPlan);
+    } catch (e) {
+      // Refund the metered use — the request didn't yield a usable plan.
+      decrementAvoChat();
+      setAvoMealPlanError(e instanceof Error ? e.message : 'Avo couldn\'t generate a plan. Try again!');
+    } finally {
+      setAvoMealPlanLoading(false);
+    }
+  }, [avoMealPlanLoading, pantryItems, user, setMealPlan, browseRecipes, incrementAvoChat, decrementAvoChat]);
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
@@ -513,6 +585,40 @@ export function PlanScreen() {
 
   const displayedRecipes = showAllRecipes ? filteredRecipes : filteredRecipes.slice(0, 6);
   const totalSavings = plannedRecipes.reduce((sum, recipe) => sum + recipe.savingsEstimate, 0);
+
+  // ── Avo's Shopping Radar (Predictive Restock, PRO) ─────────────────────────
+  // Learned locally from add/use history — no AI call. Recomputes only when the
+  // pantry or waste history changes.
+  const restockPredictions = useMemo(
+    () => predictRestocks(pantryItems, wasteLogs),
+    [pantryItems, wasteLogs],
+  );
+  const [radarAddedCount, setRadarAddedCount] = useState(0);
+  const RADAR_LIST_NAME = '🛰️ Shopping Radar';
+
+  const addRadarToShoppingList = () => {
+    if (restockPredictions.length === 0) return;
+    const newItems: ShoppingItem[] = restockPredictions.map((p, i) => ({
+      id: `sr-${Date.now()}-${i}`,
+      name: p.name,
+      category: p.category,
+      quantity: p.quantity,
+      unit: p.unit || '',
+      checked: false,
+    }));
+    const existing = shoppingLists.find(l => l.name === RADAR_LIST_NAME);
+    if (existing) {
+      // Merge, skipping staples already on the list (case-insensitive) so
+      // re-tapping doesn't pile up duplicates.
+      const have = new Set(existing.items.map(it => it.name.toLowerCase()));
+      const merged = [...existing.items, ...newItems.filter(it => !have.has(it.name.toLowerCase()))];
+      updateShoppingList(existing.id, { items: merged });
+    } else {
+      addShoppingList({ id: `sl-${Date.now()}`, name: RADAR_LIST_NAME, items: newItems, createdDate: formatLocalDate(new Date()) });
+    }
+    setRadarAddedCount(newItems.length);
+    setTimeout(() => setRadarAddedCount(0), 2500);
+  };
 
   const handleCreateList = () => {
     if (!newListName.trim()) return;
@@ -608,6 +714,78 @@ export function PlanScreen() {
         </div>
       </div>
 
+      {/* Avo's Shopping Radar — predictive restock (PRO) */}
+      {isPro() && restockPredictions.length > 0 && (
+        <Card className="card-enter stagger-1" style={{
+          padding: '16px',
+          border: '1px solid rgba(74, 124, 89, 0.15)',
+          background: 'rgba(74, 124, 89, 0.03)',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Predicted from how fast you use your staples</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {restockPredictions.slice(0, 5).map((p) => {
+              const overdue = p.daysUntilRunOut < 0;
+              const label = overdue ? 'likely out now' : p.daysUntilRunOut === 0 ? 'runs out today' : `~${p.daysUntilRunOut}d left`;
+              const dot = p.confidence === 'high' ? 'var(--accent)' : p.confidence === 'medium' ? '#D4A44A' : 'var(--text-muted)';
+              return (
+                <div key={p.key} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '8px 12px', borderRadius: '10px',
+                  background: 'var(--bg-card)', border: '1px solid rgba(74, 124, 89, 0.08)',
+                }}>
+                  <FoodCategoryIcon category={p.category} size={16} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                    <div style={{ fontSize: '10px', color: overdue ? 'var(--expired)' : 'var(--text-muted)' }}>every ~{p.avgIntervalDays}d · {label}</div>
+                  </div>
+                  <span aria-label={`${p.confidence} confidence`} style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} />
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={addRadarToShoppingList}
+            style={{
+              marginTop: '12px', width: '100%', padding: '10px', borderRadius: '12px',
+              border: 'none', background: 'var(--accent)', color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            {radarAddedCount > 0 ? `✓ Added ${radarAddedCount} to your Shopping Radar list` : `🛒 Add ${restockPredictions.length} to shopping list`}
+          </button>
+        </Card>
+      )}
+
+      {/* Locked teaser for free users */}
+      {!isPro() && (
+        <Card
+          className="card-enter stagger-1"
+          onClick={() => setShowUpgrade(true)}
+          style={{
+            padding: '14px 16px', border: '1px solid rgba(74, 124, 89, 0.15)',
+            background: 'rgba(74, 124, 89, 0.03)', flexShrink: 0, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '10px',
+          }}
+        >
+          <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Avo predicts when you'll run out of staples and builds your list.</div>
+          </div>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '10px',
+            background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff', fontSize: '9px', fontWeight: 700,
+          }}>PRO</div>
+        </Card>
+      )}
+
       {/* Weekly meal plan */}
       <Card className="card-enter stagger-1" style={{
         padding: '16px',
@@ -635,6 +813,39 @@ export function PlanScreen() {
             </div>
           )}
         </div>
+
+        {isPro() && (
+          <div style={{ marginBottom: '10px' }}>
+            <button
+              onClick={() => void generateAvoMealPlan()}
+              disabled={avoMealPlanLoading}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '12px',
+                border: '1.5px solid rgba(74, 124, 89, 0.3)',
+                background: avoMealPlanLoading ? 'var(--accent-dim)' : 'transparent',
+                color: 'var(--accent)',
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: avoMealPlanLoading ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                opacity: avoMealPlanLoading ? 0.7 : 1,
+              }}
+            >
+              {avoMealPlanLoading ? '🥑 Avo is planning…' : '✨ Generate with Avo'}
+            </button>
+            {avoMealPlanError && (
+              <div style={{ fontSize: '11px', color: 'var(--expired)', marginTop: '6px', textAlign: 'center' }}>
+                {avoMealPlanError}
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {(isPro() ? mealPlan : mealPlan.slice(0, 2)).map((day) => {
@@ -1587,17 +1798,22 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   const [finale, setFinale] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const [usedIds, setUsedIds] = useState<string[]>(() => matchedItems.map(item => item.id));
-  const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / recipe.steps.length) * 100;
+  const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / Math.max(1, recipe.steps.length)) * 100;
   const activeStep = recipe.steps[currentStep] ?? recipe.steps[0] ?? 'Cook and enjoy.';
+
+  // Track pending animation timers so closing mid-animation doesn't setState on
+  // an unmounted component.
+  const timersRef = useRef<number[]>([]);
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
 
   const goNext = () => {
     if (currentStep >= recipe.steps.length - 1) {
       setFinale(true);
-      window.setTimeout(() => { setReviewing(true); setFinale(false); }, 1350);
+      timersRef.current.push(window.setTimeout(() => { setReviewing(true); setFinale(false); }, 1350));
     } else {
       setIsFlipping(true);
       setCurrentStep(step => step + 1);
-      window.setTimeout(() => setIsFlipping(false), 780);
+      timersRef.current.push(window.setTimeout(() => setIsFlipping(false), 780));
     }
   };
   const goBack = () => setCurrentStep(step => Math.max(0, step - 1));
@@ -1622,6 +1838,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               width: 34, height: 34,
               borderRadius: '50%',

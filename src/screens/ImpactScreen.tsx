@@ -1,10 +1,34 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
+import { getHouseholdMembers } from '../lib/households';
+import { formatLocalDate } from '../types';
+import type { WasteLog } from '../types';
+
+/** Consecutive days (ending today or yesterday) with at least one "save"
+ * (any non-toss action) anywhere in the household. Computed from the shared
+ * waste logs so it stays in sync without extra server state. */
+function computeSharedStreak(logs: WasteLog[]): number {
+  const saveDays = new Set(logs.filter(l => l.action !== 'tossed').map(l => l.date));
+  if (saveDays.size === 0) return 0;
+  const cursor = new Date();
+  // Allow today OR yesterday as the anchor so the streak doesn't read 0 before
+  // anyone logs today.
+  if (!saveDays.has(formatLocalDate(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!saveDays.has(formatLocalDate(cursor))) return 0;
+  }
+  let streak = 0;
+  while (saveDays.has(formatLocalDate(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
 
 function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string; size?: number; color?: string }) {
   const s = { width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 as const };
@@ -61,7 +85,20 @@ function ImpactIcon({ type, size = 28, color = 'currentColor' }: { type: string;
 }
 
 export function ImpactScreen() {
-  const { wasteLogs, user } = useStore();
+  const { wasteLogs, user, household } = useStore();
+
+  // Member count for the "Saved Together" card. Only fetched when in a household.
+  const [memberCount, setMemberCount] = useState(0);
+  useEffect(() => {
+    // Only fetch when in a household; the card that uses this is gated on
+    // `household` too, so a stale count while solo is never shown.
+    if (!household) return;
+    let cancelled = false;
+    getHouseholdMembers().then(members => { if (!cancelled) setMemberCount(members.length); });
+    return () => { cancelled = true; };
+  }, [household]);
+
+  const sharedStreak = useMemo(() => computeSharedStreak(wasteLogs), [wasteLogs]);
 
   const stats = useMemo(() => {
     const eaten = wasteLogs.filter(w => w.action === 'eaten');
@@ -86,10 +123,12 @@ export function ImpactScreen() {
     const itemsSaved = totalItems - tossed.length;
     const co2Saved = (itemsSaved * 0.5).toFixed(1);
 
-    // Money saved — sum estimatedValue of everything that wasn't tossed
+    // Money saved — sum estimatedValue of everything that wasn't tossed.
+    // estimatedValue is the whole-entry value (matches the Pantry total and the
+    // per-item display), so do NOT multiply by quantity here.
     const moneySaved = wasteLogs
       .filter(w => w.action !== 'tossed')
-      .reduce((sum, w) => sum + (w.estimatedValue * w.quantity), 0);
+      .reduce((sum, w) => sum + w.estimatedValue, 0);
 
     return {
       totalItems,
@@ -100,6 +139,20 @@ export function ImpactScreen() {
   }, [wasteLogs]);
 
   const streakDays = user?.streakDays ?? 0;
+
+  // Weekly Challenge — real progress toward saving 3 items this calendar week
+  // (Mon–Sun), counting anything logged as not-tossed. No more hardcoded 66%.
+  const WEEK_GOAL = 3;
+  const weekly = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const mondayIndex = (now.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+    startOfWeek.setDate(startOfWeek.getDate() - mondayIndex);
+    const startStr = formatLocalDate(startOfWeek);
+    const saves = wasteLogs.filter(w => w.action !== 'tossed' && w.date >= startStr).length;
+    return { saves, daysLeft: 7 - mondayIndex };
+  }, [wasteLogs]);
+  const weekProgress = Math.min(100, Math.round((weekly.saves / WEEK_GOAL) * 100));
 
   if (wasteLogs.length === 0) {
     return (
@@ -255,6 +308,57 @@ export function ImpactScreen() {
         </div>
       </Card>
 
+      {/* Saved Together — household shared tally + joint streak (FREE).
+          wasteLogs is already household-wide when in a household (loaded by
+          household_id + realtime), so these totals reflect the whole crew. */}
+      {household && (
+        <Card className="card-enter stagger-6" style={{
+          background: 'rgba(74, 124, 89, 0.06)',
+          border: '1px solid rgba(74, 124, 89, 0.16)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+            <ImpactIcon type="streak" size={24} color="var(--accent)" />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>Saved Together</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {memberCount > 0 ? `Your household of ${memberCount}` : 'Your household'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div className="mono" style={{ fontSize: '26px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
+                {stats.itemsSaved}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>
+                Items saved
+              </div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div className="mono" style={{ fontSize: '26px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
+                ${stats.moneySaved.toFixed(0)}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>
+                Saved
+              </div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div className="mono" style={{ fontSize: '26px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
+                {sharedStreak}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>
+                Day streak
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '12px', textAlign: 'center' }}>
+            {sharedStreak > 0
+              ? `${sharedStreak} day${sharedStreak === 1 ? '' : 's'} running — keep the household streak alive!`
+              : 'Log a save today to start your household streak.'}
+          </div>
+        </Card>
+      )}
+
       {/* Weekly Challenge */}
       <Card className="card-enter stagger-6" style={{
         background: 'rgba(74, 124, 89, 0.04)',
@@ -264,13 +368,13 @@ export function ImpactScreen() {
           <ImpactIcon type="trophy" size={26} color="var(--accent)" />
           <div>
             <div style={{ fontSize: '14px', fontWeight: 700 }}>Weekly Challenge</div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cook 3 meals from expiring ingredients</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Save {WEEK_GOAL} items from the bin this week</div>
           </div>
         </div>
-        <ProgressBar value={66} color="var(--accent)" />
+        <ProgressBar value={weekProgress} color="var(--accent)" />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <span>2 / 3 meals cooked</span>
-          <span style={{ color: 'var(--accent)' }}>4 days left</span>
+          <span>{Math.min(weekly.saves, WEEK_GOAL)} / {WEEK_GOAL} saved{weekly.saves >= WEEK_GOAL ? ' 🎉' : ''}</span>
+          <span style={{ color: 'var(--accent)' }}>{weekly.daysLeft} day{weekly.daysLeft === 1 ? '' : 's'} left</span>
         </div>
       </Card>
 

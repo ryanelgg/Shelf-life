@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
-import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider } from '../types';
+import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS } from '../types';
+import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
+import { clearOutbox } from '../lib/syncOutbox';
 import { resetAvoChatSession } from '../lib/avoChatSession';
+import * as debug from '../lib/debug';
 import {
   scheduleItemNotifications,
   cancelItemNotifications,
@@ -17,6 +19,16 @@ import {
   scheduleRecipeNudge,
   celebrateStreakMilestone,
 } from '../lib/notifications';
+
+// A long-past date used to mark the one-time Avo trial "already used" for a user
+// who reached Pro without starting it, so cancelling Pro can't grant a fresh
+// trial. isAvoTrialActive() reads this as expired.
+const TRIAL_USED_SENTINEL = '1970-01-01';
+
+// Which daily/lifetime counter incrementAvoChat last charged, so decrementAvoChat
+// can refund exactly that one on a failed request. Chats are sent one at a time
+// (the composer blocks while streaming), so a single slot is sufficient.
+let lastChargedBucket: 'pro' | 'free' | null = null;
 
 interface ShelfLifeStore {
   // State
@@ -38,6 +50,9 @@ interface ShelfLifeStore {
   supabaseUserId: string | null;
   setSupabaseUserId: (id: string | null) => void;
   loadCloudData: (pantryItems: PantryItem[], wasteLogs: WasteLog[]) => void;
+  // Household sharing (Pro): when set, the pantry is shared with up to 4 members
+  household: Household | null;
+  setHousehold: (household: Household | null) => void;
   // Set after OAuth for new users so onboarding can skip sign-in and pre-fill name
   oauthNewUser: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null;
   setOAuthNewUser: (u: { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null) => void;
@@ -48,13 +63,19 @@ interface ShelfLifeStore {
   resetOnboarding: () => void;
 
   // Pantry
-  addPantryItem: (item: PantryItem, method?: 'barcode' | 'manual' | 'receipt') => void;
+  addPantryItem: (item: PantryItem, method?: 'barcode' | 'manual' | 'receipt' | 'voice') => void;
   updatePantryItem: (id: string, updates: Partial<PantryItem>) => void;
   removePantryItem: (id: string) => void;
   clearPantry: () => void;
+  // Realtime: apply a change pushed by another household member. These only
+  // mutate local state (idempotent, no write-back to Supabase) so they never
+  // echo into a sync loop.
+  upsertPantryItemLocal: (item: PantryItem) => void;
+  removePantryItemLocal: (id: string) => void;
 
   // Waste
   addWasteLog: (log: WasteLog) => void;
+  addWasteLogLocal: (log: WasteLog) => void;
 
   // Recipes
   setRecipes: (recipes: Recipe[]) => void;
@@ -88,193 +109,12 @@ interface ShelfLifeStore {
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
+
+  // First-run tutorial (per-device). Shown once after onboarding.
+  hasSeenTutorial: boolean;
+  setHasSeenTutorial: (seen: boolean) => void;
 }
 
-
-const SAMPLE_RECIPES: Recipe[] = [
-  {
-    id: 'r1',
-    name: 'Avocado Toast with Egg',
-    description: 'Creamy avocado on toasted sourdough with a fried egg. Perfect for using up expiring bread and avocados.',
-    matchedItemIds: ['4', '5', '12'],
-    missingIngredients: [],
-    cookTime: 10,
-    difficulty: 'easy',
-    servings: 2,
-    ingredients: [
-      { name: 'Avocado', amount: '1 ripe', fromPantry: true },
-      { name: 'Sourdough Bread', amount: '2 slices', fromPantry: true },
-      { name: 'Eggs', amount: '2', fromPantry: true },
-      { name: 'Salt & Pepper', amount: 'to taste', fromPantry: false },
-      { name: 'Red pepper flakes', amount: 'pinch', fromPantry: false },
-    ],
-    steps: [
-      'Toast the sourdough bread until golden and crispy.',
-      'While bread toasts, halve the avocado, remove pit, and mash in a bowl with salt and pepper.',
-      'Fry eggs in a non-stick pan to your liking (sunny-side up recommended).',
-      'Spread mashed avocado generously on toast.',
-      'Top with fried egg, red pepper flakes, and extra salt.',
-    ],
-    savingsEstimate: 10.49,
-    tags: ['breakfast', 'quick', 'vegetarian'],
-  },
-  {
-    id: 'r2',
-    name: 'Chicken & Spinach Pasta',
-    description: 'Hearty pasta with seared chicken and wilted spinach in a light garlic sauce.',
-    matchedItemIds: ['1', '2', '8'],
-    missingIngredients: ['garlic', 'olive oil'],
-    cookTime: 25,
-    difficulty: 'easy',
-    servings: 4,
-    ingredients: [
-      { name: 'Chicken Breast', amount: '2 lbs', fromPantry: true },
-      { name: 'Spinach', amount: '1 bag', fromPantry: true },
-      { name: 'Pasta', amount: '1 box', fromPantry: true },
-      { name: 'Garlic', amount: '4 cloves', fromPantry: false },
-      { name: 'Olive oil', amount: '2 tbsp', fromPantry: false },
-      { name: 'Parmesan', amount: '1/4 cup', fromPantry: false },
-    ],
-    steps: [
-      'Cook pasta according to package directions. Reserve 1 cup pasta water.',
-      'Season chicken with salt & pepper. Sear in olive oil 6 min per side. Slice.',
-      'In same pan, sauté garlic 30 seconds, add spinach, wilt 2 minutes.',
-      'Toss pasta with spinach, chicken, and splash of pasta water.',
-      'Top with parmesan and serve immediately.',
-    ],
-    savingsEstimate: 15.47,
-    tags: ['dinner', 'high-protein', 'filling'],
-  },
-  {
-    id: 'r3',
-    name: 'Salmon & Bell Pepper Bowl',
-    description: 'Pan-seared salmon over rice with roasted bell peppers — colorful and nutritious.',
-    matchedItemIds: ['6', '13', '14'],
-    missingIngredients: ['soy sauce', 'sesame oil'],
-    cookTime: 30,
-    difficulty: 'medium',
-    servings: 2,
-    ingredients: [
-      { name: 'Salmon Fillet', amount: '1 lb', fromPantry: true },
-      { name: 'Bell Peppers', amount: '3 pcs', fromPantry: true },
-      { name: 'Rice', amount: '1 cup', fromPantry: true },
-      { name: 'Soy sauce', amount: '2 tbsp', fromPantry: false },
-      { name: 'Sesame oil', amount: '1 tsp', fromPantry: false },
-    ],
-    steps: [
-      'Cook rice according to package directions.',
-      'Slice bell peppers, toss with oil, roast at 400\u00b0F for 15 minutes.',
-      'Season salmon with salt & pepper. Pan-sear skin-side down 4 min, flip, cook 3 more.',
-      'Drizzle soy sauce and sesame oil over rice.',
-      'Assemble bowls: rice, roasted peppers, flaked salmon.',
-    ],
-    savingsEstimate: 19.99,
-    tags: ['dinner', 'healthy', 'omega-3'],
-  },
-  {
-    id: 'r4',
-    name: 'Banana Berry Smoothie',
-    description: 'Quick smoothie using ripe bananas and frozen berries. Perfect for overripe bananas!',
-    matchedItemIds: ['15', '11', '7'],
-    missingIngredients: ['honey'],
-    cookTime: 5,
-    difficulty: 'easy',
-    servings: 2,
-    ingredients: [
-      { name: 'Bananas', amount: '2 ripe', fromPantry: true },
-      { name: 'Frozen Berries', amount: '1 cup', fromPantry: true },
-      { name: 'Milk', amount: '1 cup', fromPantry: true },
-      { name: 'Honey', amount: '1 tbsp', fromPantry: false },
-    ],
-    steps: [
-      'Peel bananas and break into chunks.',
-      'Add bananas, frozen berries, milk, and honey to blender.',
-      'Blend on high for 60 seconds until smooth.',
-      'Pour into glasses and enjoy immediately.',
-    ],
-    savingsEstimate: 6.49,
-    tags: ['breakfast', 'quick', 'healthy', 'vegetarian'],
-  },
-  {
-    id: 'r5',
-    name: 'Tomato & Cheese Quesadilla',
-    description: 'Crispy quesadillas with fresh tomatoes and melted cheddar. Ready in 10 minutes.',
-    matchedItemIds: ['9', '10'],
-    missingIngredients: ['tortillas', 'butter'],
-    cookTime: 10,
-    difficulty: 'easy',
-    servings: 2,
-    ingredients: [
-      { name: 'Tomatoes', amount: '2 pcs', fromPantry: true },
-      { name: 'Cheddar Cheese', amount: '1/2 block', fromPantry: true },
-      { name: 'Flour tortillas', amount: '4', fromPantry: false },
-      { name: 'Butter', amount: '1 tbsp', fromPantry: false },
-    ],
-    steps: [
-      'Slice tomatoes thin. Grate cheddar cheese.',
-      'Layer cheese and tomato slices on half of each tortilla.',
-      'Fold tortillas in half.',
-      'Melt butter in a pan over medium heat. Cook quesadillas 2-3 min per side until golden.',
-      'Slice into wedges and serve with salsa if desired.',
-    ],
-    savingsEstimate: 8.19,
-    tags: ['lunch', 'quick', 'vegetarian', 'kid-friendly'],
-  },
-  {
-    id: 'r6',
-    name: 'Greek Yogurt Parfait',
-    description: 'Layered yogurt with frozen berries and granola. A healthy breakfast or snack.',
-    matchedItemIds: ['3', '11'],
-    missingIngredients: ['granola', 'honey'],
-    cookTime: 5,
-    difficulty: 'easy',
-    servings: 2,
-    ingredients: [
-      { name: 'Greek Yogurt', amount: '1 cup', fromPantry: true },
-      { name: 'Frozen Berries', amount: '1/2 cup', fromPantry: true },
-      { name: 'Granola', amount: '1/4 cup', fromPantry: false },
-      { name: 'Honey', amount: 'drizzle', fromPantry: false },
-    ],
-    steps: [
-      'Thaw berries slightly (microwave 20 seconds or let sit 5 min).',
-      'Layer yogurt in a glass or bowl.',
-      'Add a layer of berries, then more yogurt.',
-      'Top with granola and a drizzle of honey.',
-    ],
-    savingsEstimate: 5.49,
-    tags: ['breakfast', 'snack', 'healthy', 'vegetarian'],
-  },
-];
-
-
-const SAMPLE_SHOPPING: ShoppingList[] = [
-  {
-    id: 'sl1',
-    name: 'Weekly Essentials',
-    createdDate: daysAgo(3),
-    items: [
-      { id: 'si1', name: 'Olive Oil', category: 'Condiments', quantity: 1, unit: 'bottle', checked: false },
-      { id: 'si2', name: 'Garlic', category: 'Produce', quantity: 1, unit: 'head', checked: true },
-      { id: 'si3', name: 'Lemons', category: 'Produce', quantity: 4, unit: 'pcs', checked: false },
-      { id: 'si4', name: 'Tortillas', category: 'Bakery', quantity: 1, unit: 'pack', checked: false },
-      { id: 'si5', name: 'Granola', category: 'Grains', quantity: 1, unit: 'bag', checked: true },
-    ],
-  },
-];
-
-const SAMPLE_MEAL_PLAN: MealPlanDay[] = [
-  { day: 'Mon', meal: 'Avocado Toast with Egg', pantryItems: 3, toBuy: 0, recipeId: 'r1' },
-  { day: 'Tue', meal: 'Chicken & Spinach Pasta', pantryItems: 3, toBuy: 2, recipeId: 'r2' },
-  { day: 'Wed', meal: 'Banana Berry Smoothie', pantryItems: 3, toBuy: 1, recipeId: 'r4' },
-  { day: 'Thu', meal: 'Salmon & Bell Pepper Bowl', pantryItems: 3, toBuy: 2, recipeId: 'r3' },
-  { day: 'Fri', meal: 'Leftover Night', pantryItems: 6, toBuy: 0 },
-];
-
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return formatLocalDate(d);
-}
 
 export const useStore = create<ShelfLifeStore>()(
   persist(
@@ -284,10 +124,14 @@ export const useStore = create<ShelfLifeStore>()(
       oauthNewUser: null as { name: string; email: string; provider: Exclude<AuthProvider, 'guest'> } | null,
       pantryItems: [] as PantryItem[],
       wasteLogs: [] as WasteLog[],
-      recipes: SAMPLE_RECIPES,
+      // Real accounts start empty — the Impact/Plan screens have their own
+      // onboarding empty states. browseRecipes is the real catalog to suggest
+      // from; the user's matched recipes/shopping/meal-plan fill in as they use
+      // the app, so we never seed fake "Weekly Essentials"-style data.
+      recipes: [] as Recipe[],
       browseRecipes: BROWSE_RECIPES,
-      shoppingLists: SAMPLE_SHOPPING,
-      mealPlan: SAMPLE_MEAL_PLAN,
+      shoppingLists: [] as ShoppingList[],
+      mealPlan: [] as MealPlanDay[],
       activeTab: 'pantry' as Tab,
       addItemMode: null,
       recipeSearchSeed: null as string | null,
@@ -295,7 +139,11 @@ export const useStore = create<ShelfLifeStore>()(
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
       notificationsEnabled: null as boolean | null,
+      household: null as Household | null,
+      hasSeenTutorial: false,
+      setHasSeenTutorial: (seen) => set({ hasSeenTutorial: seen }),
       setSupabaseUserId: (id) => set({ supabaseUserId: id }),
+      setHousehold: (household) => set({ household }),
       loadCloudData: (cloudPantry, cloudWaste) => {
         // This is only called for users with onboarding_complete = true
         // (returning users). The cloud result is authoritative — even an empty
@@ -315,17 +163,21 @@ export const useStore = create<ShelfLifeStore>()(
       resetOnboarding: () => {
         // Clear persisted storage first so persist middleware doesn't re-write stale data
         localStorage.removeItem('shelf-life-storage-v2');
+        // Drop any queued offline writes so they can't replay under a different
+        // account that signs in on this device next.
+        clearOutbox();
         resetAvoChatSession();
         set({
           user: null,
           supabaseUserId: null,
+          household: null,
           oauthNewUser: null,
           pantryItems: [],
           wasteLogs: [],
-          recipes: SAMPLE_RECIPES,
+          recipes: [],
           browseRecipes: BROWSE_RECIPES,
-          shoppingLists: SAMPLE_SHOPPING,
-          mealPlan: SAMPLE_MEAL_PLAN,
+          shoppingLists: [],
+          mealPlan: [],
           activeTab: 'pantry',
           addItemMode: null,
           recipeSearchSeed: null,
@@ -333,6 +185,7 @@ export const useStore = create<ShelfLifeStore>()(
           showSettings: false,
           avoAiConsent: null,
           notificationsEnabled: null,
+          hasSeenTutorial: false,
         });
         void cancelAllNotifications();
       },
@@ -344,8 +197,8 @@ export const useStore = create<ShelfLifeStore>()(
           category: item.category,
           has_expiry: !!item.expirationDate,
         });
-        const { supabaseUserId, notificationsEnabled, user } = useStore.getState();
-        if (supabaseUserId) syncPantryAdd(item, supabaseUserId);
+        const { supabaseUserId, notificationsEnabled, user, household } = useStore.getState();
+        if (supabaseUserId) syncPantryAdd(item, supabaseUserId, household?.id);
         if (notificationsEnabled) {
           void scheduleItemNotifications(item, user?.name);
           // Activity in the app — push the re-engagement reminder forward
@@ -372,14 +225,39 @@ export const useStore = create<ShelfLifeStore>()(
         if (supabaseUserId) syncPantryRemove(id);
         void cancelItemNotifications(id);
       },
+      upsertPantryItemLocal: (item) => {
+        const { notificationsEnabled, user, pantryItems } = useStore.getState();
+        const existing = pantryItems.find(i => i.id === item.id);
+        set((s) => {
+          const idx = s.pantryItems.findIndex(i => i.id === item.id);
+          if (idx === -1) return { pantryItems: [...s.pantryItems, item] };
+          const next = s.pantryItems.slice();
+          next[idx] = item;
+          return { pantryItems: next };
+        });
+        // Schedule expiry reminders on THIS device too, so every household member
+        // is reminded — not just whoever added the item. Only (re)schedule when
+        // the item is new or its expiry changed, so idempotent realtime echoes
+        // (including this device's own writes) don't churn notifications.
+        if (notificationsEnabled && item.expirationDate &&
+            (!existing || existing.expirationDate !== item.expirationDate)) {
+          void rescheduleItemNotifications(item, user?.name);
+        }
+      },
+      removePantryItemLocal: (id) => {
+        set((s) => ({ pantryItems: s.pantryItems.filter(i => i.id !== id) }));
+        // A member removed a shared item — drop its reminders on this device too.
+        void cancelItemNotifications(id);
+      },
       clearPantry: () => {
         set({ pantryItems: [] });
         void cancelAllNotifications();
       },
 
       addWasteLog: (log) => {
-        const { supabaseUserId } = useStore.getState();
-        if (supabaseUserId) syncWasteLog(log, supabaseUserId);
+        const { supabaseUserId, household } = useStore.getState();
+        if (supabaseUserId) syncWasteLog(log, supabaseUserId, household?.id);
+        const prevStreak = useStore.getState().user?.streakDays ?? 0;
         let profileUpdates: { streak_days: number; last_active_date: string } | null = null;
         set((s) => {
           if (!s.user) return { wasteLogs: [...s.wasteLogs, log] };
@@ -408,7 +286,7 @@ export const useStore = create<ShelfLifeStore>()(
           };
         });
         if (supabaseUserId && profileUpdates) {
-          syncProfileUpdates(supabaseUserId, profileUpdates);
+          syncProfileUpdates(supabaseUserId, profileUpdates).catch(debug.error);
         }
 
         // Notifications: streak protection (push out evening reminder),
@@ -416,7 +294,10 @@ export const useStore = create<ShelfLifeStore>()(
         const { notificationsEnabled, user } = useStore.getState();
         if (notificationsEnabled && user) {
           void scheduleStreakProtection(user.streakDays, user.name);
-          if ([3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
+          // Only celebrate when the streak actually advanced into a milestone in
+          // THIS log — otherwise a second/third save on a milestone day would
+          // re-fire the same "N-day!" push.
+          if (user.streakDays !== prevStreak && [3, 7, 14, 30, 50, 100, 365].includes(user.streakDays)) {
             void celebrateStreakMilestone(user.streakDays);
           }
           void scheduleReEngagement(user.name);
@@ -427,6 +308,13 @@ export const useStore = create<ShelfLifeStore>()(
           }
         }
       },
+      addWasteLogLocal: (log) => set((s) => (
+        // Dedupe by id: the originating device already appended this log, and
+        // realtime echoes it back to everyone (including the sender).
+        s.wasteLogs.some(l => l.id === log.id)
+          ? {}
+          : { wasteLogs: [...s.wasteLogs, log] }
+      )),
 
       setRecipes: (recipes) => set({ recipes }),
 
@@ -457,14 +345,27 @@ export const useStore = create<ShelfLifeStore>()(
       setSubscriptionTier: async (tier) => {
         const { supabaseUserId } = useStore.getState();
         let nextUser: User | null = null;
+        // When a user reaches Pro without ever having started the free Avo
+        // trial, stamp it "used" (a long-past sentinel date, so isAvoTrialActive
+        // reads false). Otherwise cancelling Pro later would satisfy the lazy
+        // "not pro && never started a trial" check and hand them a fresh free
+        // week every time they cancel.
+        const markTrialUsed = tier === 'pro';
         set((s) => {
-          nextUser = s.user ? { ...s.user, subscriptionTier: tier } : null;
+          if (!s.user) { nextUser = null; return { user: null }; }
+          const avoTrialStartedAt = markTrialUsed && !s.user.avoTrialStartedAt
+            ? TRIAL_USED_SENTINEL
+            : s.user.avoTrialStartedAt;
+          nextUser = { ...s.user, subscriptionTier: tier, avoTrialStartedAt };
           return { user: nextUser };
         });
         if (supabaseUserId && nextUser) {
           // Awaited so the cloud write can't be orphaned by a sign-out or
           // navigation that happens immediately after an upgrade/cancel.
-          await syncProfileUpdates(supabaseUserId, { subscription_tier: tier });
+          await syncProfileUpdates(supabaseUserId, {
+            subscription_tier: tier,
+            avo_trial_started_at: (nextUser as User).avoTrialStartedAt,
+          });
         }
       },
       incrementAvoChat: (): boolean => {
@@ -472,47 +373,86 @@ export const useStore = create<ShelfLifeStore>()(
         if (!s.user) return false;
         const today = formatLocalDate(new Date());
 
-        if (s.user.subscriptionTier === 'pro') {
-          // Pro: 20 chats per day, resets daily
-          const count = s.user.avoChatResetDate === today ? s.user.avoChatCount : 0;
-          if (count >= FREE_LIMITS.proChatPerDay) return false;
-          const nextUser = { ...s.user, avoChatCount: count + 1, avoChatResetDate: today };
+        // Lazily start the 7-day Avo trial on the user's first chat (free users
+        // only). Once started, isAvoTrialActive() grants Pro-level daily access
+        // for 7 days, after which they fall back to the free lifetime allotment.
+        let user = s.user;
+        let startedTrial = false;
+        if (user.subscriptionTier !== 'pro' && !user.avoTrialStartedAt) {
+          user = { ...user, avoTrialStartedAt: today };
+          startedTrial = true;
+        }
+
+        const hasProAccess = user.subscriptionTier === 'pro' || isAvoTrialActive(user);
+
+        if (hasProAccess) {
+          // Pro / active trial: 20 chats per day, resets daily.
+          const count = user.avoChatResetDate === today ? user.avoChatCount : 0;
+          if (count >= FREE_LIMITS.proChatPerDay) {
+            if (startedTrial) {
+              set({ user });
+              if (s.supabaseUserId) {
+                syncProfileUpdates(s.supabaseUserId, { avo_trial_started_at: user.avoTrialStartedAt }).catch(debug.error);
+              }
+            }
+            return false;
+          }
+          const nextUser = { ...user, avoChatCount: count + 1, avoChatResetDate: today };
+          lastChargedBucket = 'pro';
           set({ user: nextUser });
           if (s.supabaseUserId) {
             syncProfileUpdates(s.supabaseUserId, {
               avo_chat_count: nextUser.avoChatCount,
               avo_chat_reset_date: nextUser.avoChatResetDate,
-            });
+              avo_trial_started_at: nextUser.avoTrialStartedAt,
+            }).catch(debug.error);
           }
           return true;
         }
 
-        // Free: 5 chats total (permanent, never resets)
-        if (s.user.avoChatCount >= FREE_LIMITS.avoChatTotal) return false;
-        const nextUser = { ...s.user, avoChatCount: s.user.avoChatCount + 1 };
+        // Free tier, trial ended: 5 chats total (permanent, never resets).
+        const freeUsed = user.avoFreeChatsUsed ?? 0;
+        if (freeUsed >= FREE_LIMITS.avoChatTotal) return false;
+        const nextUser = { ...user, avoFreeChatsUsed: freeUsed + 1 };
+        lastChargedBucket = 'free';
         set({ user: nextUser });
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
-          });
+            avo_free_chats_used: nextUser.avoFreeChatsUsed,
+          }).catch(debug.error);
         }
         return true;
       },
       decrementAvoChat: (): void => {
         const s = useStore.getState();
         if (!s.user) return;
-        const nextUser = { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) };
+        // Refund the counter that was ACTUALLY charged for this request, not
+        // whichever bucket the user's status maps to now — the two can differ if
+        // Pro/trial status flipped between charging and refunding, which would
+        // otherwise silently drain a free chat.
+        const bucket = lastChargedBucket;
+        lastChargedBucket = null;
+        if (!bucket) return;
+        const nextUser = bucket === 'pro'
+          ? { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) }
+          : { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
         set({ user: nextUser });
         if (s.supabaseUserId) {
-          syncProfileUpdates(s.supabaseUserId, {
-            avo_chat_count: nextUser.avoChatCount,
-          });
+          syncProfileUpdates(s.supabaseUserId, bucket === 'pro'
+            ? { avo_chat_count: nextUser.avoChatCount }
+            : { avo_free_chats_used: nextUser.avoFreeChatsUsed },
+          ).catch(debug.error);
         }
       },
       canAddPantryItem: (): boolean => {
         const s = useStore.getState();
         if (!s.user) return false;
         if (s.user.subscriptionTier === 'pro') return true;
+        // Free MEMBERS ride the Pro owner's unlimited pantry (owner Pro is
+        // enforced server-side at creation). But a free OWNER is not exempt —
+        // otherwise someone could subscribe, create a household, cancel Pro, and
+        // keep an unlimited solo pantry forever.
+        if (s.household && s.household.role === 'member') return true;
         return s.pantryItems.length < FREE_LIMITS.pantryItems;
       },
       isPro: (): boolean => {
@@ -542,19 +482,28 @@ export const useStore = create<ShelfLifeStore>()(
     }),
     {
       name: 'shelf-life-storage-v2',
-      version: 1,
-      migrate: (state) => state,
+      version: 2,
+      migrate: (state, version) => {
+        // v2: introduce the Avo trial fields. For an existing free user, their
+        // old avoChatCount WAS the lifetime free count, so carry it into
+        // avoFreeChatsUsed (mirrors the SQL backfill); trial starts fresh.
+        const s = state as { user?: (User & { avoTrialStartedAt?: string | null; avoFreeChatsUsed?: number }) | null };
+        if (version < 2 && s?.user) {
+          const u = s.user;
+          if (u.avoTrialStartedAt === undefined) u.avoTrialStartedAt = null;
+          if (u.avoFreeChatsUsed === undefined) {
+            u.avoFreeChatsUsed = u.subscriptionTier === 'free' ? (u.avoChatCount ?? 0) : 0;
+          }
+        }
+        return state;
+      },
       merge: (persisted, current) => {
         const p = persisted as Partial<ShelfLifeStore>;
-        return {
-          ...current,
-          ...p,
-          // Never let mealPlan be empty — fall back to sample data
-          mealPlan: p.mealPlan && p.mealPlan.length > 0 ? p.mealPlan : current.mealPlan,
-        };
+        return { ...current, ...p };
       },
       partialize: (state) => ({
         user: state.user,
+        household: state.household,
         pantryItems: state.pantryItems,
         wasteLogs: state.wasteLogs,
         recipes: state.recipes,
@@ -563,6 +512,7 @@ export const useStore = create<ShelfLifeStore>()(
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
         notificationsEnabled: state.notificationsEnabled,
+        hasSeenTutorial: state.hasSeenTutorial,
       }),
     }
   )

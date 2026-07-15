@@ -7,7 +7,7 @@ import { lookupShelfLife } from '../data/shelfLife';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
-import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS } from '../types';
+import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS, getDefaultDateType } from '../types';
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -15,9 +15,10 @@ import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { scanReceipt } from '../lib/receiptApi';
+import { scanFridge } from '../lib/fridgeApi';
 import type { FoodCategory, StorageLocation } from '../types';
 
-type AddMode = 'manual' | 'scan' | 'receipt';
+type AddMode = 'manual' | 'scan' | 'receipt' | 'fridge';
 type ReceiptListItem = {
   id: string;
   name: string;
@@ -79,9 +80,11 @@ function resolveReceiptItem(itemName: string): { category: FoodCategory; locatio
   return { category, location };
 }
 
-let nextId = 0;
 function generateItemId(): string {
-  return `p-${++nextId}-${Date.now().toString(36)}`;
+  // A launch-scoped counter reset to 0 on every app start, so two phones in a
+  // shared household adding in the same millisecond could collide and overwrite
+  // each other over live sync. Use a globally-unique id instead.
+  return `p-${crypto.randomUUID()}`;
 }
 
 let nextReceiptRowId = 0;
@@ -104,6 +107,24 @@ function createReceiptListItem(item: { name: string; price: number }): ReceiptLi
   };
 }
 
+// Fridge-scan rows have a count instead of a price; default the value to the
+// same estimate the manual form uses so the Impact stats aren't zeroed out.
+function createFridgeListItem(item: { name: string; quantity?: number }): ReceiptListItem {
+  const resolved = resolveReceiptItem(item.name);
+  const shelfDays = lookupShelfLife(item.name, resolved.location) ?? DEFAULT_SHELF_LIFE[resolved.category];
+  const qty = Number.isFinite(item.quantity) && (item.quantity as number) > 0 ? Math.round(item.quantity as number) : 1;
+  return {
+    id: generateReceiptRowId(),
+    name: item.name,
+    price: 2.99,
+    category: resolved.category,
+    location: resolved.location,
+    quantity: String(qty),
+    unit: 'pcs',
+    days: String(shelfDays),
+  };
+}
+
 function isCancelledError(error: unknown): boolean {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
@@ -113,7 +134,7 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
 
   useEffect(() => {
@@ -123,6 +144,7 @@ export function AddItemScreen() {
   const [receiptProcessing, setReceiptProcessing] = useState(false);
   const [receiptItems, setReceiptItems] = useState<ReceiptListItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fridgeInputRef = useRef<HTMLInputElement>(null);
 
   // Manual form state
   const [name, setName] = useState('');
@@ -132,6 +154,7 @@ export function AddItemScreen() {
   const [unit, setUnit] = useState('pcs');
   const [value, setValue] = useState('');
   const [customDays, setCustomDays] = useState('');
+  // null = follow the category's safety-first default; set = user override.
   useEffect(() => {
     void preloadCoreDatabase();
   }, []);
@@ -208,7 +231,10 @@ export function AddItemScreen() {
         return;
       }
       posthog.capture('receipt_ocr_succeeded', { item_count: items.length });
-      setReceiptItems(items.map(createReceiptListItem));
+      // Drop malformed rows (missing/blank/non-string name) so one bad entry
+      // from the model can't throw and abort the entire scan.
+      const validItems = items.filter(it => it && typeof it.name === 'string' && it.name.trim());
+      setReceiptItems(validItems.map(createReceiptListItem));
       setMode('receipt');
     } catch (err) {
       debug.error('Receipt OCR error:', err);
@@ -230,13 +256,75 @@ export function AddItemScreen() {
     e.target.value = '';
   };
 
+  // ── "Snap your fridge" (Pro): one photo → AI lists everything to add ─────────
+  const handleFridgeTap = async () => {
+    if (!isPro()) { setShowUpgrade(true); return; }
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const photo = await Camera.getPhoto({
+          source: CameraSource.Prompt,
+          resultType: CameraResultType.Base64,
+          quality: 80,
+        });
+        if (!photo.base64String) return;
+        processFridgeImage(photo.base64String);
+      } catch (error: unknown) {
+        if (!isCancelledError(error)) {
+          debug.error('Camera error:', error);
+        }
+      }
+    } else {
+      fridgeInputRef.current?.click();
+    }
+  };
+
+  const processFridgeImage = async (base64: string) => {
+    if (!base64) return;
+    setReceiptProcessing(true);
+    posthog.capture('fridge_scan_started');
+    try {
+      const items = await scanFridge(base64);
+      if (items.length === 0) {
+        setReceiptProcessing(false);
+        return;
+      }
+      posthog.capture('fridge_scan_succeeded', { item_count: items.length });
+      // Drop malformed rows (missing/blank/non-string name) so one bad entry
+      // from the model can't throw and abort the entire scan.
+      const validItems = items.filter(it => it && typeof it.name === 'string' && it.name.trim());
+      setReceiptItems(validItems.map(createFridgeListItem));
+      setMode('fridge');
+    } catch (err) {
+      debug.error('Fridge scan error:', err);
+      posthog.capture('fridge_scan_failed', { reason: err instanceof Error ? err.message : 'unknown' });
+    } finally {
+      setReceiptProcessing(false);
+    }
+  };
+
+  const handleFridgeFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      processFridgeImage(base64);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const updateReceiptItem = (id: string, updates: Partial<ReceiptListItem>) => {
     setReceiptItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   };
 
   const addReceiptItemToPantry = (item: ReceiptListItem) => {
-    const shelfDays = Number.isFinite(parseInt(item.days, 10))
-      ? parseInt(item.days, 10)
+    const parsedDays = parseInt(item.days, 10);
+    // A negative value is intentional: it marks an item that already expired N
+    // days ago (the pantry shows it as "Nd ago"). Only fall back to the category
+    // default when the input isn't a valid number.
+    const shelfDays = Number.isFinite(parsedDays)
+      ? parsedDays
       : DEFAULT_SHELF_LIFE[item.category];
     const expDate = new Date();
     expDate.setDate(expDate.getDate() + shelfDays);
@@ -251,18 +339,17 @@ export function AddItemScreen() {
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
       estimatedValue: Number.isFinite(item.price) ? item.price : 0,
+      dateType: getDefaultDateType(item.category),
     }, 'receipt');
   };
 
   const addReceiptItem = (item: ReceiptListItem) => {
     if (!canAddPantryItem()) { setShowUpgrade(true); return; }
     addReceiptItemToPantry(item);
-    // Filter by object identity, not name — avoids dropping every row when
-    // a receipt contains two lines with the same product name.
-    setReceiptItems(prev => {
-      const idx = prev.indexOf(item);
-      return prev.filter((_, i) => i !== idx);
-    });
+    // Filter by row id, not name or object identity — avoids dropping every
+    // row when two lines share a product name, and still removes the correct
+    // row after edits have replaced the original object reference.
+    setReceiptItems(prev => prev.filter(r => r.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
@@ -279,7 +366,12 @@ export function AddItemScreen() {
     // Use !== '' so that '0' (expires today) is respected and not treated as
     // falsy — both the user-entered value and database suggestions can be 0.
     const resolvedDays = customDays !== '' ? customDays : getSuggestedShelfLifeDays(n, loc, cat);
-    const days = resolvedDays !== '' ? parseInt(resolvedDays, 10) : DEFAULT_SHELF_LIFE[cat];
+    // Guard against malformed input (e.g. '.', '-') which parseInt turns into
+    // NaN, producing an Invalid Date and a "NaN-NaN-NaN" expiration string.
+    // A negative value is intentional, though: it records an item that already
+    // expired N days ago (the pantry shows it as "Nd ago").
+    const parsedDays = resolvedDays !== '' ? parseInt(resolvedDays, 10) : NaN;
+    const days = Number.isFinite(parsedDays) ? parsedDays : DEFAULT_SHELF_LIFE[cat];
     const expDate = new Date();
     expDate.setDate(expDate.getDate() + days);
 
@@ -295,7 +387,14 @@ export function AddItemScreen() {
       unit: itemUnit || unit,
       addedDate: formatLocalDate(new Date()),
       expirationDate: formatLocalDate(expDate),
-      estimatedValue: itemVal || parseFloat(value) || 2.99,
+      // Respect an explicit $0 (free/giveaway item) instead of forcing $2.99,
+      // which would inflate the Impact "money saved" stat. A finite itemVal
+      // (incl. 0) from a picked food wins; else a non-empty typed value (incl.
+      // 0) wins; else fall back to the default estimate.
+      estimatedValue: Number.isFinite(itemVal)
+        ? (itemVal as number)
+        : (value.trim() !== '' && Number.isFinite(parseFloat(value)) ? parseFloat(value) : 2.99),
+      dateType: getDefaultDateType(cat),
     }, method);
 
     // Reset form
@@ -308,6 +407,9 @@ export function AddItemScreen() {
     setTimeout(() => setShowSuccess(false), 2000);
   };
 
+  // Add one or more items parsed from a spoken/typed phrase. Each item's
+  // category + location come from the food database; expiry uses the spoken
+  // date when given, otherwise the smart shelf-life default.
   return (
     <div className="screen-enter" style={{
       flex: 1,
@@ -371,6 +473,15 @@ export function AddItemScreen() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 2V22L7 20L10 22L12 20L14 22L17 20L20 22V2H4Z" />
                 <line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="14" x2="13" y2="14" />
+              </svg>
+            ),
+          },
+          {
+            id: 'fridge' as AddMode, label: 'Fridge',
+            icon: (c: string) => (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="2" /><line x1="5" y1="10" x2="19" y2="10" />
+                <line x1="8" y1="5" x2="8" y2="7" /><line x1="8" y1="13" x2="8" y2="16" />
               </svg>
             ),
           },
@@ -790,19 +901,80 @@ export function AddItemScreen() {
         </Card>
       )}
 
-      {/* Receipt processing spinner */}
+      {mode === 'fridge' && !receiptProcessing && receiptItems.length === 0 && (
+        <Card className="card-enter stagger-3" style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--stone)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" /><line x1="5" y1="10" x2="19" y2="10" />
+              <line x1="8" y1="5" x2="8" y2="7" /><line x1="8" y1="13" x2="8" y2="16" />
+            </svg>
+          </div>
+          {!isPro() && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              padding: '4px 10px', borderRadius: '12px', marginBottom: '10px',
+              background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff',
+              fontSize: '10px', fontWeight: 700,
+            }}>
+              PRO
+            </div>
+          )}
+          <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Snap Your Fridge</div>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
+            Take one photo of your open fridge, freezer, or shelf and Avo will list everything to add — review and tap to fill your pantry.
+          </div>
+          <input
+            ref={fridgeInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFridgeFile}
+            style={{ display: 'none' }}
+          />
+          <button
+            className="btn-solid"
+            onClick={handleFridgeTap}
+            style={{
+              padding: '14px 32px',
+              background: isPro() ? 'var(--accent)' : 'linear-gradient(135deg, #D4A44A, #B8862D)',
+              border: 'none',
+              borderRadius: '14px',
+              color: '#fff',
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: '14px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              margin: '0 auto',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            {isPro() ? 'Snap Fridge' : 'Unlock with Pro'}
+          </button>
+        </Card>
+      )}
+
+      {/* Receipt / fridge processing spinner */}
       {receiptProcessing && (
         <Card className="card-enter" style={{ textAlign: 'center', padding: '40px 20px' }}>
           <div className="avo-drift" style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
             <AvocadoMascot size={50} isStatic />
           </div>
-          <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>Scanning your receipt...</div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Identifying items and prices</div>
+          <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>
+            {mode === 'fridge' ? 'Scanning your fridge...' : 'Scanning your receipt...'}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            {mode === 'fridge' ? 'Spotting everything Avo can see' : 'Identifying items and prices'}
+          </div>
         </Card>
       )}
 
-      {/* Receipt results */}
-      {mode === 'receipt' && receiptItems.length > 0 && (
+      {/* Receipt / fridge results — shared review list */}
+      {(mode === 'receipt' || mode === 'fridge') && receiptItems.length > 0 && (
         <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '14px', fontWeight: 700 }}>
@@ -810,7 +982,11 @@ export function AddItemScreen() {
             </div>
             <button
               onClick={() => {
-                const slotsLeft = isPro()
+                // Pro users AND free members riding a Pro owner's household get
+                // an unlimited pantry (same rule as single-add's canAddPantryItem);
+                // only a free solo/owner user is capped. Households max out at 4.
+                const hasUnlimited = isPro() || household?.role === 'member';
+                const slotsLeft = hasUnlimited
                   ? receiptItems.length
                   : Math.max(0, FREE_LIMITS.pantryItems - pantryItems.length);
                 const toAdd = receiptItems.slice(0, slotsLeft);
@@ -845,7 +1021,7 @@ export function AddItemScreen() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '5px' }}>
-                      Receipt item
+                      {mode === 'fridge' ? 'Fridge item' : 'Receipt item'}
                     </div>
                     <input
                       value={item.name}
@@ -986,11 +1162,12 @@ export function AddItemScreen() {
 
       {showUpgrade && (
         <UpgradeModal
-          feature={mode === 'receipt' ? 'receipt' : 'pantry'}
+          feature={mode === 'receipt' ? 'receipt' : mode === 'fridge' ? 'fridge' : 'pantry'}
           onClose={() => setShowUpgrade(false)}
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
         />
       )}
+
     </div>
   );
 }
