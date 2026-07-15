@@ -71,7 +71,7 @@ export function TabBar() {
   const { activeTab, setActiveTab } = useStore();
 
   return (
-    <div style={{
+    <div className="tab-bar" style={{
       display: 'flex',
       background: 'var(--tab-bg)',
       borderTop: '1px solid var(--tab-border)',

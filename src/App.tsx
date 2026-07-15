@@ -92,6 +92,7 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
           }}
         >
           <button
+            className="wood-btn"
             onClick={opt.action}
             aria-label={opt.label}
             style={{
@@ -126,6 +127,7 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
       ))}
 
       <button
+        className="wood-btn"
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Close add menu' : 'Add item'}
         aria-expanded={open}
