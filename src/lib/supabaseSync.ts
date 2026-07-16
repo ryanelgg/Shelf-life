@@ -109,7 +109,17 @@ async function awaitableWrite(
 ): Promise<boolean> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, delayMs * attempt));
-    const { error } = await fn();
+    // A network-layer failure REJECTS rather than resolving {error} (same as
+    // syncWrite). Without this catch the promise would reject — and callers
+    // like setSubscriptionTier('pro') are invoked un-awaited, so it would
+    // surface as an unhandled rejection after an upgrade/cancel instead of the
+    // documented "returns false on failure" contract.
+    let error: { message: string } | null;
+    try {
+      ({ error } = await fn());
+    } catch (e) {
+      error = { message: e instanceof Error ? e.message : String(e) };
+    }
     if (!error) return true;
     if (attempt === maxRetries) {
       debug.error(`[sync] ${label} failed after ${maxRetries + 1} attempts:`, error.message);

@@ -182,7 +182,11 @@ const MAX_PENDING_NOTIFICATIONS = 60;
  */
 export function selectItemsToSchedule(items: PantryItem[], max: number = MAX_SCHEDULED_ITEMS): PantryItem[] {
   return items
-    .filter(i => !!i.expirationDate)
+    // Only items whose day-of reminder is still schedulable. Already-expired
+    // items sort earliest and would otherwise eat the cap while scheduling
+    // nothing (expirationNotificationTime returns null for past times),
+    // silently starving valid upcoming items of reminder slots.
+    .filter(i => !!i.expirationDate && expirationNotificationTime(i.expirationDate!, 0) !== null)
     .sort((a, b) => (a.expirationDate! < b.expirationDate! ? -1 : a.expirationDate! > b.expirationDate! ? 1 : 0))
     .slice(0, max);
 }

@@ -80,7 +80,19 @@ async function lookupBarcode(barcode: string): Promise<ScannedProduct | null> {
   } catch { /* non-fatal */ }
 
   try {
-    const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    // Guard the network lookup with a timeout. Without it a stalled request
+    // (common on mobile) never settles, leaving the scanner wedged on the
+    // "Avo's having a look…" loading state with no recovery path.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     const data = await res.json();
     if (data.status !== 1 || !data.product) return null;
     const p = data.product;
