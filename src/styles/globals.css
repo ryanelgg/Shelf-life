@@ -526,53 +526,8 @@ h1, h2, h3, h4 {
   box-shadow: 0 4px 16px rgba(45, 36, 24, 0.06), 0 0 0 1px rgba(74, 124, 89, 0.08);
 }
 
-/* ===== WOODEN-TABLE GRAIN OVERLAY =====
-   Textures the surface's existing color. ::after fills the element, blends with
-   the fill beneath (mix-blend-mode), and sits behind content (z-index -1). */
-.card-component::after,
-.btn-solid::after,
-.wood-btn::after,
-.btn-pill::after,
-.btn-toggle::after,
-.btn-icon::after,
-.btn-outline::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background-image: var(--wgrain);
-  background-size: var(--wgrain-size);
-  background-repeat: repeat;
-  mix-blend-mode: var(--wood-blend);
-  opacity: var(--wood-op);
-}
-/* Buttons sit on saturated colors (e.g. forest green) where soft-light reads as
-   real wood grain — use it regardless of theme, a touch stronger. */
-.btn-solid::after,
-.wood-btn::after {
-  mix-blend-mode: soft-light;
-  opacity: 0.9;
-}
-
-/* ===== TAB BAR — wooden-table grain ===== */
-.tab-bar {
-  position: relative;
-  isolation: isolate;
-}
-.tab-bar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: var(--wgrain);
-  background-size: var(--wgrain-size);
-  background-repeat: repeat;
-  mix-blend-mode: var(--wood-blend);
-  opacity: var(--wood-op);
-}
+/* Wood-grain overlays on cards, buttons, and the tab bar were removed — the
+   original design had flat surfaces with no texture. */
 
 /* ===== RECHARTS TOOLTIP ===== */
 .recharts-tooltip-wrapper { outline: none !important; }
