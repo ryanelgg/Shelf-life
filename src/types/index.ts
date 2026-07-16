@@ -284,7 +284,7 @@ function foldPlural(word: string): string {
   return word;
 }
 
-function ingredientWords(name: string): string[] {
+export function ingredientWords(name: string): string[] {
   return name.toLowerCase().split(/[^a-z]+/).filter(Boolean).map(foldPlural);
 }
 

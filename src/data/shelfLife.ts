@@ -2,6 +2,8 @@
 // Source: fsis.usda.gov/food-safety/safe-food-handling/storage-times
 // Run scripts/buildShelfLife.mjs to regenerate
 
+import { ingredientWords } from '../types';
+
 export interface ShelfLifeEntry {
   fridgeDays: number | null;
   freezerDays: number | null;
@@ -2367,18 +2369,40 @@ const shelfLifeMap: Record<string, ShelfLifeEntry> = {
 };
 
 export function lookupShelfLife(foodName: string, location: string): number | null {
-  const name = foodName.toLowerCase().trim();
-  // Try longest keyword match first for most specific result.
-  // kw.includes(name) direction is only used when the query is ≥50% of the
-  // keyword length — this prevents "chicken" from matching "chicken broth canned".
+  // Word-level matching instead of raw substring. Substring matching made
+  // "buttermilk" and "butternut squash" match the "butter" keyword (90 fridge
+  // days), giving them a wildly wrong expiry and no timely warning — the same
+  // class of bug that ingredientMatchesItem already fixed for recipe matching.
+  const itemWords = ingredientWords(foodName);
+  if (itemWords.length === 0) return null;
+  const itemSet = new Set(itemWords);
+
   let bestMatch: ShelfLifeEntry | null = null;
-  let bestLen = 0;
+  let bestScore = -Infinity;
   for (const [kw, entry] of Object.entries(shelfLifeMap)) {
-    const kwInName  = name.includes(kw);
-    const nameInKw  = kw.includes(name) && name.length >= kw.length * 0.5;
-    if ((kwInName || nameInKw) && kw.length > bestLen) {
+    const kwWords = ingredientWords(kw);
+    if (kwWords.length === 0) continue;
+    // Direction A — the keyword generalizes the item (all its words appear in
+    // the item), e.g. "butter" ⊆ "organic butter". This is the strongest kind
+    // of match, so it always beats a fragment match below.
+    const kwGeneralizesItem = kwWords.every(w => itemSet.has(w));
+    // Direction B — the item is a fragment of a more-specific keyword, e.g. a
+    // bare "chicken" → "chicken breast". Guarded by word count so "chicken"
+    // doesn't reach "chicken broth canned" (mirrors the old ≥50% guard).
+    const kwSet = new Set(kwWords);
+    const itemFragmentOfKw =
+      itemWords.every(w => kwSet.has(w)) && itemWords.length >= kwWords.length * 0.5;
+    if (!kwGeneralizesItem && !itemFragmentOfKw) continue;
+    // Scoring: a generalizing keyword always wins; among those prefer the most
+    // specific (most words, then longer). For fragment matches, prefer the
+    // keyword closest to the item (fewest words, then shorter) — so a bare
+    // "chicken" resolves to a plain cut, not the longest compound name.
+    const score = kwGeneralizesItem
+      ? 1_000_000 + kwWords.length * 1000 + kw.length
+      : -(kwWords.length * 1000 + kw.length);
+    if (score > bestScore) {
       bestMatch = entry;
-      bestLen = kw.length;
+      bestScore = score;
     }
   }
   if (!bestMatch) return null;
