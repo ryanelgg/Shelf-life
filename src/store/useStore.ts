@@ -281,6 +281,11 @@ export const useStore = create<ShelfLifeStore>()(
           } else {
             if (lastActiveDate !== today) {
               streakDays = lastActiveDate === yesterday ? streakDays + 1 : 1;
+            } else if (streakDays === 0) {
+              // Same-day recovery: a toss earlier today reset the streak to 0.
+              // Saving food again rebuilds it to 1 rather than leaving it stuck
+              // at 0 until tomorrow — one good action shouldn't be wasted.
+              streakDays = 1;
             }
             lastActiveDate = today;
           }

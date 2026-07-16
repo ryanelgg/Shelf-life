@@ -41,10 +41,11 @@ describe('selectItemsToSchedule', () => {
     expect(selectItemsToSchedule(items).map(i => i.id)).toEqual(['soon', 'mid', 'late']);
   });
 
-  it('drops already-expired items so they do not consume the cap', () => {
-    // 20 expired items would otherwise sort earliest and fill every slot,
-    // leaving the real upcoming items with no reminders scheduled.
-    const expired = Array.from({ length: 20 }, (_, i) => item(`old${i}`, daysFromNow(-i - 1)));
+  it('drops fully-expired items (past their check-in) so they do not consume the cap', () => {
+    // Items expired 2+ days ago are past even their day-after check-in, so they
+    // would otherwise sort earliest and fill every slot, leaving real upcoming
+    // items with no reminders scheduled.
+    const expired = Array.from({ length: 20 }, (_, i) => item(`old${i}`, daysFromNow(-i - 2)));
     const upcoming = [item('future1', daysFromNow(4)), item('future2', daysFromNow(8))];
     const picked = selectItemsToSchedule([...expired, ...upcoming]);
     expect(picked.map(i => i.id)).toEqual(['future1', 'future2']);

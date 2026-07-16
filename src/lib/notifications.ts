@@ -48,6 +48,17 @@ const DAY_OF = [
   (u: string, n: string) => ({ title: '🥑 Hero hour', body: `${u}, your ${n} expires today. Be its hero?` }),
 ];
 
+// ── "Did you finish it?" check-in (fires the morning AFTER expiry) ──────────
+// Closes the loop on a dated item: gently asks the user to log whether it got
+// eaten or tossed, which cuts silently-forgotten waste and feeds better data
+// back into stats + Shopping Radar.
+const FINISHED_CHECK_IN = [
+  (_u: string, n: string) => ({ title: '🥑 Did you finish it?', body: `Your ${n} hit its date — did you eat it or toss it? Tap to log it.` }),
+  (u: string, n: string) => ({ title: `Quick check-in, ${u} 💚`, body: `How'd your ${n} do? Let Avo know if it was eaten or tossed.` }),
+  (_u: string, n: string) => ({ title: '🥑 Eat it or toss it?', body: `Your ${n} was due. Log the outcome so Avo can track your wins.` }),
+  (u: string, n: string) => ({ title: '🌿 One quick tap', body: `${u}, did your ${n} get used up? Tell Avo — it sharpens your stats.` }),
+];
+
 // ── Streak protection (fires 7pm if streak at risk) ─────────────────────────
 const STREAK_PROTECTION = [
   (_u: string, s: number) => ({ title: `🔥 Your ${s}-day streak!`, body: `Don't break it now — log a meal before midnight 💚` }),
@@ -113,17 +124,18 @@ function hashStringToInt(str: string): number {
   return Math.abs(hash) % 100000000;
 }
 
-function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number } {
+function notificationIdsForItem(itemId: string): { twoDays: number; oneDay: number; dayOf: number; finishCheck: number } {
   const base = hashStringToInt(itemId);
   return {
     twoDays: base * 10 + 1,
     oneDay: base * 10 + 2,
     dayOf: base * 10 + 3,
+    finishCheck: base * 10 + 4,
   };
 }
 
 // Reserved IDs for engagement notifications (won't collide with item hashes
-// because items max out at base * 10 + 3 < 1_000_000_000).
+// because items max out at base * 10 + 4 < 1_000_000_000).
 const ENGAGEMENT_IDS = {
   streakProtection: 1_900_000_001,
   reEngagement: 1_900_000_002,
@@ -166,12 +178,13 @@ function reEngagementTime(daysFromNow: number, hour = 18): Date {
 // ── Capacity limits ─────────────────────────────────────────────────────────
 //
 // iOS silently keeps only 64 pending local notifications and drops the rest.
-// Each dated item schedules up to 3 reminders and engagement adds a few fixed
+// Each dated item schedules up to 4 reminders (2-day, 1-day, day-of, and the
+// day-after "did you finish it?" check-in) and engagement adds a few fixed
 // ones, so we cap how many items we schedule (soonest-expiring first) and refuse
 // to schedule a single item once we're near the ceiling.
 
-// 18 items × 3 reminders = 54, leaving headroom for engagement notifications.
-export const MAX_SCHEDULED_ITEMS = 18;
+// 14 items × 4 reminders = 56, leaving headroom for engagement notifications.
+export const MAX_SCHEDULED_ITEMS = 14;
 // Hard ceiling for a single-item schedule check (leaves ~4 slots for engagement).
 const MAX_PENDING_NOTIFICATIONS = 60;
 
@@ -182,11 +195,13 @@ const MAX_PENDING_NOTIFICATIONS = 60;
  */
 export function selectItemsToSchedule(items: PantryItem[], max: number = MAX_SCHEDULED_ITEMS): PantryItem[] {
   return items
-    // Only items whose day-of reminder is still schedulable. Already-expired
-    // items sort earliest and would otherwise eat the cap while scheduling
-    // nothing (expirationNotificationTime returns null for past times),
-    // silently starving valid upcoming items of reminder slots.
-    .filter(i => !!i.expirationDate && expirationNotificationTime(i.expirationDate!, 0) !== null)
+    // Only items that still have at least one schedulable reminder left. The
+    // day-after check-in (daysBefore -1) is the LAST reminder, so if even that
+    // is in the past the item is fully done and shouldn't eat a slot. Long-
+    // expired items would otherwise sort earliest and silently starve valid
+    // upcoming items of reminder slots (expirationNotificationTime returns null
+    // for past times).
+    .filter(i => !!i.expirationDate && expirationNotificationTime(i.expirationDate!, -1) !== null)
     .sort((a, b) => (a.expirationDate! < b.expirationDate! ? -1 : a.expirationDate! > b.expirationDate! ? 1 : 0))
     .slice(0, max);
 }
@@ -221,6 +236,8 @@ export async function scheduleItemNotifications(item: PantryItem, userName?: str
     const twoDayTime = expirationNotificationTime(item.expirationDate, 2);
     const oneDayTime = expirationNotificationTime(item.expirationDate, 1);
     const dayOfTime = expirationNotificationTime(item.expirationDate, 0);
+    // Day AFTER expiry (daysBefore -1 → d + 1): the "did you finish it?" check-in.
+    const finishTime = expirationNotificationTime(item.expirationDate, -1);
 
     const toSchedule: Parameters<typeof LocalNotifications.schedule>[0]['notifications'] = [];
 
@@ -235,6 +252,10 @@ export async function scheduleItemNotifications(item: PantryItem, userName?: str
     if (dayOfTime) {
       const copy = pickRandom(DAY_OF)(u, item.name);
       toSchedule.push({ id: ids.dayOf, title: copy.title, body: copy.body, schedule: { at: dayOfTime, allowWhileIdle: true } });
+    }
+    if (finishTime) {
+      const copy = pickRandom(FINISHED_CHECK_IN)(u, item.name);
+      toSchedule.push({ id: ids.finishCheck, title: copy.title, body: copy.body, schedule: { at: finishTime, allowWhileIdle: true } });
     }
 
     if (toSchedule.length > 0) {
@@ -259,7 +280,7 @@ export async function cancelItemNotifications(itemId: string): Promise<void> {
   try {
     const ids = notificationIdsForItem(itemId);
     await LocalNotifications.cancel({
-      notifications: [{ id: ids.twoDays }, { id: ids.oneDay }, { id: ids.dayOf }],
+      notifications: [{ id: ids.twoDays }, { id: ids.oneDay }, { id: ids.dayOf }, { id: ids.finishCheck }],
     });
   } catch (e) {
     debug.warn('[notifications] cancel failed:', e);
