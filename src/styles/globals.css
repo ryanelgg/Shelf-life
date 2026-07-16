@@ -106,8 +106,25 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
-/* Background is the original clean solid color (var(--bg-primary)) — the
-   app-wide wood-grain overlay was removed because it read as torn paper. */
+/* Subtle film-grain on the background — fine fractal noise at very low opacity.
+   Distinct from the old warped wood grain that read as torn paper; this just
+   adds a faint grainy tooth over the solid --bg-primary. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27160%27%20height%3D%27160%27%3E%3Cfilter%20id%3D%27n%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.8%27%20numOctaves%3D%272%27%20stitchTiles%3D%27stitch%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27160%27%20height%3D%27160%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E");
+  background-size: 160px 160px;
+  background-repeat: repeat;
+  mix-blend-mode: multiply;
+  opacity: 0.05;
+}
+[data-theme="dark"] body::before {
+  mix-blend-mode: soft-light;
+  opacity: 0.09;
+}
 
 /* ── Desktop: full-bleed, no white borders ─────────────────────────────
    App fills the entire viewport. We still set a warm dark background on
