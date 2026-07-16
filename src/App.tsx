@@ -23,26 +23,23 @@ const CookScreen = lazy(() => import('./screens/CookScreen').then((module) => ({
 const ImpactScreen = lazy(() => import('./screens/ImpactScreen').then((module) => ({ default: module.ImpactScreen })));
 const PlanScreen = lazy(() => import('./screens/PlanScreen').then((module) => ({ default: module.PlanScreen })));
 
-function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceipt: () => void }) {
+function FloatingAddButton({ onSelect }: { onSelect: (mode: 'manual' | 'scan' | 'receipt' | 'fridge') => void }) {
   const [open, setOpen] = useState(false);
 
   const options = [
     {
-      label: 'Receipt',
+      label: 'Manual',
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-          <line x1="16" y1="13" x2="8" y2="13"/>
-          <line x1="16" y1="17" x2="8" y2="17"/>
+          <path d="M17 3L21 7L7 21H3V17L17 3Z"/><line x1="15" y1="5" x2="19" y2="9"/>
         </svg>
       ),
-      action: () => { setOpen(false); onReceipt(); },
+      action: () => { setOpen(false); onSelect('manual'); },
       delay: '0ms',
-      bottom: '158px',
+      bottom: '150px',
     },
     {
-      label: 'Scan',
+      label: 'Barcode',
       icon: (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           {/* Corner brackets framing the barcode */}
@@ -58,9 +55,35 @@ function FloatingAddButton({ onScan, onReceipt }: { onScan: () => void; onReceip
           <line x1="18" y1="8" x2="18" y2="16" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
         </svg>
       ),
-      action: () => { setOpen(false); onScan(); },
+      action: () => { setOpen(false); onSelect('scan'); },
       delay: '60ms',
-      bottom: '222px',
+      bottom: '208px',
+    },
+    {
+      label: 'Receipt',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      ),
+      action: () => { setOpen(false); onSelect('receipt'); },
+      delay: '120ms',
+      bottom: '266px',
+    },
+    {
+      label: 'Fridge',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="5" y="2" width="14" height="20" rx="2"/><line x1="5" y1="10" x2="19" y2="10"/>
+          <line x1="8" y1="5" x2="8" y2="7"/><line x1="8" y1="13" x2="8" y2="16"/>
+        </svg>
+      ),
+      action: () => { setOpen(false); onSelect('fridge'); },
+      delay: '180ms',
+      bottom: '324px',
     },
   ];
 
@@ -381,8 +404,7 @@ export default function App() {
       </div>
       {activeTab !== 'add' && activeTab !== 'cook' && !showSettings && (
         <FloatingAddButton
-          onScan={() => { setAddItemMode('scan'); setActiveTab('add'); }}
-          onReceipt={() => { setAddItemMode('receipt'); setActiveTab('add'); }}
+          onSelect={(mode) => { setAddItemMode(mode); setActiveTab('add'); }}
         />
       )}
       <TabBar />
