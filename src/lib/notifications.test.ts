@@ -16,23 +16,44 @@ function item(id: string, expirationDate: string | undefined): PantryItem {
   } as PantryItem;
 }
 
+// Dates are computed relative to "now" so the tests stay deterministic
+// regardless of the day they run: the scheduler only keeps items whose
+// day-of (10am) reminder is still in the future.
+function daysFromNow(n: number): string {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0); // midday so tz/DST never flips the calendar day
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 describe('selectItemsToSchedule', () => {
   it('drops items with no expiration date', () => {
-    const items = [item('a', '2026-07-10'), item('b', undefined), item('c', '2026-07-05')];
+    const items = [item('a', daysFromNow(10)), item('b', undefined), item('c', daysFromNow(5))];
     const picked = selectItemsToSchedule(items);
     expect(picked.map(i => i.id)).toEqual(['c', 'a']);
   });
 
   it('orders by soonest expiration first', () => {
-    const items = [item('late', '2026-12-01'), item('soon', '2026-07-03'), item('mid', '2026-09-01')];
+    const items = [item('late', daysFromNow(120)), item('soon', daysFromNow(3)), item('mid', daysFromNow(60))];
     expect(selectItemsToSchedule(items).map(i => i.id)).toEqual(['soon', 'mid', 'late']);
   });
 
+  it('drops fully-expired items (past their check-in) so they do not consume the cap', () => {
+    // Items expired 2+ days ago are past even their day-after check-in, so they
+    // would otherwise sort earliest and fill every slot, leaving real upcoming
+    // items with no reminders scheduled.
+    const expired = Array.from({ length: 20 }, (_, i) => item(`old${i}`, daysFromNow(-i - 2)));
+    const upcoming = [item('future1', daysFromNow(4)), item('future2', daysFromNow(8))];
+    const picked = selectItemsToSchedule([...expired, ...upcoming]);
+    expect(picked.map(i => i.id)).toEqual(['future1', 'future2']);
+  });
+
   it('caps at MAX_SCHEDULED_ITEMS, keeping the soonest', () => {
-    // 30 items expiring on days 01..30 — only the soonest MAX should be kept.
-    const items = Array.from({ length: 30 }, (_, i) =>
-      item(`d${i}`, `2026-08-${String(i + 1).padStart(2, '0')}`),
-    );
+    // 30 future items — only the soonest MAX should be kept.
+    const items = Array.from({ length: 30 }, (_, i) => item(`d${i}`, daysFromNow(i + 1)));
     const picked = selectItemsToSchedule(items);
     expect(picked.length).toBe(MAX_SCHEDULED_ITEMS);
     expect(picked[0].id).toBe('d0');

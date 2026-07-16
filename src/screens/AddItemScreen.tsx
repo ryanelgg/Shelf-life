@@ -11,6 +11,7 @@ import { DEFAULT_SHELF_LIFE, formatLocalDate, FREE_LIMITS, getDefaultDateType } 
 import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { StorageLocationIcon } from '../components/StorageLocationIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { AvoConsentModal } from '../components/AvoConsentModal';
 import * as debug from '../lib/debug';
 import { hapticMedium, hapticLight } from '../lib/haptics';
 import { BarcodeScanner } from '../components/BarcodeScanner';
@@ -134,8 +135,15 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
+  // When a scan needs AI consent that hasn't been granted, we stash the action
+  // here and pop the consent modal first (matching how chat gates Avo).
+  const [aiConsentPending, setAiConsentPending] = useState<(() => void) | null>(null);
+  const requireAiConsent = (action: () => void) => {
+    if (avoAiConsent === 'granted') { action(); return; }
+    setAiConsentPending(() => action);
+  };
 
   useEffect(() => {
     if (addItemMode) setAddItemMode(null);
@@ -198,8 +206,12 @@ export function AddItemScreen() {
     setCustomDays(getSuggestedShelfLifeDays(itemName, itemLocation, itemCategory));
   };
 
-  const handleReceiptTap = async () => {
+  const handleReceiptTap = () => {
     if (!isPro()) { setShowUpgrade(true); return; }
+    requireAiConsent(captureReceipt);
+  };
+
+  const captureReceipt = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
         const photo = await Camera.getPhoto({
@@ -257,8 +269,12 @@ export function AddItemScreen() {
   };
 
   // ── "Snap your fridge" (Pro): one photo → AI lists everything to add ─────────
-  const handleFridgeTap = async () => {
+  const handleFridgeTap = () => {
     if (!isPro()) { setShowUpgrade(true); return; }
+    requireAiConsent(captureFridge);
+  };
+
+  const captureFridge = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
         const photo = await Camera.getPhoto({
@@ -1165,6 +1181,21 @@ export function AddItemScreen() {
           feature={mode === 'receipt' ? 'receipt' : mode === 'fridge' ? 'fridge' : 'pantry'}
           onClose={() => setShowUpgrade(false)}
           onUpgrade={() => { setSubscriptionTier('pro'); setShowUpgrade(false); }}
+        />
+      )}
+
+      {aiConsentPending && (
+        <AvoConsentModal
+          onAccept={() => {
+            setAvoAiConsent('granted');
+            const run = aiConsentPending;
+            setAiConsentPending(null);
+            run?.();
+          }}
+          onDecline={() => {
+            setAvoAiConsent('declined');
+            setAiConsentPending(null);
+          }}
         />
       )}
 
