@@ -151,6 +151,9 @@ export function AddItemScreen() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [receiptProcessing, setReceiptProcessing] = useState(false);
   const [receiptItems, setReceiptItems] = useState<ReceiptListItem[]>([]);
+  // Within the Scan tab: show the barcode/receipt chooser ('menu') or the live
+  // barcode scanner ('barcode').
+  const [scanChoice, setScanChoice] = useState<'menu' | 'barcode'>('menu');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fridgeInputRef = useRef<HTMLInputElement>(null);
 
@@ -215,7 +218,9 @@ export function AddItemScreen() {
     if (Capacitor.isNativePlatform()) {
       try {
         const photo = await Camera.getPhoto({
-          source: CameraSource.Prompt,
+          // Camera only — no "take photo or choose from library" prompt. A
+          // receipt should be snapped in the moment, not uploaded from the roll.
+          source: CameraSource.Camera,
           resultType: CameraResultType.Base64,
           quality: 80,
         });
@@ -484,15 +489,6 @@ export function AddItemScreen() {
             ),
           },
           {
-            id: 'receipt' as AddMode, label: 'Receipt',
-            icon: (c: string) => (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 2V22L7 20L10 22L12 20L14 22L17 20L20 22V2H4Z" />
-                <line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="14" x2="13" y2="14" />
-              </svg>
-            ),
-          },
-          {
             id: 'fridge' as AddMode, label: 'Fridge',
             icon: (c: string) => (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -505,7 +501,7 @@ export function AddItemScreen() {
           <button
             key={m.id}
             className="btn-toggle"
-            onClick={() => setMode(m.id)}
+            onClick={() => { setMode(m.id); if (m.id === 'scan') setScanChoice('menu'); }}
             style={{
               flex: 1,
               padding: '12px',
@@ -844,9 +840,91 @@ export function AddItemScreen() {
         </>
       )}
 
-      {mode === 'scan' && (
+      {mode === 'scan' && scanChoice === 'menu' && !receiptProcessing && (
+        <Card className="card-enter stagger-3" style={{ padding: '10px' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleReceiptFile}
+            style={{ display: 'none' }}
+          />
+          {([
+            {
+              key: 'barcode',
+              title: 'Scan a barcode',
+              subtitle: 'Point your camera at a product barcode',
+              pro: false,
+              onClick: () => setScanChoice('barcode'),
+              icon: (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 5V2h3M20 2h3v3M1 19v3h3M20 22h3v-3" />
+                  <line x1="7" y1="7" x2="7" y2="17" /><line x1="10" y1="7" x2="10" y2="17" />
+                  <line x1="13" y1="7" x2="14.5" y2="17" /><line x1="17" y1="7" x2="17" y2="17" />
+                </svg>
+              ),
+            },
+            {
+              key: 'receipt',
+              title: 'Scan a receipt',
+              subtitle: 'Snap a grocery receipt to add everything at once',
+              pro: !isPro(),
+              onClick: handleReceiptTap,
+              icon: (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 2V22L7 20L10 22L12 20L14 22L17 20L20 22V2H4Z" />
+                  <line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="14" x2="13" y2="14" />
+                </svg>
+              ),
+            },
+          ]).map((opt, i) => (
+            <button
+              key={opt.key}
+              onClick={opt.onClick}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                padding: '16px 12px',
+                background: 'transparent',
+                border: 'none',
+                borderTop: i === 0 ? 'none' : '1px solid var(--tab-border)',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div style={{
+                width: '44px', height: '44px', flexShrink: 0,
+                borderRadius: '12px', background: 'var(--accent-dim)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {opt.icon}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{opt.title}</span>
+                  {opt.pro && (
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #D4A44A, #B8862D)', color: '#fff',
+                      fontSize: '9px', fontWeight: 700,
+                    }}>PRO</span>
+                  )}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.4 }}>{opt.subtitle}</div>
+              </div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          ))}
+        </Card>
+      )}
+
+      {mode === 'scan' && scanChoice === 'barcode' && (
         <BarcodeScanner
-          onClose={() => setMode('manual')}
+          onClose={() => setScanChoice('menu')}
           onScan={(product) => {
             addSourceRef.current = 'barcode';
             setName(product.brand ? `${product.brand} ${product.name}` : product.name);
