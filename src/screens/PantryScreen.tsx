@@ -814,7 +814,7 @@ export function PantryScreen() {
             <EmptyPantryIllustration />
           </div>
           <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Your {activeLocation === 'all' ? 'pantry' : activeLocation} is empty</div>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Tap the + tab to add items!</div>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Tap the + button to add items!</div>
         </Card>
       )}
 

@@ -41,8 +41,8 @@ interface ShelfLifeStore {
   shoppingLists: ShoppingList[];
   mealPlan: MealPlanDay[];
   activeTab: Tab;
-  addItemMode: 'manual' | 'scan' | 'receipt' | null;
-  setAddItemMode: (mode: 'manual' | 'scan' | 'receipt' | null) => void;
+  addItemMode: 'manual' | 'scan' | 'receipt' | 'fridge' | null;
+  setAddItemMode: (mode: 'manual' | 'scan' | 'receipt' | 'fridge' | null) => void;
   recipeSearchSeed: string | null;
   setRecipeSearchSeed: (seed: string | null) => void;
   theme: ThemeMode;

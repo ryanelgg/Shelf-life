@@ -135,7 +135,7 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent, setActiveTab } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
   // When a scan needs AI consent that hasn't been granted, we stash the action
   // here and pop the consent modal first (matching how chat gates Avo).
@@ -151,9 +151,9 @@ export function AddItemScreen() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [receiptProcessing, setReceiptProcessing] = useState(false);
   const [receiptItems, setReceiptItems] = useState<ReceiptListItem[]>([]);
-  // Within the Scan tab: show the barcode/receipt chooser ('menu') or the live
-  // barcode scanner ('barcode').
-  const [scanChoice, setScanChoice] = useState<'menu' | 'barcode'>('menu');
+  // The + menu picks the flow, so a 'scan' entry means barcode — open the live
+  // scanner straight away rather than showing an extra chooser.
+  const [scanChoice, setScanChoice] = useState<'menu' | 'barcode'>(addItemMode === 'scan' ? 'barcode' : 'menu');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fridgeInputRef = useRef<HTMLInputElement>(null);
 
@@ -467,65 +467,33 @@ export function AddItemScreen() {
         </div>
       )}
 
-      {/* Mode selector */}
-      <div className="card-enter stagger-1" style={{ display: 'flex', gap: '8px' }}>
-        {([
-          {
-            id: 'manual' as AddMode, label: 'Manual',
-            icon: (c: string) => (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3L21 7L7 21H3V17L17 3Z" /><line x1="15" y1="5" x2="19" y2="9" />
-              </svg>
-            ),
-          },
-          {
-            id: 'scan' as AddMode, label: 'Scan',
-            icon: (c: string) => (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M1 5V2h3M20 2h3v3M1 19v3h3M20 22h3v-3" />
-                <line x1="7" y1="7" x2="7" y2="17" /><line x1="10" y1="7" x2="10" y2="17" />
-                <line x1="13" y1="7" x2="14.5" y2="17" /><line x1="17" y1="7" x2="17" y2="17" />
-              </svg>
-            ),
-          },
-          {
-            id: 'fridge' as AddMode, label: 'Fridge',
-            icon: (c: string) => (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="5" y="2" width="14" height="20" rx="2" /><line x1="5" y1="10" x2="19" y2="10" />
-                <line x1="8" y1="5" x2="8" y2="7" /><line x1="8" y1="13" x2="8" y2="16" />
-              </svg>
-            ),
-          },
-        ]).map(m => (
-          <button
-            key={m.id}
-            className="btn-toggle"
-            onClick={() => { setMode(m.id); if (m.id === 'scan') setScanChoice('menu'); }}
-            style={{
-              flex: 1,
-              padding: '12px',
-              borderRadius: '12px',
-              border: mode === m.id ? '1.5px solid var(--accent)' : '1px solid var(--tab-border)',
-              background: mode === m.id ? 'var(--accent-dim)' : 'transparent',
-              color: mode === m.id ? 'var(--accent)' : 'var(--text-muted)',
-              fontSize: '13px',
-              fontWeight: 600,
-              fontFamily: "'Cormorant Garamond', serif",
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            {m.icon(mode === m.id ? 'var(--accent)' : 'var(--text-muted)')}
-            {m.label}
-          </button>
-        ))}
-      </div>
+      {/* Back to pantry — the + menu chooses the mode, so there's no in-screen switcher */}
+      <button
+        onClick={() => setActiveTab('pantry')}
+        style={{
+          alignSelf: 'flex-start',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '8px 14px',
+          borderRadius: '10px',
+          border: '1px solid var(--tab-border)',
+          background: 'transparent',
+          color: 'var(--text-muted)',
+          fontSize: '13px',
+          fontWeight: 600,
+          fontFamily: "'Cormorant Garamond', serif",
+          cursor: 'pointer',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        Back
+      </button>
 
-      {/* Quick Add */}
+      {/* Quick Add (manual only) */}
+      {mode === 'manual' && (
       <Card className="card-enter stagger-2">
         <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>Quick Add</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -576,6 +544,7 @@ export function AddItemScreen() {
           })}
         </div>
       </Card>
+      )}
 
       {mode === 'manual' && (
         <>
@@ -924,7 +893,7 @@ export function AddItemScreen() {
 
       {mode === 'scan' && scanChoice === 'barcode' && (
         <BarcodeScanner
-          onClose={() => setScanChoice('menu')}
+          onClose={() => setActiveTab('pantry')}
           onScan={(product) => {
             addSourceRef.current = 'barcode';
             setName(product.brand ? `${product.brand} ${product.name}` : product.name);

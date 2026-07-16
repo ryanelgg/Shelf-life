@@ -14,7 +14,7 @@ const STEPS: { emoji: string; title: string; body: string }[] = [
   {
     emoji: '➕',
     title: 'Add your food',
-    body: 'Tap the Add tab to log items — scan a barcode, snap a receipt or your fridge, or just say it out loud.',
+    body: 'Tap the + button to log items — scan a barcode, snap a receipt or your fridge, or just add it manually.',
   },
   {
     emoji: '🥫',
