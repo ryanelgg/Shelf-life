@@ -106,19 +106,8 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
-/* App-wide wooden-table grain on the background */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: var(--wgrain);
-  background-size: var(--wgrain-size);
-  background-repeat: repeat;
-  mix-blend-mode: var(--wood-blend);
-  opacity: var(--wood-op);
-}
+/* Background is the original clean solid color (var(--bg-primary)) — the
+   app-wide wood-grain overlay was removed because it read as torn paper. */
 
 /* ── Desktop: full-bleed, no white borders ─────────────────────────────
    App fills the entire viewport. We still set a warm dark background on
