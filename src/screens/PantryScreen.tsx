@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useTimeouts } from '../lib/useTimeouts';
 import { checkPantryForRecalls } from '../lib/recallApi';
 import type { RecallMatch } from '../lib/recallApi';
 import posthog from 'posthog-js';
@@ -116,6 +117,7 @@ export function PantryScreen() {
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [alertDismissing, setAlertDismissing] = useState(false);
+  const scheduleTimeout = useTimeouts();
   const [listAnimKey, setListAnimKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterBubbleKey, setFilterBubbleKey] = useState(0);
@@ -229,7 +231,7 @@ export function PantryScreen() {
   const handleDismissAlert = (e: React.MouseEvent) => {
     e.stopPropagation();
     setAlertDismissing(true);
-    setTimeout(() => setAlertDismissed(true), 290);
+    scheduleTimeout(() => setAlertDismissed(true), 290);
   };
 
   const handleLocationChange = (loc: StorageLocation | 'all') => {

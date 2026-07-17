@@ -88,8 +88,13 @@ export function CookScreen() {
     // Block sending if the user hasn't granted AI consent yet
     if (avoAiConsent !== 'granted') return;
 
-    // "briefing" is answered locally — no AI round-trip needed.
-    if (/\bbrief(ing)?\b/i.test(trimmed)) { showDailyBriefing(trimmed); setInput(''); return; }
+    // The daily briefing is answered locally — no AI round-trip needed. Match
+    // only the explicit feature word "briefing" (or "daily/my/morning brief"),
+    // NOT a bare "brief" — otherwise "give me a brief overview of protein" gets
+    // hijacked into the local briefing and never reaches Avo.
+    if (/\bbriefing\b/i.test(trimmed) || /\b(daily|my|morning)\s+brief\b/i.test(trimmed)) {
+      showDailyBriefing(trimmed); setInput(''); return;
+    }
 
     hapticLight();
 

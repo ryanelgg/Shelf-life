@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useTimeouts } from '../lib/useTimeouts';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraSource, CameraResultType } from '@capacitor/camera';
 import posthog from 'posthog-js';
@@ -171,6 +172,7 @@ export function AddItemScreen() {
   }, []);
 
   const [showSuccess, setShowSuccess] = useState(false);
+  const scheduleToast = useTimeouts();
   const [successName, setSuccessName] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const addSourceRef = useRef<'manual' | 'barcode'>('manual');
@@ -373,7 +375,7 @@ export function AddItemScreen() {
     setReceiptItems(prev => prev.filter(r => r.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2000);
+    scheduleToast(() => setShowSuccess(false), 2000);
   };
 
   const handleAddItem = (itemName?: string, itemCat?: FoodCategory, itemLoc?: StorageLocation, itemVal?: number, itemUnit?: string) => {
@@ -425,7 +427,7 @@ export function AddItemScreen() {
     setCustomDays('');
     setSuccessName(n);
     setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2000);
+    scheduleToast(() => setShowSuccess(false), 2000);
   };
 
   // Add one or more items parsed from a spoken/typed phrase. Each item's
@@ -509,7 +511,7 @@ export function AddItemScreen() {
                     updatePantryItem(existing.id, { quantity: existing.quantity + 1 });
                     setSuccessName(`+1 ${item.name}`);
                     setShowSuccess(true);
-                    setTimeout(() => setShowSuccess(false), 2000);
+                    scheduleToast(() => setShowSuccess(false), 2000);
                   } else {
                     // Prefill the form so user can review before adding
                     setMode('manual');
@@ -1063,7 +1065,7 @@ export function AddItemScreen() {
                 if (toAdd.length > 0) {
                   setSuccessName(`${toAdd.length} receipt item${toAdd.length === 1 ? '' : 's'}`);
                   setShowSuccess(true);
-                  setTimeout(() => setShowSuccess(false), 2000);
+                  scheduleToast(() => setShowSuccess(false), 2000);
                 }
                 if (remaining.length > 0) {
                   setShowUpgrade(true);
