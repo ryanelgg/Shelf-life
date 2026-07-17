@@ -294,7 +294,10 @@ function nameAllowedByDiet(name: string, diets: DietaryPref[]): boolean {
   const lower = name.toLowerCase();
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    if (blocked.some(b => lower.includes(b))) return false;
+    // Whole-word match, not substring — mirrors meetsDiet above so the auto-built
+    // shopping list doesn't silently drop "eggplant" (contains egg, vegan-ok),
+    // "buckwheat" (contains wheat, GF-ok), or "graham" (contains ham).
+    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower))) return false;
   }
   return true;
 }

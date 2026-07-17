@@ -108,7 +108,10 @@ export function ImpactScreen() {
       if (log.action === 'tossed' || !log.userId) continue;
       const cur = byUser.get(log.userId) ?? { saved: 0, money: 0 };
       cur.saved += 1;
-      cur.money += log.estimatedValue * log.quantity;
+      // estimatedValue is the whole-entry value (same rule the "Saved Together"
+      // total below relies on), so do NOT multiply by quantity — otherwise the
+      // per-member dollars inflate and stop summing to the household total.
+      cur.money += log.estimatedValue;
       byUser.set(log.userId, cur);
     }
     return members
