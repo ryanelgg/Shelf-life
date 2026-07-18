@@ -160,6 +160,15 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     const reader = new BrowserMultiFormatReader();
     if (!videoRef.current) return;
 
+    // Belt-and-suspenders against iOS showing playback controls on the live
+    // preview: force controls off and the inline/muted hints on the element
+    // itself before ZXing attaches the stream.
+    const v = videoRef.current;
+    v.controls = false;
+    v.muted = true;
+    v.setAttribute('playsinline', 'true');
+    v.setAttribute('webkit-playsinline', 'true');
+
     reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
       if (scannedRef.current) return;
       if (err instanceof NotFoundException) return;
@@ -428,19 +437,27 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       )}
 
       <style>{`
-        /* iOS/WebKit paints a center play button and media controls over an
-           inline <video> even when muted+autoplay. This is a live camera
-           preview, not a playable clip — strip every control chrome so no
-           play/pause button ever appears. */
-        .scanner-video::-webkit-media-controls,
-        .scanner-video::-webkit-media-controls-enclosure,
-        .scanner-video::-webkit-media-controls-panel,
-        .scanner-video::-webkit-media-controls-overlay-play-button,
-        .scanner-video::-webkit-media-controls-play-button,
-        .scanner-video::-webkit-media-controls-start-playback-button {
+        /* iOS/WebKit paints a play/pause button and media-control chrome over an
+           inline <video> even when muted+autoplay — and re-shows it for a beat
+           when playback actually starts. This is a live camera preview, not a
+           playable clip, so strip every control pseudo-element. Bare "video"
+           selectors (not class-scoped) match the shadow parts more reliably
+           across WebKit builds. */
+        video::-webkit-media-controls,
+        video::-webkit-media-controls-enclosure,
+        video::-webkit-media-controls-overlay-enclosure,
+        video::-webkit-media-controls-panel,
+        video::-webkit-media-controls-panel-container,
+        video::-webkit-media-controls-overlay-play-button,
+        video::-webkit-media-controls-play-button,
+        video::-webkit-media-controls-pause-button,
+        video::-webkit-media-controls-start-playback-button {
           display: none !important;
           -webkit-appearance: none !important;
           opacity: 0 !important;
+          pointer-events: none !important;
+          width: 0 !important;
+          height: 0 !important;
         }
         @keyframes softBreath {
           0%, 100% { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 24px rgba(250,247,242,0.08), 0 0 0 0 rgba(250,247,242,0); }
