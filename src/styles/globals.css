@@ -441,40 +441,6 @@ h1, h2, h3, h4 {
 .stagger-4 { animation-delay: 0.19s; }
 .stagger-5 { animation-delay: 0.24s; }
 
-/* ── Jam-jar date tags ──────────────────────────────────────────────────────
-   Expiry dates styled like little kraft-paper labels on preserve jars:
-   slightly rotated, warm paper ground, faint stamped shadow. Alternate the
-   rotation per row so a column of tags doesn't read as uniformly tilted. */
-.date-tag {
-  display: inline-block;
-  padding: 2px 7px 1px;
-  border-radius: 4px 7px 5px 4px;
-  background: rgba(212, 164, 74, 0.14);
-  border: 1px solid rgba(139, 94, 60, 0.28);
-  box-shadow: 0 1px 2px rgba(60, 42, 20, 0.10);
-  transform: rotate(-1.4deg);
-}
-.date-tag--alt { transform: rotate(1deg); }
-[data-theme="dark"] .date-tag {
-  background: rgba(212, 164, 74, 0.10);
-  border-color: rgba(212, 164, 74, 0.30);
-  box-shadow: none;
-}
-
-/* ── Shelf rails ────────────────────────────────────────────────────────────
-   A thin strip of the wood-grain texture under each pantry row, so items sit
-   on shelves instead of floating in a list. */
-.shelf-rail {
-  height: 5px;
-  border-radius: 3px;
-  margin: 3px 8px 0;
-  background-color: #8b5e3c;
-  background-image: var(--wgrain);
-  background-size: var(--wgrain-size);
-  opacity: 0.32;
-}
-[data-theme="dark"] .shelf-rail { opacity: 0.28; }
-
 /* ── Tab-bar sprout indicator ──────────────────────────────────────────────── */
 @keyframes sproutGrow {
   from { transform: scale(0); }

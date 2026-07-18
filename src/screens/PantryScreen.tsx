@@ -1,8 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useTimeouts } from '../lib/useTimeouts';
-import { AlertIcon, WarningIcon } from '../components/icons';
-import { checkPantryForRecalls } from '../lib/recallApi';
-import type { RecallMatch } from '../lib/recallApi';
+import { WarningIcon } from '../components/icons';
 import posthog from 'posthog-js';
 import { AvocadoMascot, type AvoMood } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -164,26 +162,6 @@ export function PantryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
-  const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [recallDismissed, setRecallDismissed] = useState(false);
-
-  useEffect(() => {
-    if (pantryItems.length === 0) return;
-    let cancelled = false;
-    const names = pantryItems.map(i => i.name);
-    checkPantryForRecalls(names).then(matches => {
-      if (cancelled) return; // a newer check superseded this one
-      setRecallMatches(prev => {
-        // Re-surface the banner only when the set of matched items actually
-        // changed, so a genuinely new recall isn't hidden by an earlier dismiss.
-        const key = (m: RecallMatch[]) => m.map(x => x.id).sort().join('|');
-        if (key(prev) !== key(matches)) setRecallDismissed(false);
-        return matches;
-      });
-    }).catch(() => {/* silently ignore - recall check is best-effort */});
-    return () => { cancelled = true; };
-  }, [pantryItems]);
-
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
     if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expired' || s === 'expiring' || s === 'expiring-soon'; });
@@ -211,19 +189,17 @@ export function PantryScreen() {
       .slice(0, 3)
   ), [pantryItems]);
 
-  // Avo reacts to the state of the kitchen: a recall makes him queasy, a pile
-  // of expiring items startles him, late night makes him sleepy.
+  // Avo reacts to the state of the kitchen: a pile of expiring items startles
+  // him, late night makes him sleepy.
   const avoMood: AvoMood =
-    recallMatches.length > 0 ? 'sick' :
     expiringCount >= 3 ? 'surprised' :
     isLateNight() ? 'sleepy' :
     'happy';
 
   // One quiet editorial line from Avo, rotated daily. The urgency variant takes
-  // over when something actually needs attention; the recall banner speaks for
-  // itself, so Avo stays quiet then.
+  // over when something actually needs attention.
   const avoQuote =
-    pantryItems.length === 0 || recallMatches.length > 0 ? null :
+    pantryItems.length === 0 ? null :
     urgentItems.length > 0 ? `The ${urgentItems[0]!.name.toLowerCase()} is counting on you.` :
     calmQuoteOfTheDay();
 
@@ -381,52 +357,6 @@ export function PantryScreen() {
           lineHeight: 1.4,
         }}>
           “{avoQuote}”
-        </div>
-      )}
-
-      {/* FDA Recall Alert Banner */}
-      {recallMatches.length > 0 && !recallDismissed && (
-        <div style={{
-          background: 'rgba(205,92,92,0.08)',
-          border: '1.5px solid rgba(205,92,92,0.3)',
-          borderRadius: '14px',
-          padding: '12px 14px',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '10px',
-          animation: 'card-enter 0.3s ease-out',
-        }}>
-          <AlertIcon size={20} color="var(--expired)" style={{ flexShrink: 0, marginTop: '1px' }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expired)', marginBottom: '4px' }}>
-              FDA Recall Alert
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              {recallMatches.length === 1
-                ? <><strong>{recallMatches[0]!.matchedItem}</strong>{` may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`}</>
-                : `${recallMatches.length} items in your pantry may be affected by active FDA recalls.`
-              }
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-              {recallMatches.slice(0, 3).map(m => (
-                <span key={m.id} style={{
-                  fontSize: '10px', fontWeight: 600,
-                  padding: '2px 8px', borderRadius: '8px',
-                  background: 'rgba(205,92,92,0.12)',
-                  color: 'var(--expired)',
-                }}>{m.matchedItem}</span>
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={() => setRecallDismissed(true)}
-            aria-label="Dismiss recall alert"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text-muted)', fontSize: '16px', flexShrink: 0,
-              padding: '2px', lineHeight: 1,
-            }}
-          >✕</button>
         </div>
       )}
 
@@ -864,8 +794,7 @@ export function PantryScreen() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  {/* jam-jar label: kraft-paper tag, alternating tilt per row */}
-                  <div className={`mono date-tag${i % 2 ? ' date-tag--alt' : ''}`} style={{ fontSize: '12px', fontWeight: 600, color, lineHeight: 1.25 }}>
+                  <div className="mono" style={{ fontSize: '13px', fontWeight: 600, color, lineHeight: 1.2 }}>
                     {days < 0 ? `${Math.abs(days)}d ago` :
                      days === 0 ? 'Today!' :
                      days === 1 ? '1 day' :
@@ -880,8 +809,6 @@ export function PantryScreen() {
                 </div>
               </Card>
             </div>
-            {/* the shelf the item sits on — stays put while the food gets eaten */}
-            <div className="shelf-rail" aria-hidden="true" />
             </div>
           );
         })}
