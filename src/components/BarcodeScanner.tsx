@@ -278,6 +278,19 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
         </>
       )}
 
+      {/* Film grain over the camera feed — same tooth as the app background,
+          so scanning feels like taking a photo for the journal */}
+      {cameraAvailable && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 2,
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27140%27%20height%3D%27140%27%3E%3Cfilter%20id%3D%27n%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.9%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27140%27%20height%3D%27140%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E")',
+          backgroundSize: '140px 140px',
+          mixBlendMode: 'soft-light',
+          opacity: 0.22,
+          pointerEvents: 'none',
+        }} />
+      )}
+
       {/* Soft warm vignette over the preview */}
       {cameraAvailable && (
         <div style={{
@@ -351,6 +364,22 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
                   pointerEvents: 'none',
                 }} />
               )}
+
+              {/* Printer's crop marks just outside the corners */}
+              {(['tl', 'tr', 'bl', 'br'] as const).map(corner => {
+                const v = corner[0] === 't' ? { top: -10 } : { bottom: -10 };
+                const h = corner[1] === 'l' ? { left: -10 } : { right: -10 };
+                return (
+                  <div key={corner} style={{
+                    position: 'absolute', width: 16, height: 16, ...v, ...h,
+                    borderTop: corner[0] === 't' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    borderBottom: corner[0] === 'b' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    borderLeft: corner[1] === 'l' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    borderRight: corner[1] === 'r' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    pointerEvents: 'none',
+                  }} />
+                );
+              })}
 
               {/* Loading: gentle Avo bounce in the middle */}
               {status === 'loading' && (

@@ -242,3 +242,31 @@ export function FreeOfSlash({ size = 18, color = 'var(--expired)' }: IconProps):
     </svg>
   );
 }
+
+// ── Streak sprout ────────────────────────────────────────────────────────────
+//
+// The zero-waste streak drawn as a growing plant: seed → seedling → sapling →
+// leafy plant → small tree. Stage thresholds mirror the milestone ladder
+// (3 / 7 / 14 / 30 / 100 days). Stroke follows the app accent.
+
+export function StreakSprout({ days, size = 44, color = 'var(--accent)' }: { days: number; size?: number; color?: string }): JSX.Element {
+  const stage = days <= 0 ? 0 : days < 3 ? 1 : days < 7 ? 2 : days < 14 ? 3 : days < 30 ? 4 : days < 100 ? 5 : 6;
+  const p = { fill: 'none', stroke: color, strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      {/* soil mound — always there */}
+      <path {...p} d="M6 21c2-1.6 10-1.6 12 0" />
+      {stage === 0 && <circle {...p} cx="12" cy="19" r="1.6" />}
+      {stage >= 1 && <path {...p} d={`M12 21V${21 - [0, 5, 8, 10, 12, 13, 14][stage]}`} />}
+      {/* first leaf pair */}
+      {stage >= 1 && <path {...p} d="M12 17c-1.6-.4-3-1.7-3.2-3.4 1.8-.2 3 .9 3.2 2.4Z" />}
+      {stage >= 2 && <path {...p} d="M12 16c1.6-.4 3-1.7 3.2-3.4-1.8-.2-3 .9-3.2 2.4Z" />}
+      {/* second pair, higher */}
+      {stage >= 3 && <path {...p} d="M12 13c-1.5-.3-2.7-1.4-2.9-2.9 1.6-.2 2.7.7 2.9 2Z" />}
+      {stage >= 4 && <path {...p} d="M12 12c1.5-.3 2.7-1.4 2.9-2.9-1.6-.2-2.7.7-2.9 2Z" />}
+      {/* crown */}
+      {stage === 5 && <path {...p} d="M12 8c-.9-1.5-.5-3.3 1-4.4 1 1.4.7 3.2-1 4.4Z" />}
+      {stage >= 6 && <circle {...p} cx="12" cy="6" r="3.4" />}
+    </svg>
+  );
+}

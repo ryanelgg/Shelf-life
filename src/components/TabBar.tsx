@@ -103,14 +103,20 @@ export function TabBar() {
               textTransform: 'uppercase',
               fontFamily: "'Cormorant Garamond', serif",
             }}>{label}</span>
+            {/* Active tab grows a tiny sprout instead of a plain dot */}
             <span
               key={`${id}-${isActive}`}
-              className={isActive ? 'tab-dot' : ''}
-              style={{
-                width: 4, height: 4, borderRadius: '50%',
-                background: isActive ? 'var(--accent)' : 'transparent',
-              }}
-            />
+              className={isActive ? 'tab-sprout' : ''}
+              style={{ height: 9, display: 'flex', alignItems: 'flex-end' }}
+            >
+              {isActive && (
+                <svg width="12" height="9" viewBox="0 0 12 9" fill="none" stroke="var(--accent)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M6 9V4.5" />
+                  <path d="M6 6C4.8 5.7 3.8 4.7 3.6 3.4 5 3.2 6 4 6 5.2Z" />
+                  <path d="M6 4.8c1.2-.3 2.2-1.3 2.4-2.6C7 2 6 2.8 6 4Z" />
+                </svg>
+              )}
+            </span>
           </button>
         );
       })}

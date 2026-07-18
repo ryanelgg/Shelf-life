@@ -4,7 +4,7 @@ import { AlertIcon, WarningIcon } from '../components/icons';
 import { checkPantryForRecalls } from '../lib/recallApi';
 import type { RecallMatch } from '../lib/recallApi';
 import posthog from 'posthog-js';
-import { AvocadoMascot } from '../components/AvocadoMascot';
+import { AvocadoMascot, type AvoMood } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
@@ -21,6 +21,41 @@ const LOCATION_LABELS: Record<StorageLocation, string> = {
   pantry: 'Pantry',
   counter: 'Counter',
 };
+
+// Freshness as ambience: item cards warm as food ages — cool green when fresh,
+// honey as the date nears, dried-out brown once past. Low-alpha tints layered
+// over the card ground so both themes keep their footing. (The icon + label
+// still carry the status — color is atmosphere, not the only signal.)
+const FRESHNESS_TINT: Record<string, string> = {
+  'fresh': 'rgba(74, 124, 89, 0.05)',
+  'good': 'rgba(74, 124, 89, 0.02)',
+  'expiring-soon': 'rgba(212, 164, 74, 0.08)',
+  'expiring': 'rgba(212, 164, 74, 0.14)',
+  'expired': 'rgba(139, 94, 60, 0.14)',
+};
+
+// Module-level so the impure Date calls aren't made inline during render
+// (keeps react-hooks/purity happy — same pattern as getGreeting).
+function isLateNight(): boolean {
+  const h = new Date().getHours();
+  return h >= 22 || h < 6;
+}
+
+const CALM_QUOTES = [
+  'A well-kept shelf is a quiet victory.',
+  'Everything in its jar, everything in its time.',
+  'Nothing wasted today. Avo approves.',
+  'The freezer is just a pause button for food.',
+  'Cook the oldest thing first — future you says thanks.',
+  'A full pantry is a promise to yourself.',
+  'Small saves add up to real dinners.',
+];
+
+function calmQuoteOfTheDay(): string {
+  const now = new Date();
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000);
+  return CALM_QUOTES[dayOfYear % CALM_QUOTES.length];
+}
 
 const FREEZER_FALLBACK_DAYS: Record<FoodCategory, number> = {
   Produce: 365, Dairy: 90, Meat: 120, Seafood: 90,
@@ -115,6 +150,8 @@ export function PantryScreen() {
   const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
+  // Item currently playing its "bite" exit (eaten action) before removal.
+  const [bitingId, setBitingId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [alertDismissing, setAlertDismissing] = useState(false);
@@ -174,6 +211,22 @@ export function PantryScreen() {
       .slice(0, 3)
   ), [pantryItems]);
 
+  // Avo reacts to the state of the kitchen: a recall makes him queasy, a pile
+  // of expiring items startles him, late night makes him sleepy.
+  const avoMood: AvoMood =
+    recallMatches.length > 0 ? 'sick' :
+    expiringCount >= 3 ? 'surprised' :
+    isLateNight() ? 'sleepy' :
+    'happy';
+
+  // One quiet editorial line from Avo, rotated daily. The urgency variant takes
+  // over when something actually needs attention; the recall banner speaks for
+  // itself, so Avo stays quiet then.
+  const avoQuote =
+    pantryItems.length === 0 || recallMatches.length > 0 ? null :
+    urgentItems.length > 0 ? `The ${urgentItems[0]!.name.toLowerCase()} is counting on you.` :
+    calmQuoteOfTheDay();
+
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
@@ -182,17 +235,27 @@ export function PantryScreen() {
     } else if (action === 'tossed') {
       posthog.capture('pantry_item_wasted', { days_past_expiry: -daysLeft, category: item.category, estimated_value: item.estimatedValue });
     }
-    addWasteLog({
-      id: createWasteLogId(),
-      itemName: item.name,
-      category: item.category,
-      action,
-      date: formatLocalDate(new Date()),
-      estimatedValue: item.estimatedValue,
-      quantity: item.quantity,
-    });
-    removePantryItem(item.id);
+    const finish = () => {
+      addWasteLog({
+        id: createWasteLogId(),
+        itemName: item.name,
+        category: item.category,
+        action,
+        date: formatLocalDate(new Date()),
+        estimatedValue: item.estimatedValue,
+        quantity: item.quantity,
+      });
+      removePantryItem(item.id);
+      setBitingId(null);
+    };
     setSwipingItem(null);
+    if (action === 'eaten') {
+      // Play the "bite" exit first, then log + remove (matches the CSS 430ms).
+      setBitingId(item.id);
+      scheduleTimeout(finish, 430);
+      return;
+    }
+    finish();
   };
 
   const handleFreezeItem = (item: PantryItem) => {
@@ -282,7 +345,7 @@ export function PantryScreen() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '-12px' }}>
-          <AvocadoMascot size={34} />
+          <AvocadoMascot size={34} mood={avoMood} />
           <h1 style={{ fontSize: 'clamp(18px, 5vw, 22px)', fontWeight: 800 }}>
             {getGreeting()}
           </h1>
@@ -305,6 +368,21 @@ export function PantryScreen() {
           </svg>
         </button>
       </div>
+
+      {/* Avo's daily line — one quiet editorial note, serif italic */}
+      {avoQuote && (
+        <div className="card-enter stagger-1" style={{
+          fontFamily: "'Cormorant Garamond', serif",
+          fontStyle: 'italic',
+          fontSize: '14px',
+          color: 'var(--text-muted)',
+          textAlign: 'center',
+          marginTop: '-6px',
+          lineHeight: 1.4,
+        }}>
+          “{avoQuote}”
+        </div>
+      )}
 
       {/* FDA Recall Alert Banner */}
       {recallMatches.length > 0 && !recallDismissed && (
@@ -667,9 +745,9 @@ export function PantryScreen() {
           const isSwipe = swipingItem === item.id;
 
           return (
+            <div key={item.id} className={`card-enter stagger-${Math.min(i + 1, 6)}`}>
             <div
-              key={item.id}
-              className={`card-enter stagger-${Math.min(i + 1, 6)}`}
+              className={bitingId === item.id ? 'bite-out' : ''}
               style={{ position: 'relative', overflow: 'hidden', borderRadius: '14px' }}
             >
               {isSwipe && (
@@ -754,6 +832,8 @@ export function PantryScreen() {
                   gap: '12px',
                   padding: '14px 16px',
                   borderLeft: `3px solid ${color}`,
+                  // freshness as ambience: the card ground warms as the food ages
+                  backgroundImage: `linear-gradient(${FRESHNESS_TINT[status]}, ${FRESHNESS_TINT[status]})`,
                   opacity: isSwipe ? 0.3 : 1,
                   transition: 'opacity 0.2s',
                 }}
@@ -784,7 +864,8 @@ export function PantryScreen() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div className="mono" style={{ fontSize: '13px', fontWeight: 600, color, lineHeight: 1.2 }}>
+                  {/* jam-jar label: kraft-paper tag, alternating tilt per row */}
+                  <div className={`mono date-tag${i % 2 ? ' date-tag--alt' : ''}`} style={{ fontSize: '12px', fontWeight: 600, color, lineHeight: 1.25 }}>
                     {days < 0 ? `${Math.abs(days)}d ago` :
                      days === 0 ? 'Today!' :
                      days === 1 ? '1 day' :
@@ -798,6 +879,9 @@ export function PantryScreen() {
                   </div>
                 </div>
               </Card>
+            </div>
+            {/* the shelf the item sits on — stays put while the food gets eaten */}
+            <div className="shelf-rail" aria-hidden="true" />
             </div>
           );
         })}

@@ -2415,16 +2415,21 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
         }
         .cook-tree-shake { animation: cookTreeShake 680ms ease 220ms; transform-origin: 50% 92%; }
         @keyframes cookConfettiFall {
-          0%   { transform: translateY(-8px) rotate(0); opacity: 0; }
+          0%   { transform: translateY(-8px) rotate(0) translateX(0); opacity: 0; }
           20%  { opacity: 1; }
-          100% { transform: translateY(110px) rotate(280deg); opacity: 0; }
+          55%  { transform: translateY(52px) rotate(160deg) translateX(6px); }
+          100% { transform: translateY(112px) rotate(340deg) translateX(-4px); opacity: 0; }
         }
+        /* tiny falling leaves (pointed-oval via opposing corner radii), with a
+           light side-to-side flutter on the way down */
         .cook-confetti {
           position: absolute; top: 0;
-          width: 7px; height: 7px; border-radius: 2px;
-          animation: cookConfettiFall 1100ms ease-in forwards;
+          width: 8px; height: 11px;
+          border-radius: 0 70% 0 70%;
+          animation: cookConfettiFall 1300ms ease-in forwards;
           pointer-events: none;
         }
+        .cook-confetti:nth-child(even) { border-radius: 70% 0 70% 0; }
       `}</style>
     </div>
   );

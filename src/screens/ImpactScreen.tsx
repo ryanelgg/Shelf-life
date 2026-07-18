@@ -2,7 +2,7 @@ import { useMemo, useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
-import { MedalIcon, PartyIcon } from '../components/icons';
+import { MedalIcon, PartyIcon, StreakSprout } from '../components/icons';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
@@ -273,7 +273,8 @@ export function ImpactScreen() {
                   stroke="none"
                 >
                   {stats.pieData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
+                    // card-coloured stroke between slices — reads as hand-cut paper
+                    <Cell key={i} fill={entry.color} stroke="var(--bg-card)" strokeWidth={3} />
                   ))}
                 </Pie>
               </PieChart>
@@ -297,24 +298,28 @@ export function ImpactScreen() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}><ImpactIcon type="co2" size={32} color="var(--accent)" /></div>
-            <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>{stats.co2Saved} kg</div>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '26px', fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{stats.co2Saved} kg</div>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>CO2 Prevented</div>
           </div>
           <div style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}><ImpactIcon type="money" size={32} color="var(--accent)" /></div>
-            <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>${stats.moneySaved.toFixed(0)}</div>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '26px', fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>${stats.moneySaved.toFixed(0)}</div>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Money Saved</div>
           </div>
         </div>
       </Card>
 
-      {/* Streak */}
-      <Card className="card-enter stagger-6" style={{ textAlign: 'center', padding: '20px' }}>
+      {/* Streak — a page from the harvest journal: ruled lines, serif numerals,
+          and a plant that grows with the streak (seed → sprout → tree). */}
+      <Card className="card-enter stagger-6 ruled-card" style={{ textAlign: 'center', padding: '20px' }}>
         <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
           Zero-Waste Streak
         </div>
-        <div className="mono" style={{ fontSize: '40px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
-          {streakDays} days
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <StreakSprout days={streakDays} size={44} />
+          <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '44px', fontWeight: 700, color: 'var(--accent)', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
+            {streakDays} <span style={{ fontSize: '22px', fontWeight: 600 }}>days</span>
+          </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginTop: '12px' }}>
           {Array.from({ length: 7 }).map((_, i) => (
