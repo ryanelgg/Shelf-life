@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import posthog from 'posthog-js';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
@@ -244,8 +245,10 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     nocamera: 'Avo needs camera access',
   }[status];
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#1a1612', display: 'flex', flexDirection: 'column' }}>
+  // Portal to <body> so no ancestor's stacking context / overflow can trap this
+  // full-screen overlay — otherwise the bottom tab bar shows through beneath it.
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#1a1612', display: 'flex', flexDirection: 'column' }}>
 
       {/* Live camera preview.
           The <video> is what ZXing decodes, but iOS paints its own play/pause
@@ -533,7 +536,8 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
           50%      { transform: translateY(-10px) scale(1.03); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
