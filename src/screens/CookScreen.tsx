@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import posthog from 'posthog-js';
 import { AvocadoMascot } from '../components/AvocadoMascot';
+import { SparkleIcon } from '../components/icons';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AvoConsentModal } from '../components/AvoConsentModal';
@@ -223,7 +224,9 @@ export function CookScreen() {
             fontWeight: 600,
           }}>
             {trialActive
-              ? `✨ Avo trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left · ${chatsRemaining} chats today`
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <SparkleIcon size={12} /> Avo trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left · {chatsRemaining} chats today
+                </span>
               : `${chatsRemaining}/${FREE_LIMITS.avoChatTotal} free chats`}
           </div>
           <button
@@ -276,7 +279,9 @@ export function CookScreen() {
             opacity: chipsDisabled ? 0.5 : 1,
           }}
         >
-          🥑 Today's briefing
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+            <AvocadoMascot size={15} isStatic /> Today's briefing
+          </span>
         </button>
         {SUGGESTIONS.map((s, i) => (
           <button
@@ -519,7 +524,7 @@ function buildDailyBriefingText(pantryItems: PantryItemLite[], userName?: string
   const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const mealLabel = meal === 'breakfast' ? "Today's breakfast pick" : meal === 'lunch' ? "Today's lunch pick" : "Tonight's dinner pick";
 
-  const lines: string[] = [`${greeting}${userName ? `, ${userName}` : ''}! Here's your briefing for ${dateLabel}. 🥑`];
+  const lines: string[] = [`${greeting}${userName ? `, ${userName}` : ''}! Here's your briefing for ${dateLabel}.`];
 
   if (pantryItems.length === 0) {
     lines.push("Your pantry's empty right now — add a few items and I'll build you a real plan around what expires first.");
@@ -531,11 +536,11 @@ function buildDailyBriefingText(pantryItems: PantryItemLite[], userName?: string
     return days >= 0 && days <= 3;
   });
 
-  if (expiringSoon.length === 0) lines.push('✅ Everything in your pantry is still fresh — nice work.');
-  else if (expiringSoon.length === 1) lines.push(`⏳ ${expiringSoon[0].name} could use you in the next few days — let's not waste it.`);
-  else lines.push(`⏳ ${expiringSoon.length} items could use you soon: ${expiringSoon.slice(0, 5).map(i => i.name).join(', ')}.`);
+  if (expiringSoon.length === 0) lines.push('Everything in your pantry is still fresh — nice work.');
+  else if (expiringSoon.length === 1) lines.push(`${expiringSoon[0].name} could use you in the next few days — let's not waste it.`);
+  else lines.push(`${expiringSoon.length} items could use you soon: ${expiringSoon.slice(0, 5).map(i => i.name).join(', ')}.`);
 
-  if (recipe) lines.push(`🍽️ ${mealLabel}: ${recipe.name} — ${recipe.cookTime} min, ${recipe.difficulty}.`);
+  if (recipe) lines.push(`${mealLabel}: ${recipe.name} — ${recipe.cookTime} min, ${recipe.difficulty}.`);
 
   lines.push('Want a recipe for any of these, or a shopping list? Just ask.');
   return lines.join('\n\n');

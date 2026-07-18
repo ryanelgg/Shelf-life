@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
 import posthog from 'posthog-js';
 import { Card } from '../components/Card';
+import { AvocadoMascot } from '../components/AvocadoMascot';
+import { MedicalIcon, HeartIcon } from '../components/icons';
 import { useStore } from '../store/useStore';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { CancelProModal } from '../components/CancelProModal';
@@ -356,8 +358,12 @@ export function SettingsScreen() {
             fontSize: '11px',
             color: 'var(--text-muted)',
             lineHeight: 1.5,
+            display: 'flex',
+            gap: '6px',
+            alignItems: 'flex-start',
           }}>
-            ⚕️ Avo AI provides general nutrition information only and is not a substitute for professional medical advice, diagnosis, or treatment.
+            <MedicalIcon size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+            <span>Avo AI provides general nutrition information only and is not a substitute for professional medical advice, diagnosis, or treatment.</span>
           </div>
         </Card>
 
@@ -445,7 +451,7 @@ export function SettingsScreen() {
               onClick={() => window.open('mailto:feedback@usepantre.me?subject=Pantre%20Feedback', '_blank')}
             />
             <SettingsLink
-              label="⭐ Rate Pantre"
+              label="Rate Pantre"
               onClick={() => { posthog.capture('rate_app_tapped'); void openAppStoreReview(); }}
             />
             <SettingsLink
@@ -476,7 +482,9 @@ export function SettingsScreen() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Made with</span>
-              <span>🥑 + ❤️</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <AvocadoMascot size={14} isStatic /> + <HeartIcon size={13} color="var(--expired)" />
+              </span>
             </div>
             <div style={{
               marginTop: '8px',

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { JSX } from 'react';
 import { useTimeouts } from '../lib/useTimeouts';
+import { RadarIcon, CartIcon, CheckCircleIcon, SparkleIcon, PartyIcon, TakeoutIcon } from '../components/icons';
 import { requestAvoChat } from '../lib/avoApi';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -639,7 +640,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
     [pantryItems, wasteLogs],
   );
   const [radarAddedCount, setRadarAddedCount] = useState(0);
-  const RADAR_LIST_NAME = '🛰️ Shopping Radar';
+  const RADAR_LIST_NAME = 'Shopping Radar';
 
   const addRadarToShoppingList = () => {
     if (restockPredictions.length === 0) return;
@@ -833,7 +834,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+            <RadarIcon size={18} color="var(--accent)" />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Predicted from how fast you use your staples</div>
@@ -868,7 +869,11 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
               fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', fontWeight: 700, cursor: 'pointer',
             }}
           >
-            {radarAddedCount > 0 ? `✓ Added ${radarAddedCount} to your Shopping Radar list` : `🛒 Add ${restockPredictions.length} to shopping list`}
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              {radarAddedCount > 0
+                ? <><CheckCircleIcon size={14} color="#fff" /> Added {radarAddedCount} to your Shopping Radar list</>
+                : <><CartIcon size={14} color="#fff" /> Add {restockPredictions.length} to shopping list</>}
+            </span>
           </button>
         </Card>
       )}
@@ -884,7 +889,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
             display: 'flex', alignItems: 'center', gap: '10px',
           }}
         >
-          <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+          <RadarIcon size={18} color="var(--accent)" />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Avo predicts when you'll run out of staples and builds your list.</div>
@@ -947,7 +952,9 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
                 opacity: avoMealPlanLoading ? 0.7 : 1,
               }}
             >
-              {avoMealPlanLoading ? '🥑 Avo is planning…' : '✨ Generate with Avo'}
+              {avoMealPlanLoading
+                ? <><AvocadoMascot size={16} isStatic /> Avo is planning…</>
+                : <><SparkleIcon size={15} color="#fff" /> Generate with Avo</>}
             </button>
             {avoMealPlanError && (
               <div style={{ fontSize: '11px', color: 'var(--expired)', marginTop: '6px', textAlign: 'center' }}>
@@ -1554,7 +1561,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: '18px' }}>✨</span>
+        <SparkleIcon size={18} color="var(--accent)" />
         <span style={{ flex: 1 }}>
           <span style={{ display: 'block', fontSize: '14px', fontWeight: 700 }}>Auto-build a list</span>
           <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -2053,7 +2060,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
                 animationDelay: `${i * 70}ms`,
               }} />
             ))}
-            <div style={{ fontSize: '28px', marginBottom: '10px' }}>🎉</div>
+            <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'center' }}><PartyIcon size={30} color="var(--accent)" /></div>
             <div style={{ fontSize: '22px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Perfectly cooked!</div>
             <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.55 }}>
               Avo made it to the tree. Let's see what you used.
@@ -2229,7 +2236,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
               }} aria-hidden="true">
                 {saveLeftovers ? '✓' : ''}
               </span>
-              <span aria-hidden="true" style={{ fontSize: '16px' }}>🥡</span>
+              <TakeoutIcon size={17} color="var(--text-primary)" />
               <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, lineHeight: 1.35 }}>
                 Save leftovers to the fridge
                 <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)' }}>

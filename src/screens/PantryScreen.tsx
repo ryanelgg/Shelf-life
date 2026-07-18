@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTimeouts } from '../lib/useTimeouts';
+import { AlertIcon, WarningIcon } from '../components/icons';
 import { checkPantryForRecalls } from '../lib/recallApi';
 import type { RecallMatch } from '../lib/recallApi';
 import posthog from 'posthog-js';
@@ -317,7 +318,7 @@ export function PantryScreen() {
           gap: '10px',
           animation: 'card-enter 0.3s ease-out',
         }}>
-          <span style={{ fontSize: '20px', flexShrink: 0, marginTop: '1px' }}>🚨</span>
+          <AlertIcon size={20} color="var(--expired)" style={{ flexShrink: 0, marginTop: '1px' }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expired)', marginBottom: '4px' }}>
               FDA Recall Alert
@@ -632,7 +633,7 @@ export function PantryScreen() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '24px' }}>
-            <span style={{ fontSize: '18px' }}>⚠️</span>
+            <WarningIcon size={18} color="var(--expiring-soon)" />
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expiring-soon)' }}>
                 {expiringCount} item{expiringCount > 1 ? 's' : ''} expiring soon!

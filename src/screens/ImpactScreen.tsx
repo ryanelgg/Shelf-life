@@ -2,6 +2,7 @@ import { useMemo, useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
+import { MedalIcon, PartyIcon } from '../components/icons';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
@@ -393,8 +394,8 @@ export function ImpactScreen() {
                   padding: '6px 8px', borderRadius: '8px',
                   background: m.isYou ? 'rgba(74, 124, 89, 0.10)' : 'transparent',
                 }}>
-                  <span className="mono" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>
-                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                  <span className="mono" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', width: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {i < 3 ? <MedalIcon size={18} place={i + 1} /> : i + 1}
                   </span>
                   <span style={{ flex: 1, fontSize: '13px', fontWeight: m.isYou ? 700 : 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {m.name}
@@ -426,7 +427,10 @@ export function ImpactScreen() {
         </div>
         <ProgressBar value={weekProgress} color="var(--accent)" />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <span>{Math.min(weekly.saves, WEEK_GOAL)} / {WEEK_GOAL} saved{weekly.saves >= WEEK_GOAL ? ' 🎉' : ''}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            {Math.min(weekly.saves, WEEK_GOAL)} / {WEEK_GOAL} saved
+            {weekly.saves >= WEEK_GOAL && <PartyIcon size={12} color="var(--accent)" />}
+          </span>
           <span style={{ color: 'var(--accent)' }}>{weekly.daysLeft} day{weekly.daysLeft === 1 ? '' : 's'} left</span>
         </div>
       </Card>

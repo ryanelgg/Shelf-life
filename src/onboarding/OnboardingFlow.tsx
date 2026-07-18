@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import type { JSX } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
+import { PlateIcon, LeafIcon, SproutIcon, WheatIcon, MilkIcon, PeanutIcon, type IconProps } from '../components/icons';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { useStore } from '../store/useStore';
 import { formatLocalDate } from '../types';
@@ -24,13 +26,13 @@ const SETUP_MESSAGES = [
   'Almost ready!',
 ];
 
-const DIETS: { id: DietaryPref; label: string; emoji: string }[] = [
-  { id: 'none', label: 'No restrictions', emoji: '🍽️' },
-  { id: 'vegetarian', label: 'Vegetarian', emoji: '🥬' },
-  { id: 'vegan', label: 'Vegan', emoji: '🌱' },
-  { id: 'gluten-free', label: 'Gluten-free', emoji: '🌾' },
-  { id: 'dairy-free', label: 'Dairy-free', emoji: '🥛' },
-  { id: 'nut-free', label: 'Nut-free', emoji: '🥜' },
+const DIETS: { id: DietaryPref; label: string; Icon: (p: IconProps) => JSX.Element }[] = [
+  { id: 'none', label: 'No restrictions', Icon: PlateIcon },
+  { id: 'vegetarian', label: 'Vegetarian', Icon: LeafIcon },
+  { id: 'vegan', label: 'Vegan', Icon: SproutIcon },
+  { id: 'gluten-free', label: 'Gluten-free', Icon: WheatIcon },
+  { id: 'dairy-free', label: 'Dairy-free', Icon: MilkIcon },
+  { id: 'nut-free', label: 'Nut-free', Icon: PeanutIcon },
 ];
 
 export function OnboardingFlow() {
@@ -324,7 +326,7 @@ export function OnboardingFlow() {
       {step === 'under13' && (
         <div className="card-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', maxWidth: '300px' }}>
           <AvocadoMascot size={70} />
-          <h2 style={{ fontSize: '22px', fontWeight: 800 }}>Thanks for stopping by! 🥑</h2>
+          <h2 style={{ fontSize: '22px', fontWeight: 800 }}>Thanks for stopping by!</h2>
           <p style={{ fontSize: '15px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
             Pantre is built for ages {MIN_AGE} and up, so you can't create an account just yet. Come back when you're a little older — Avo will be here waiting!
           </p>
@@ -747,7 +749,7 @@ export function OnboardingFlow() {
                     gap: '6px',
                   }}
                 >
-                  <span>{d.emoji}</span> {d.label}
+                  <d.Icon size={16} color={isSelected ? 'var(--accent)' : 'var(--text-muted)'} /> {d.label}
                 </button>
               );
             })}
