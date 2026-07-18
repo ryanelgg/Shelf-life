@@ -71,8 +71,8 @@ export function CookScreen() {
     if (isStreaming) return;
     hapticLight();
     if (!hasProAccess) { setUpgradeReason('briefing'); setShowUpgrade(true); return; }
-    const userMsg: AvoDisplayMessage = { id: `u-${crypto.randomUUID()}`, role: 'user', text: userText };
-    const avoMsg: AvoDisplayMessage = { id: `a-${crypto.randomUUID()}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
+    const userMsg: AvoDisplayMessage = { id: `u-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`, role: 'user', text: userText };
+    const avoMsg: AvoDisplayMessage = { id: `a-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
     setMessages(prev => {
       const next = [...prev, userMsg, avoMsg];
       setAvoSessionMessages(next);
