@@ -112,6 +112,7 @@ async function lookupBarcode(barcode: string): Promise<ScannedProduct | null> {
 
 export function BarcodeScanner({ onScan, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const scannedRef = useRef(false);
   const onScanRef = useRef(onScan);
   useEffect(() => { onScanRef.current = onScan; }, [onScan]);
@@ -194,6 +195,47 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mirror the (hidden) video onto the visible canvas, cover-fit. This is what
+  // the user actually sees — the video itself stays off-screen so iOS never
+  // draws media controls over the preview.
+  useEffect(() => {
+    if (!cameraAvailable) return;
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const resize = () => {
+      canvas.width = Math.round(window.innerWidth * dpr);
+      canvas.height = Math.round(window.innerHeight * dpr);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (video.readyState < 2 || !vw || !vh) return;
+      const cw = canvas.width;
+      const ch = canvas.height;
+      // cover-fit: fill the canvas, cropping the overflow, centered.
+      const scale = Math.max(cw / vw, ch / vh);
+      const dw = vw * scale;
+      const dh = vh * scale;
+      ctx.drawImage(video, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+    };
+    draw();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
+  }, [cameraAvailable]);
+
   const statusLabel = {
     scanning: 'Show Avo a barcode',
     loading: 'Avo’s having a look…',
@@ -205,33 +247,47 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#1a1612', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Live camera preview */}
+      {/* Live camera preview.
+          The <video> is what ZXing decodes, but iOS paints its own play/pause
+          chrome over an inline video that we can't reliably strip — and that
+          chrome was also swallowing taps meant for the close button. So we keep
+          the video playing UNDERNEATH an opaque <canvas> that mirrors its frames
+          (see the draw loop below) and show the canvas. No on-screen video means
+          no media controls, and taps reach the overlay UI. The canvas starts on
+          a dark fill so the video is never briefly visible during warm-up. */}
       {cameraAvailable && (
-        <video
-          ref={videoRef}
-          className="scanner-video"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-          autoPlay
-          muted
-          playsInline
-          controls={false}
-          disablePictureInPicture
-          disableRemotePlayback
-        />
+        <>
+          <video
+            ref={videoRef}
+            className="scanner-video"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0, pointerEvents: 'none' }}
+            autoPlay
+            muted
+            playsInline
+            controls={false}
+            disablePictureInPicture
+            disableRemotePlayback
+          />
+          <canvas
+            ref={canvasRef}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, background: '#1a1612', pointerEvents: 'none' }}
+          />
+        </>
       )}
 
-      {/* Soft warm vignette over the video */}
+      {/* Soft warm vignette over the preview */}
       {cameraAvailable && (
         <div style={{
-          position: 'absolute', inset: 0,
+          position: 'absolute', inset: 0, zIndex: 2,
           background: 'radial-gradient(ellipse at center, transparent 35%, rgba(26,22,18,0.55) 100%)',
           pointerEvents: 'none',
         }} />
       )}
 
-      {/* Overlay UI */}
+      {/* Overlay UI — above the canvas preview (zIndex 3) so it's visible and
+          every control here is tappable. */}
       <div style={{
-        position: 'absolute', inset: 0,
+        position: 'absolute', inset: 0, zIndex: 3,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'space-between',
         padding: '60px 24px 48px',
@@ -242,15 +298,20 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
             onClick={onClose}
             aria-label="Close scanner"
             style={{
-              width: 40, height: 40, borderRadius: '50%',
+              width: 44, height: 44, borderRadius: '50%',
               background: 'rgba(26,22,18,0.55)',
               border: '1px solid rgba(255,255,255,0.18)',
-              color: '#faf7f2', fontSize: 22, cursor: 'pointer',
+              color: '#faf7f2', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 0, lineHeight: 0,
               backdropFilter: 'blur(8px)',
-              fontFamily: "'Cormorant Garamond', serif",
+              WebkitTapHighlightColor: 'transparent',
             }}
-          >×</button>
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </button>
         </div>
 
         {/* Center: soft viewfinder */}
