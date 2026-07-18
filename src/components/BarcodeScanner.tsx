@@ -200,10 +200,14 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       {cameraAvailable && (
         <video
           ref={videoRef}
+          className="scanner-video"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
           autoPlay
           muted
           playsInline
+          controls={false}
+          disablePictureInPicture
+          disableRemotePlayback
         />
       )}
 
@@ -424,6 +428,20 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       )}
 
       <style>{`
+        /* iOS/WebKit paints a center play button and media controls over an
+           inline <video> even when muted+autoplay. This is a live camera
+           preview, not a playable clip — strip every control chrome so no
+           play/pause button ever appears. */
+        .scanner-video::-webkit-media-controls,
+        .scanner-video::-webkit-media-controls-enclosure,
+        .scanner-video::-webkit-media-controls-panel,
+        .scanner-video::-webkit-media-controls-overlay-play-button,
+        .scanner-video::-webkit-media-controls-play-button,
+        .scanner-video::-webkit-media-controls-start-playback-button {
+          display: none !important;
+          -webkit-appearance: none !important;
+          opacity: 0 !important;
+        }
         @keyframes softBreath {
           0%, 100% { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 24px rgba(250,247,242,0.08), 0 0 0 0 rgba(250,247,242,0); }
           50%      { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 36px rgba(250,247,242,0.14), 0 0 0 10px rgba(250,247,242,0.06); }

@@ -137,12 +137,15 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent, setActiveTab } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent, setActiveTab, pendingScanImage, setPendingScanImage } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
   // Capture the mode the + menu launched with (before the effect below clears
   // addItemMode) so we can jump straight to the camera for receipt/fridge.
   const initialAddModeRef = useRef(addItemMode);
   const autoLaunchedRef = useRef(false);
+  // A photo the + menu already captured on the home page (see App.handleAddSelect).
+  // When present we process it here instead of opening the camera again.
+  const initialPendingScanRef = useRef(pendingScanImage);
   // When a scan needs AI consent that hasn't been granted, we stash the action
   // here and pop the consent modal first (matching how chat gates Avo).
   const [aiConsentPending, setAiConsentPending] = useState<(() => void) | null>(null);
@@ -184,6 +187,16 @@ export function AddItemScreen() {
   useEffect(() => {
     if (autoLaunchedRef.current) return;
     autoLaunchedRef.current = true;
+    // A photo was already captured from the home page — process it, don't open
+    // the camera a second time.
+    if (initialPendingScanRef.current) {
+      const { mode: scanMode, base64 } = initialPendingScanRef.current;
+      setPendingScanImage(null);
+      setMode(scanMode);
+      if (scanMode === 'receipt') void processReceiptImage(base64);
+      else void processFridgeImage(base64);
+      return;
+    }
     if (initialAddModeRef.current === 'receipt') handleReceiptTap();
     else if (initialAddModeRef.current === 'fridge') handleFridgeTap();
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -43,6 +43,12 @@ interface ShelfLifeStore {
   activeTab: Tab;
   addItemMode: 'manual' | 'scan' | 'receipt' | 'fridge' | null;
   setAddItemMode: (mode: 'manual' | 'scan' | 'receipt' | 'fridge' | null) => void;
+  // A receipt/fridge photo captured from the + menu on the home page, handed to
+  // AddItemScreen to process — so the camera can open in place and we only
+  // switch to the Add screen once there's something to review. Transient (not
+  // persisted).
+  pendingScanImage: { mode: 'receipt' | 'fridge'; base64: string } | null;
+  setPendingScanImage: (v: { mode: 'receipt' | 'fridge'; base64: string } | null) => void;
   recipeSearchSeed: string | null;
   setRecipeSearchSeed: (seed: string | null) => void;
   theme: ThemeMode;
@@ -138,6 +144,8 @@ export const useStore = create<ShelfLifeStore>()(
       mealPlan: [] as MealPlanDay[],
       activeTab: 'pantry' as Tab,
       addItemMode: null,
+      pendingScanImage: null as { mode: 'receipt' | 'fridge'; base64: string } | null,
+      setPendingScanImage: (v) => set({ pendingScanImage: v }),
       recipeSearchSeed: null as string | null,
       theme: 'light' as ThemeMode,
       showSettings: false,
