@@ -115,15 +115,15 @@ body::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27160%27%20height%3D%27160%27%3E%3Cfilter%20id%3D%27n%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.8%27%20numOctaves%3D%272%27%20stitchTiles%3D%27stitch%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27160%27%20height%3D%27160%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E");
-  background-size: 160px 160px;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27140%27%20height%3D%27140%27%3E%3Cfilter%20id%3D%27n%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.9%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27140%27%20height%3D%27140%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E");
+  background-size: 140px 140px;
   background-repeat: repeat;
   mix-blend-mode: multiply;
-  opacity: 0.05;
+  opacity: 0.13;
 }
 [data-theme="dark"] body::before {
   mix-blend-mode: soft-light;
-  opacity: 0.09;
+  opacity: 0.20;
 }
 
 /* ── Desktop: full-bleed, no white borders ─────────────────────────────
@@ -440,6 +440,51 @@ h1, h2, h3, h4 {
 .stagger-3 { animation-delay: 0.14s; }
 .stagger-4 { animation-delay: 0.19s; }
 .stagger-5 { animation-delay: 0.24s; }
+
+/* ── Tab-bar sprout indicator ──────────────────────────────────────────────── */
+@keyframes sproutGrow {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+.tab-sprout {
+  display: flex;
+  transform-origin: bottom center;
+  animation: sproutGrow 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ── "Bite" exit when an item is eaten ──────────────────────────────────────
+   A quick chomp: a bite-shaped hole appears at the card's right edge (mask),
+   the card flinches, then it shrinks away. Browsers without keyframed mask
+   support still get the crunch + fade. */
+@keyframes biteOut {
+  0%   { transform: none; opacity: 1; }
+  28%  { transform: scale(0.97) rotate(-0.6deg);
+         -webkit-mask-image: radial-gradient(circle at 96% 30%, transparent 13px, #000 14px);
+         mask-image: radial-gradient(circle at 96% 30%, transparent 13px, #000 14px); }
+  60%  { transform: scale(0.92) rotate(0.7deg);
+         -webkit-mask-image: radial-gradient(circle at 92% 42%, transparent 26px, #000 27px);
+         mask-image: radial-gradient(circle at 92% 42%, transparent 26px, #000 27px); }
+  100% { transform: translateX(26px) scale(0.55); opacity: 0;
+         -webkit-mask-image: radial-gradient(circle at 92% 42%, transparent 34px, #000 35px);
+         mask-image: radial-gradient(circle at 92% 42%, transparent 34px, #000 35px); }
+}
+.bite-out { animation: biteOut 430ms ease-in forwards; }
+
+/* ── Field-notebook ruling (Impact) ─────────────────────────────────────────
+   Faint ruled lines behind the stats, like a harvest journal page. */
+.ruled-card {
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0 27px, rgba(107, 91, 60, 0.10) 27px 28px);
+}
+[data-theme="dark"] .ruled-card {
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0 27px, rgba(230, 225, 200, 0.06) 27px 28px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-sprout { animation: none; }
+  .bite-out { animation: none; opacity: 0; }
+}
 .stagger-6 { animation-delay: 0.29s; }
 
 /* ===== BUTTON STYLES ===== */

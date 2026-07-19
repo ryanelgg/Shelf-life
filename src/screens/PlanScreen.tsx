@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { JSX } from 'react';
+import { useTimeouts } from '../lib/useTimeouts';
+import { RadarIcon, CartIcon, CheckCircleIcon, SparkleIcon, PartyIcon, TakeoutIcon } from '../components/icons';
 import { requestAvoChat } from '../lib/avoApi';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -294,7 +296,10 @@ function nameAllowedByDiet(name: string, diets: DietaryPref[]): boolean {
   const lower = name.toLowerCase();
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    if (blocked.some(b => lower.includes(b))) return false;
+    // Whole-word match, not substring — mirrors meetsDiet above so the auto-built
+    // shopping list doesn't silently drop "eggplant" (contains egg, vegan-ok),
+    // "buckwheat" (contains wheat, GF-ok), or "graham" (contains ham).
+    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower))) return false;
   }
   return true;
 }
@@ -438,6 +443,15 @@ function todayStr() {
   return formatLocalDate(new Date());
 }
 
+// Cooked leftovers keep ~3–4 days refrigerated (USDA FoodKeeper). Use 4 so the
+// day-of reminder lands while they're still safe to finish.
+const LEFTOVER_FRIDGE_DAYS = 4;
+function leftoverExpiryStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + LEFTOVER_FRIDGE_DAYS);
+  return formatLocalDate(d);
+}
+
 const RECIPE_SEARCH_STOP_WORDS = new Set([
   'and', 'with', 'the', 'for', 'fresh', 'frozen', 'organic', 'natural',
   'pack', 'count', 'ct', 'oz', 'lb', 'lbs', 'lite', 'large', 'small',
@@ -455,10 +469,11 @@ export function PlanScreen() {
   const {
     mealPlan, recipes, pantryItems, browseRecipes, user, wasteLogs,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
-    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, removePantryItem, setMealPlan,
+    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, addPantryItem, removePantryItem, setMealPlan,
     incrementAvoChat, decrementAvoChat, avoAiConsent, setAvoAiConsent,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const scheduleToast = useTimeouts();
   // "Generate with Avo" is an AI call, so it must respect the Avo-AI consent
   // toggle. If consent isn't granted yet, pop the modal first (like chat).
   const [aiConsentPending, setAiConsentPending] = useState<(() => void) | null>(null);
@@ -625,7 +640,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
     [pantryItems, wasteLogs],
   );
   const [radarAddedCount, setRadarAddedCount] = useState(0);
-  const RADAR_LIST_NAME = '🛰️ Shopping Radar';
+  const RADAR_LIST_NAME = 'Shopping Radar';
 
   const addRadarToShoppingList = () => {
     if (restockPredictions.length === 0) return;
@@ -648,7 +663,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       addShoppingList({ id: `sl-${Date.now()}`, name: RADAR_LIST_NAME, items: newItems, createdDate: formatLocalDate(new Date()) });
     }
     setRadarAddedCount(newItems.length);
-    setTimeout(() => setRadarAddedCount(0), 2500);
+    scheduleToast(() => setRadarAddedCount(0), 2500);
   };
 
   const handleCreateList = () => {
@@ -731,7 +746,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
     setAddingToList(null);
   };
 
-  const handleCookFinish = (recipe: Recipe, usedItemIds: string[]) => {
+  const handleCookFinish = (recipe: Recipe, usedItemIds: string[], saveLeftovers: boolean) => {
     usedItemIds.forEach(id => {
       const item = pantryItems.find(p => p.id === id);
       if (!item) return;
@@ -746,6 +761,24 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       });
       removePantryItem(id);
     });
+    // Leftovers timer: drop the cooked dish back into the fridge with a 4-day
+    // use-by date so it gets its own expiry reminders (addPantryItem schedules
+    // them). estimatedValue 0 — the ingredients' value was already credited as
+    // "eaten" above, so this must not double-count toward money saved.
+    if (saveLeftovers) {
+      addPantryItem({
+        id: genId('leftover'),
+        name: `${recipe.name} (leftovers)`,
+        category: 'Other',
+        location: 'fridge',
+        quantity: 1,
+        unit: 'serving',
+        addedDate: todayStr(),
+        expirationDate: leftoverExpiryStr(),
+        estimatedValue: 0,
+        dateType: 'use-by',
+      });
+    }
     setCookingRecipe(null);
     setExpandedRecipe(recipe.id);
   };
@@ -801,7 +834,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+            <RadarIcon size={18} color="var(--accent)" />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Predicted from how fast you use your staples</div>
@@ -836,7 +869,11 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
               fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', fontWeight: 700, cursor: 'pointer',
             }}
           >
-            {radarAddedCount > 0 ? `✓ Added ${radarAddedCount} to your Shopping Radar list` : `🛒 Add ${restockPredictions.length} to shopping list`}
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              {radarAddedCount > 0
+                ? <><CheckCircleIcon size={14} color="#fff" /> Added {radarAddedCount} to your Shopping Radar list</>
+                : <><CartIcon size={14} color="#fff" /> Add {restockPredictions.length} to shopping list</>}
+            </span>
           </button>
         </Card>
       )}
@@ -852,7 +889,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
             display: 'flex', alignItems: 'center', gap: '10px',
           }}
         >
-          <span style={{ fontSize: '18px' }} aria-hidden="true">🛰️</span>
+          <RadarIcon size={18} color="var(--accent)" />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Avo's Shopping Radar</div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Avo predicts when you'll run out of staples and builds your list.</div>
@@ -915,7 +952,9 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
                 opacity: avoMealPlanLoading ? 0.7 : 1,
               }}
             >
-              {avoMealPlanLoading ? '🥑 Avo is planning…' : '✨ Generate with Avo'}
+              {avoMealPlanLoading
+                ? <><AvocadoMascot size={16} isStatic /> Avo is planning…</>
+                : <><SparkleIcon size={15} color="#fff" /> Generate with Avo</>}
             </button>
             {avoMealPlanError && (
               <div style={{ fontSize: '11px', color: 'var(--expired)', marginTop: '6px', textAlign: 'center' }}>
@@ -1522,7 +1561,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
           textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: '18px' }}>✨</span>
+        <SparkleIcon size={18} color="var(--accent)" />
         <span style={{ flex: 1 }}>
           <span style={{ display: 'block', fontSize: '14px', fontWeight: 700 }}>Auto-build a list</span>
           <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -1915,7 +1954,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   recipe: Recipe;
   pantryItems: PantryItem[];
   onClose: () => void;
-  onFinish: (recipe: Recipe, usedItemIds: string[]) => void;
+  onFinish: (recipe: Recipe, usedItemIds: string[], saveLeftovers: boolean) => void;
 }) {
   const matchedItems = useMemo(() => matchedPantryItemsForRecipe(recipe, pantryItems), [recipe, pantryItems]);
   const stepTimes = useMemo(() => estimateStepTimes(recipe), [recipe]);
@@ -1924,6 +1963,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
   const [finale, setFinale] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const [usedIds, setUsedIds] = useState<string[]>(() => matchedItems.map(item => item.id));
+  const [saveLeftovers, setSaveLeftovers] = useState(false);
   const progress = (reviewing || finale) ? 100 : ((currentStep + 1) / Math.max(1, recipe.steps.length)) * 100;
   const activeStep = recipe.steps[currentStep] ?? recipe.steps[0] ?? 'Cook and enjoy.';
 
@@ -2020,7 +2060,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
                 animationDelay: `${i * 70}ms`,
               }} />
             ))}
-            <div style={{ fontSize: '28px', marginBottom: '10px' }}>🎉</div>
+            <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'center' }}><PartyIcon size={30} color="var(--accent)" /></div>
             <div style={{ fontSize: '22px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>Perfectly cooked!</div>
             <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.55 }}>
               Avo made it to the tree. Let's see what you used.
@@ -2165,12 +2205,51 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
                 No pantry items matched this recipe by name — nothing to auto-log.
               </div>
             )}
+            {/* Leftovers timer — save the cooked dish back to the fridge with a
+                4-day use-by date so nothing gets forgotten in a container. */}
+            <button
+              onClick={() => setSaveLeftovers(v => !v)}
+              aria-pressed={saveLeftovers}
+              style={{
+                marginTop: '14px',
+                width: '100%',
+                padding: '11px 14px',
+                borderRadius: '10px',
+                border: saveLeftovers ? '1px solid var(--accent)' : '1px solid var(--tab-border)',
+                background: saveLeftovers ? 'var(--accent-dim)' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{
+                width: 20, height: 20,
+                borderRadius: '6px',
+                background: saveLeftovers ? 'var(--accent)' : 'transparent',
+                border: saveLeftovers ? 'none' : '1px solid var(--tab-border)',
+                color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11px', fontWeight: 800, flexShrink: 0,
+              }} aria-hidden="true">
+                {saveLeftovers ? '✓' : ''}
+              </span>
+              <TakeoutIcon size={17} color="var(--text-primary)" />
+              <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, lineHeight: 1.35 }}>
+                Save leftovers to the fridge
+                <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)' }}>
+                  Avo will remind you before they expire (~4 days)
+                </span>
+              </span>
+            </button>
             {/* Buttons inside the review card */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: '80px 1fr',
               gap: '10px',
-              marginTop: '18px',
+              marginTop: '14px',
               paddingTop: '16px',
               borderTop: '1px solid var(--tab-border)',
             }}>
@@ -2187,7 +2266,7 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
                 }}
               >← Back</button>
               <button
-                onClick={() => onFinish(recipe, usedIds)}
+                onClick={() => onFinish(recipe, usedIds, saveLeftovers)}
                 style={{
                   padding: '13px',
                   borderRadius: '11px',
@@ -2336,16 +2415,21 @@ function CookModeOverlay({ recipe, pantryItems, onClose, onFinish }: {
         }
         .cook-tree-shake { animation: cookTreeShake 680ms ease 220ms; transform-origin: 50% 92%; }
         @keyframes cookConfettiFall {
-          0%   { transform: translateY(-8px) rotate(0); opacity: 0; }
+          0%   { transform: translateY(-8px) rotate(0) translateX(0); opacity: 0; }
           20%  { opacity: 1; }
-          100% { transform: translateY(110px) rotate(280deg); opacity: 0; }
+          55%  { transform: translateY(52px) rotate(160deg) translateX(6px); }
+          100% { transform: translateY(112px) rotate(340deg) translateX(-4px); opacity: 0; }
         }
+        /* tiny falling leaves (pointed-oval via opposing corner radii), with a
+           light side-to-side flutter on the way down */
         .cook-confetti {
           position: absolute; top: 0;
-          width: 7px; height: 7px; border-radius: 2px;
-          animation: cookConfettiFall 1100ms ease-in forwards;
+          width: 8px; height: 11px;
+          border-radius: 0 70% 0 70%;
+          animation: cookConfettiFall 1300ms ease-in forwards;
           pointer-events: none;
         }
+        .cook-confetti:nth-child(even) { border-radius: 70% 0 70% 0; }
       `}</style>
     </div>
   );

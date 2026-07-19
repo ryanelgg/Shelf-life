@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import posthog from 'posthog-js';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
@@ -112,6 +113,7 @@ async function lookupBarcode(barcode: string): Promise<ScannedProduct | null> {
 
 export function BarcodeScanner({ onScan, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const scannedRef = useRef(false);
   const onScanRef = useRef(onScan);
   useEffect(() => { onScanRef.current = onScan; }, [onScan]);
@@ -160,6 +162,15 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     const reader = new BrowserMultiFormatReader();
     if (!videoRef.current) return;
 
+    // Belt-and-suspenders against iOS showing playback controls on the live
+    // preview: force controls off and the inline/muted hints on the element
+    // itself before ZXing attaches the stream.
+    const v = videoRef.current;
+    v.controls = false;
+    v.muted = true;
+    v.setAttribute('playsinline', 'true');
+    v.setAttribute('webkit-playsinline', 'true');
+
     reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
       if (scannedRef.current) return;
       if (err instanceof NotFoundException) return;
@@ -185,6 +196,47 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mirror the (hidden) video onto the visible canvas, cover-fit. This is what
+  // the user actually sees — the video itself stays off-screen so iOS never
+  // draws media controls over the preview.
+  useEffect(() => {
+    if (!cameraAvailable) return;
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const resize = () => {
+      canvas.width = Math.round(window.innerWidth * dpr);
+      canvas.height = Math.round(window.innerHeight * dpr);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (video.readyState < 2 || !vw || !vh) return;
+      const cw = canvas.width;
+      const ch = canvas.height;
+      // cover-fit: fill the canvas, cropping the overflow, centered.
+      const scale = Math.max(cw / vw, ch / vh);
+      const dw = vw * scale;
+      const dh = vh * scale;
+      ctx.drawImage(video, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+    };
+    draw();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
+  }, [cameraAvailable]);
+
   const statusLabel = {
     scanning: 'Show Avo a barcode',
     loading: 'Avo’s having a look…',
@@ -193,32 +245,65 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     nocamera: 'Avo needs camera access',
   }[status];
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#1a1612', display: 'flex', flexDirection: 'column' }}>
+  // Portal to <body> so no ancestor's stacking context / overflow can trap this
+  // full-screen overlay — otherwise the bottom tab bar shows through beneath it.
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#1a1612', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Live camera preview */}
+      {/* Live camera preview.
+          The <video> is what ZXing decodes, but iOS paints its own play/pause
+          chrome over an inline video that we can't reliably strip — and that
+          chrome was also swallowing taps meant for the close button. So we keep
+          the video playing UNDERNEATH an opaque <canvas> that mirrors its frames
+          (see the draw loop below) and show the canvas. No on-screen video means
+          no media controls, and taps reach the overlay UI. The canvas starts on
+          a dark fill so the video is never briefly visible during warm-up. */}
       {cameraAvailable && (
-        <video
-          ref={videoRef}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-          autoPlay
-          muted
-          playsInline
-        />
+        <>
+          <video
+            ref={videoRef}
+            className="scanner-video"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0, pointerEvents: 'none' }}
+            autoPlay
+            muted
+            playsInline
+            controls={false}
+            disablePictureInPicture
+            disableRemotePlayback
+          />
+          <canvas
+            ref={canvasRef}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, background: '#1a1612', pointerEvents: 'none' }}
+          />
+        </>
       )}
 
-      {/* Soft warm vignette over the video */}
+      {/* Film grain over the camera feed — same tooth as the app background,
+          so scanning feels like taking a photo for the journal */}
       {cameraAvailable && (
         <div style={{
-          position: 'absolute', inset: 0,
+          position: 'absolute', inset: 0, zIndex: 2,
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27140%27%20height%3D%27140%27%3E%3Cfilter%20id%3D%27n%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.9%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27140%27%20height%3D%27140%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E")',
+          backgroundSize: '140px 140px',
+          mixBlendMode: 'soft-light',
+          opacity: 0.22,
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Soft warm vignette over the preview */}
+      {cameraAvailable && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 2,
           background: 'radial-gradient(ellipse at center, transparent 35%, rgba(26,22,18,0.55) 100%)',
           pointerEvents: 'none',
         }} />
       )}
 
-      {/* Overlay UI */}
+      {/* Overlay UI — above the canvas preview (zIndex 3) so it's visible and
+          every control here is tappable. */}
       <div style={{
-        position: 'absolute', inset: 0,
+        position: 'absolute', inset: 0, zIndex: 3,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'space-between',
         padding: '60px 24px 48px',
@@ -229,15 +314,20 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
             onClick={onClose}
             aria-label="Close scanner"
             style={{
-              width: 40, height: 40, borderRadius: '50%',
+              width: 44, height: 44, borderRadius: '50%',
               background: 'rgba(26,22,18,0.55)',
               border: '1px solid rgba(255,255,255,0.18)',
-              color: '#faf7f2', fontSize: 22, cursor: 'pointer',
+              color: '#faf7f2', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 0, lineHeight: 0,
               backdropFilter: 'blur(8px)',
-              fontFamily: "'Cormorant Garamond', serif",
+              WebkitTapHighlightColor: 'transparent',
             }}
-          >×</button>
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </button>
         </div>
 
         {/* Center: soft viewfinder */}
@@ -274,6 +364,22 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
                   pointerEvents: 'none',
                 }} />
               )}
+
+              {/* Printer's crop marks just outside the corners */}
+              {(['tl', 'tr', 'bl', 'br'] as const).map(corner => {
+                const v = corner[0] === 't' ? { top: -10 } : { bottom: -10 };
+                const h = corner[1] === 'l' ? { left: -10 } : { right: -10 };
+                return (
+                  <div key={corner} style={{
+                    position: 'absolute', width: 16, height: 16, ...v, ...h,
+                    borderTop: corner[0] === 't' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    borderBottom: corner[0] === 'b' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    borderLeft: corner[1] === 'l' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    borderRight: corner[1] === 'r' ? '2px solid rgba(250,247,242,0.75)' : 'none',
+                    pointerEvents: 'none',
+                  }} />
+                );
+              })}
 
               {/* Loading: gentle Avo bounce in the middle */}
               {status === 'loading' && (
@@ -424,6 +530,28 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       )}
 
       <style>{`
+        /* iOS/WebKit paints a play/pause button and media-control chrome over an
+           inline <video> even when muted+autoplay — and re-shows it for a beat
+           when playback actually starts. This is a live camera preview, not a
+           playable clip, so strip every control pseudo-element. Bare "video"
+           selectors (not class-scoped) match the shadow parts more reliably
+           across WebKit builds. */
+        video::-webkit-media-controls,
+        video::-webkit-media-controls-enclosure,
+        video::-webkit-media-controls-overlay-enclosure,
+        video::-webkit-media-controls-panel,
+        video::-webkit-media-controls-panel-container,
+        video::-webkit-media-controls-overlay-play-button,
+        video::-webkit-media-controls-play-button,
+        video::-webkit-media-controls-pause-button,
+        video::-webkit-media-controls-start-playback-button {
+          display: none !important;
+          -webkit-appearance: none !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
         @keyframes softBreath {
           0%, 100% { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 24px rgba(250,247,242,0.08), 0 0 0 0 rgba(250,247,242,0); }
           50%      { box-shadow: 0 0 0 9999px rgba(26,22,18,0.42), inset 0 0 36px rgba(250,247,242,0.14), 0 0 0 10px rgba(250,247,242,0.06); }
@@ -437,7 +565,8 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
           50%      { transform: translateY(-10px) scale(1.03); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

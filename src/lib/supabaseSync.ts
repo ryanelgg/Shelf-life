@@ -423,8 +423,10 @@ export function rowToWasteLog(r: WasteLogRow): WasteLog {
     category: r.category as WasteLog['category'],
     action: r.action as WasteLog['action'],
     date: r.date,
-    estimatedValue: r.estimated_value,
-    quantity: r.quantity,
+    // Coalesce defensively — older rows can carry null value/quantity, which
+    // would otherwise surface as "$NaN" once summed on the Impact screen.
+    estimatedValue: r.estimated_value ?? 0,
+    quantity: r.quantity ?? 1,
     userId: r.user_id,
   };
 }

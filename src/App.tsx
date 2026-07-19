@@ -5,6 +5,7 @@ import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUs
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { publishWidgetData } from './lib/widget';
+import { capturePhotoBase64, isCancelledError } from './lib/scanCapture';
 import { formatLocalDate } from './types';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { TabBar } from './components/TabBar';
@@ -200,7 +201,28 @@ function ScreenFallback({ label }: { label: string }) {
 }
 
 export default function App() {
-  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId } = useStore();
+  const { user, activeTab, setActiveTab, setAddItemMode, theme, showSettings, setUser, setSupabaseUserId, loadCloudData, resetOnboarding, setOAuthNewUser, setHousehold, household, supabaseUserId, avoAiConsent, setPendingScanImage, isPro } = useStore();
+
+  // Handle a pick from the + menu. Receipt/Fridge open the camera straight from
+  // the current page (usually home) and only switch to the Add screen once
+  // there's a photo to review — so cancelling leaves the user where they were
+  // instead of stranding them on the Add page. Needs consent already granted +
+  // a native camera; otherwise fall through to the in-screen flow, which pops
+  // the consent modal (or the web file picker) there.
+  const handleAddSelect = async (mode: 'manual' | 'scan' | 'receipt' | 'fridge') => {
+    if ((mode === 'receipt' || mode === 'fridge') && isPro() && Capacitor.isNativePlatform() && avoAiConsent === 'granted') {
+      try {
+        const base64 = await capturePhotoBase64(mode === 'receipt' ? 'camera' : 'prompt');
+        if (!base64) return; // cancelled — stay put
+        setPendingScanImage({ mode, base64 });
+      } catch (e) {
+        if (!isCancelledError(e)) debug.error('Scan capture error:', e);
+        return; // real error or cancel — stay put
+      }
+    }
+    setAddItemMode(mode);
+    setActiveTab('add');
+  };
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -404,7 +426,7 @@ export default function App() {
       </div>
       {activeTab !== 'add' && activeTab !== 'cook' && !showSettings && (
         <FloatingAddButton
-          onSelect={(mode) => { setAddItemMode(mode); setActiveTab('add'); }}
+          onSelect={(mode) => { void handleAddSelect(mode); }}
         />
       )}
       <TabBar />

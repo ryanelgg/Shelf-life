@@ -2,6 +2,7 @@ import { useMemo, useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
+import { MedalIcon, PartyIcon, StreakSprout } from '../components/icons';
 import { ProgressBar } from '../components/ProgressBar';
 import { useStore } from '../store/useStore';
 import { EmptyState } from '../components/EmptyState';
@@ -108,7 +109,10 @@ export function ImpactScreen() {
       if (log.action === 'tossed' || !log.userId) continue;
       const cur = byUser.get(log.userId) ?? { saved: 0, money: 0 };
       cur.saved += 1;
-      cur.money += log.estimatedValue * log.quantity;
+      // estimatedValue is the whole-entry value (same rule the "Saved Together"
+      // total below relies on), so do NOT multiply by quantity — otherwise the
+      // per-member dollars inflate and stop summing to the household total.
+      cur.money += log.estimatedValue;
       byUser.set(log.userId, cur);
     }
     return members
@@ -269,7 +273,8 @@ export function ImpactScreen() {
                   stroke="none"
                 >
                   {stats.pieData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
+                    // card-coloured stroke between slices — reads as hand-cut paper
+                    <Cell key={i} fill={entry.color} stroke="var(--bg-card)" strokeWidth={3} />
                   ))}
                 </Pie>
               </PieChart>
@@ -293,24 +298,28 @@ export function ImpactScreen() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}><ImpactIcon type="co2" size={32} color="var(--accent)" /></div>
-            <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>{stats.co2Saved} kg</div>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '26px', fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{stats.co2Saved} kg</div>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>CO2 Prevented</div>
           </div>
           <div style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}><ImpactIcon type="money" size={32} color="var(--accent)" /></div>
-            <div className="mono" style={{ fontSize: '20px', fontWeight: 500, color: 'var(--accent)' }}>${stats.moneySaved.toFixed(0)}</div>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '26px', fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>${stats.moneySaved.toFixed(0)}</div>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>Money Saved</div>
           </div>
         </div>
       </Card>
 
-      {/* Streak */}
-      <Card className="card-enter stagger-6" style={{ textAlign: 'center', padding: '20px' }}>
+      {/* Streak — a page from the harvest journal: ruled lines, serif numerals,
+          and a plant that grows with the streak (seed → sprout → tree). */}
+      <Card className="card-enter stagger-6 ruled-card" style={{ textAlign: 'center', padding: '20px' }}>
         <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
           Zero-Waste Streak
         </div>
-        <div className="mono" style={{ fontSize: '40px', fontWeight: 500, color: 'var(--accent)', lineHeight: 1.1 }}>
-          {streakDays} days
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <StreakSprout days={streakDays} size={44} />
+          <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '44px', fontWeight: 700, color: 'var(--accent)', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
+            {streakDays} <span style={{ fontSize: '22px', fontWeight: 600 }}>days</span>
+          </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginTop: '12px' }}>
           {Array.from({ length: 7 }).map((_, i) => (
@@ -390,8 +399,8 @@ export function ImpactScreen() {
                   padding: '6px 8px', borderRadius: '8px',
                   background: m.isYou ? 'rgba(74, 124, 89, 0.10)' : 'transparent',
                 }}>
-                  <span className="mono" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>
-                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                  <span className="mono" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', width: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {i < 3 ? <MedalIcon size={18} place={i + 1} /> : i + 1}
                   </span>
                   <span style={{ flex: 1, fontSize: '13px', fontWeight: m.isYou ? 700 : 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {m.name}
@@ -423,7 +432,10 @@ export function ImpactScreen() {
         </div>
         <ProgressBar value={weekProgress} color="var(--accent)" />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <span>{Math.min(weekly.saves, WEEK_GOAL)} / {WEEK_GOAL} saved{weekly.saves >= WEEK_GOAL ? ' 🎉' : ''}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            {Math.min(weekly.saves, WEEK_GOAL)} / {WEEK_GOAL} saved
+            {weekly.saves >= WEEK_GOAL && <PartyIcon size={12} color="var(--accent)" />}
+          </span>
           <span style={{ color: 'var(--accent)' }}>{weekly.daysLeft} day{weekly.daysLeft === 1 ? '' : 's'} left</span>
         </div>
       </Card>

@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useTimeouts } from '../lib/useTimeouts';
+import { CheckCircleIcon } from '../components/icons';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraSource, CameraResultType } from '@capacitor/camera';
 import posthog from 'posthog-js';
@@ -135,8 +137,15 @@ function isCancelledError(error: unknown): boolean {
 }
 
 export function AddItemScreen() {
-  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent, setActiveTab } = useStore();
+  const { addPantryItem, pantryItems, updatePantryItem, canAddPantryItem, isPro, household, setSubscriptionTier, addItemMode, setAddItemMode, avoAiConsent, setAvoAiConsent, setActiveTab, pendingScanImage, setPendingScanImage } = useStore();
   const [mode, setMode] = useState<AddMode>(addItemMode ?? 'manual');
+  // Capture the mode the + menu launched with (before the effect below clears
+  // addItemMode) so we can jump straight to the camera for receipt/fridge.
+  const initialAddModeRef = useRef(addItemMode);
+  const autoLaunchedRef = useRef(false);
+  // A photo the + menu already captured on the home page (see App.handleAddSelect).
+  // When present we process it here instead of opening the camera again.
+  const initialPendingScanRef = useRef(pendingScanImage);
   // When a scan needs AI consent that hasn't been granted, we stash the action
   // here and pop the consent modal first (matching how chat gates Avo).
   const [aiConsentPending, setAiConsentPending] = useState<(() => void) | null>(null);
@@ -170,7 +179,31 @@ export function AddItemScreen() {
     void preloadCoreDatabase();
   }, []);
 
+  // Receipt/Fridge from the + menu jump straight to the camera — one tap, no
+  // extra landing page with another button. requireAiConsent (inside the
+  // handlers) still pops the AI-consent modal first when scanning wasn't
+  // allowed, and a cancelled capture falls back to the landing page so the
+  // user can retry. Guarded to fire exactly once (StrictMode double-invokes).
+  useEffect(() => {
+    if (autoLaunchedRef.current) return;
+    autoLaunchedRef.current = true;
+    // A photo was already captured from the home page — process it, don't open
+    // the camera a second time.
+    if (initialPendingScanRef.current) {
+      const { mode: scanMode, base64 } = initialPendingScanRef.current;
+      setPendingScanImage(null);
+      setMode(scanMode);
+      if (scanMode === 'receipt') void processReceiptImage(base64);
+      else void processFridgeImage(base64);
+      return;
+    }
+    if (initialAddModeRef.current === 'receipt') handleReceiptTap();
+    else if (initialAddModeRef.current === 'fridge') handleFridgeTap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [showSuccess, setShowSuccess] = useState(false);
+  const scheduleToast = useTimeouts();
   const [successName, setSuccessName] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const addSourceRef = useRef<'manual' | 'barcode'>('manual');
@@ -373,7 +406,7 @@ export function AddItemScreen() {
     setReceiptItems(prev => prev.filter(r => r.id !== item.id));
     setSuccessName(item.name);
     setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2000);
+    scheduleToast(() => setShowSuccess(false), 2000);
   };
 
   const handleAddItem = (itemName?: string, itemCat?: FoodCategory, itemLoc?: StorageLocation, itemVal?: number, itemUnit?: string) => {
@@ -425,7 +458,7 @@ export function AddItemScreen() {
     setCustomDays('');
     setSuccessName(n);
     setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2000);
+    scheduleToast(() => setShowSuccess(false), 2000);
   };
 
   // Add one or more items parsed from a spoken/typed phrase. Each item's
@@ -463,7 +496,7 @@ export function AddItemScreen() {
           fontWeight: 600,
           color: 'var(--accent)',
         }}>
-          <span>✅</span> Added {successName} to your pantry!
+          <CheckCircleIcon size={15} color="var(--accent)" /> Added {successName} to your pantry!
         </div>
       )}
 
@@ -509,7 +542,7 @@ export function AddItemScreen() {
                     updatePantryItem(existing.id, { quantity: existing.quantity + 1 });
                     setSuccessName(`+1 ${item.name}`);
                     setShowSuccess(true);
-                    setTimeout(() => setShowSuccess(false), 2000);
+                    scheduleToast(() => setShowSuccess(false), 2000);
                   } else {
                     // Prefill the form so user can review before adding
                     setMode('manual');
@@ -1063,7 +1096,7 @@ export function AddItemScreen() {
                 if (toAdd.length > 0) {
                   setSuccessName(`${toAdd.length} receipt item${toAdd.length === 1 ? '' : 's'}`);
                   setShowSuccess(true);
-                  setTimeout(() => setShowSuccess(false), 2000);
+                  scheduleToast(() => setShowSuccess(false), 2000);
                 }
                 if (remaining.length > 0) {
                   setShowUpgrade(true);

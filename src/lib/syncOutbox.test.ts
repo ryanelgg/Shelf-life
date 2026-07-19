@@ -113,4 +113,23 @@ describe('syncOutbox', () => {
     expect(outboxPending()).toBe(1);
     expect(outboxHasPendingAdd('a2')).toBe(true);
   });
+
+  it('preserves a mid-flush write even when an overflow trim shifts indices', async () => {
+    // Fill the queue to the 500-entry cap so the very next enqueue overflows
+    // and splices the oldest entry off the FRONT — shifting every index. The
+    // old index-based slice(entries.length) dropped the mid-flush write here.
+    for (let i = 0; i < 500; i++) {
+      enqueueOutbox({ kind: 'pantryRemove', id: `old-${i}` });
+    }
+    expect(outboxPending()).toBe(500);
+
+    const p = flushOutbox(); // snapshots the 500 entries, then awaits replays
+    // This 501st enqueue trims the oldest entry (front) while the flush runs.
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'fresh', name: 'Kept' } });
+    await p;
+
+    // All 500 snapshotted removes replayed OK and drained; only the write that
+    // arrived during the flush must survive — identified by uid, not position.
+    expect(outboxHasPendingAdd('fresh')).toBe(true);
+  });
 });

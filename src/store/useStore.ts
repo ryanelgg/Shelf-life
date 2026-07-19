@@ -43,6 +43,12 @@ interface ShelfLifeStore {
   activeTab: Tab;
   addItemMode: 'manual' | 'scan' | 'receipt' | 'fridge' | null;
   setAddItemMode: (mode: 'manual' | 'scan' | 'receipt' | 'fridge' | null) => void;
+  // A receipt/fridge photo captured from the + menu on the home page, handed to
+  // AddItemScreen to process — so the camera can open in place and we only
+  // switch to the Add screen once there's something to review. Transient (not
+  // persisted).
+  pendingScanImage: { mode: 'receipt' | 'fridge'; base64: string } | null;
+  setPendingScanImage: (v: { mode: 'receipt' | 'fridge'; base64: string } | null) => void;
   recipeSearchSeed: string | null;
   setRecipeSearchSeed: (seed: string | null) => void;
   theme: ThemeMode;
@@ -138,6 +144,8 @@ export const useStore = create<ShelfLifeStore>()(
       mealPlan: [] as MealPlanDay[],
       activeTab: 'pantry' as Tab,
       addItemMode: null,
+      pendingScanImage: null as { mode: 'receipt' | 'fridge'; base64: string } | null,
+      setPendingScanImage: (v) => set({ pendingScanImage: v }),
       recipeSearchSeed: null as string | null,
       theme: 'light' as ThemeMode,
       showSettings: false,
@@ -159,6 +167,23 @@ export const useStore = create<ShelfLifeStore>()(
         // Network failures throw before reaching here (caught in App.tsx), so
         // an empty array always means a successful empty response.
         set({ pantryItems: cloudPantry, wasteLogs: cloudWaste });
+        // Reschedule expiry reminders for the freshly-loaded cloud set. Item
+        // reminders are normally scheduled as items are added/edited, but
+        // cloud-loaded items (a fresh install, a second device, or a household
+        // member's items already present at boot) never passed through those
+        // paths — so without this they'd get NO expiry reminders until next
+        // edited, defeating the core feature on a new device. Guarded on
+        // notificationsEnabled (permission granted on THIS device); on native
+        // only. rescheduleAllNotifications reconciles the whole schedule
+        // (soonest-expiring first) so this is safe to run on every load.
+        const { notificationsEnabled, user } = useStore.getState();
+        if (notificationsEnabled) {
+          void rescheduleAllNotifications({
+            items: cloudPantry,
+            streakDays: user?.streakDays ?? 0,
+            userName: user?.name,
+          });
+        }
       },
       setOAuthNewUser: (u) => set({ oauthNewUser: u }),
       setUser: (user) => set({ user }),
@@ -255,8 +280,13 @@ export const useStore = create<ShelfLifeStore>()(
         void cancelItemNotifications(id);
       },
       clearPantry: () => {
+        // Cancel only the per-item expiry reminders for the items being cleared
+        // — NOT cancelAllNotifications, which would also wipe the streak-
+        // protection, re-engagement, recipe-nudge and milestone reminders.
+        // Emptying the pantry shouldn't tear down the engagement schedule.
+        const { pantryItems } = useStore.getState();
         set({ pantryItems: [] });
-        void cancelAllNotifications();
+        for (const item of pantryItems) void cancelItemNotifications(item.id);
       },
 
       addWasteLog: (log) => {

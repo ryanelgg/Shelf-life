@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
-import { checkPantryForRecalls } from '../lib/recallApi';
-import type { RecallMatch } from '../lib/recallApi';
+import { useState, useMemo } from 'react';
+import { useTimeouts } from '../lib/useTimeouts';
+import { WarningIcon } from '../components/icons';
 import posthog from 'posthog-js';
-import { AvocadoMascot } from '../components/AvocadoMascot';
+import { AvocadoMascot, type AvoMood } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
 import { useStore } from '../store/useStore';
 import { getFreshnessStatus, getFreshnessColor, getDaysUntilExpiration, formatLocalDate, parseLocalDate, resolveDateType, dateTypeShortLabel } from '../types';
@@ -19,6 +19,41 @@ const LOCATION_LABELS: Record<StorageLocation, string> = {
   pantry: 'Pantry',
   counter: 'Counter',
 };
+
+// Freshness as ambience: item cards warm as food ages — cool green when fresh,
+// honey as the date nears, dried-out brown once past. Low-alpha tints layered
+// over the card ground so both themes keep their footing. (The icon + label
+// still carry the status — color is atmosphere, not the only signal.)
+const FRESHNESS_TINT: Record<string, string> = {
+  'fresh': 'rgba(74, 124, 89, 0.05)',
+  'good': 'rgba(74, 124, 89, 0.02)',
+  'expiring-soon': 'rgba(212, 164, 74, 0.08)',
+  'expiring': 'rgba(212, 164, 74, 0.14)',
+  'expired': 'rgba(139, 94, 60, 0.14)',
+};
+
+// Module-level so the impure Date calls aren't made inline during render
+// (keeps react-hooks/purity happy — same pattern as getGreeting).
+function isLateNight(): boolean {
+  const h = new Date().getHours();
+  return h >= 22 || h < 6;
+}
+
+const CALM_QUOTES = [
+  'A well-kept shelf is a quiet victory.',
+  'Everything in its jar, everything in its time.',
+  'Nothing wasted today. Avo approves.',
+  'The freezer is just a pause button for food.',
+  'Cook the oldest thing first — future you says thanks.',
+  'A full pantry is a promise to yourself.',
+  'Small saves add up to real dinners.',
+];
+
+function calmQuoteOfTheDay(): string {
+  const now = new Date();
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000);
+  return CALM_QUOTES[dayOfYear % CALM_QUOTES.length];
+}
 
 const FREEZER_FALLBACK_DAYS: Record<FoodCategory, number> = {
   Produce: 365, Dairy: 90, Meat: 120, Seafood: 90,
@@ -113,9 +148,12 @@ export function PantryScreen() {
   const { user, pantryItems, setShowSettings, removePantryItem, addWasteLog, updatePantryItem, setActiveTab, setRecipeSearchSeed } = useStore();
   const [activeLocation, setActiveLocation] = useState<StorageLocation | 'all'>('all');
   const [swipingItem, setSwipingItem] = useState<string | null>(null);
+  // Item currently playing its "bite" exit (eaten action) before removal.
+  const [bitingId, setBitingId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [alertDismissing, setAlertDismissing] = useState(false);
+  const scheduleTimeout = useTimeouts();
   const [listAnimKey, setListAnimKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterBubbleKey, setFilterBubbleKey] = useState(0);
@@ -124,26 +162,6 @@ export function PantryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
-  const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [recallDismissed, setRecallDismissed] = useState(false);
-
-  useEffect(() => {
-    if (pantryItems.length === 0) return;
-    let cancelled = false;
-    const names = pantryItems.map(i => i.name);
-    checkPantryForRecalls(names).then(matches => {
-      if (cancelled) return; // a newer check superseded this one
-      setRecallMatches(prev => {
-        // Re-surface the banner only when the set of matched items actually
-        // changed, so a genuinely new recall isn't hidden by an earlier dismiss.
-        const key = (m: RecallMatch[]) => m.map(x => x.id).sort().join('|');
-        if (key(prev) !== key(matches)) setRecallDismissed(false);
-        return matches;
-      });
-    }).catch(() => {/* silently ignore - recall check is best-effort */});
-    return () => { cancelled = true; };
-  }, [pantryItems]);
-
   const filteredItems = useMemo(() => {
     let items = activeLocation === 'all' ? pantryItems : pantryItems.filter(i => i.location === activeLocation);
     if (expiringOnly) items = items.filter(i => { const s = getFreshnessStatus(i.expirationDate); return s === 'expired' || s === 'expiring' || s === 'expiring-soon'; });
@@ -171,6 +189,20 @@ export function PantryScreen() {
       .slice(0, 3)
   ), [pantryItems]);
 
+  // Avo reacts to the state of the kitchen: a pile of expiring items startles
+  // him, late night makes him sleepy.
+  const avoMood: AvoMood =
+    expiringCount >= 3 ? 'surprised' :
+    isLateNight() ? 'sleepy' :
+    'happy';
+
+  // One quiet editorial line from Avo, rotated daily. The urgency variant takes
+  // over when something actually needs attention.
+  const avoQuote =
+    pantryItems.length === 0 ? null :
+    urgentItems.length > 0 ? `The ${urgentItems[0]!.name.toLowerCase()} is counting on you.` :
+    calmQuoteOfTheDay();
+
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
@@ -179,17 +211,27 @@ export function PantryScreen() {
     } else if (action === 'tossed') {
       posthog.capture('pantry_item_wasted', { days_past_expiry: -daysLeft, category: item.category, estimated_value: item.estimatedValue });
     }
-    addWasteLog({
-      id: createWasteLogId(),
-      itemName: item.name,
-      category: item.category,
-      action,
-      date: formatLocalDate(new Date()),
-      estimatedValue: item.estimatedValue,
-      quantity: item.quantity,
-    });
-    removePantryItem(item.id);
+    const finish = () => {
+      addWasteLog({
+        id: createWasteLogId(),
+        itemName: item.name,
+        category: item.category,
+        action,
+        date: formatLocalDate(new Date()),
+        estimatedValue: item.estimatedValue,
+        quantity: item.quantity,
+      });
+      removePantryItem(item.id);
+      setBitingId(null);
+    };
     setSwipingItem(null);
+    if (action === 'eaten') {
+      // Play the "bite" exit first, then log + remove (matches the CSS 430ms).
+      setBitingId(item.id);
+      scheduleTimeout(finish, 430);
+      return;
+    }
+    finish();
   };
 
   const handleFreezeItem = (item: PantryItem) => {
@@ -229,7 +271,7 @@ export function PantryScreen() {
   const handleDismissAlert = (e: React.MouseEvent) => {
     e.stopPropagation();
     setAlertDismissing(true);
-    setTimeout(() => setAlertDismissed(true), 290);
+    scheduleTimeout(() => setAlertDismissed(true), 290);
   };
 
   const handleLocationChange = (loc: StorageLocation | 'all') => {
@@ -279,7 +321,7 @@ export function PantryScreen() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '-12px' }}>
-          <AvocadoMascot size={34} />
+          <AvocadoMascot size={34} mood={avoMood} />
           <h1 style={{ fontSize: 'clamp(18px, 5vw, 22px)', fontWeight: 800 }}>
             {getGreeting()}
           </h1>
@@ -303,49 +345,18 @@ export function PantryScreen() {
         </button>
       </div>
 
-      {/* FDA Recall Alert Banner */}
-      {recallMatches.length > 0 && !recallDismissed && (
-        <div style={{
-          background: 'rgba(205,92,92,0.08)',
-          border: '1.5px solid rgba(205,92,92,0.3)',
-          borderRadius: '14px',
-          padding: '12px 14px',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '10px',
-          animation: 'card-enter 0.3s ease-out',
+      {/* Avo's daily line — one quiet editorial note, serif italic */}
+      {avoQuote && (
+        <div className="card-enter stagger-1" style={{
+          fontFamily: "'Cormorant Garamond', serif",
+          fontStyle: 'italic',
+          fontSize: '14px',
+          color: 'var(--text-muted)',
+          textAlign: 'center',
+          marginTop: '-6px',
+          lineHeight: 1.4,
         }}>
-          <span style={{ fontSize: '20px', flexShrink: 0, marginTop: '1px' }}>🚨</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expired)', marginBottom: '4px' }}>
-              FDA Recall Alert
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              {recallMatches.length === 1
-                ? <><strong>{recallMatches[0]!.matchedItem}</strong>{` may be affected by an active recall: ${recallMatches[0]!.reason.slice(0, 80)}…`}</>
-                : `${recallMatches.length} items in your pantry may be affected by active FDA recalls.`
-              }
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-              {recallMatches.slice(0, 3).map(m => (
-                <span key={m.id} style={{
-                  fontSize: '10px', fontWeight: 600,
-                  padding: '2px 8px', borderRadius: '8px',
-                  background: 'rgba(205,92,92,0.12)',
-                  color: 'var(--expired)',
-                }}>{m.matchedItem}</span>
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={() => setRecallDismissed(true)}
-            aria-label="Dismiss recall alert"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text-muted)', fontSize: '16px', flexShrink: 0,
-              padding: '2px', lineHeight: 1,
-            }}
-          >✕</button>
+          “{avoQuote}”
         </div>
       )}
 
@@ -630,7 +641,7 @@ export function PantryScreen() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '24px' }}>
-            <span style={{ fontSize: '18px' }}>⚠️</span>
+            <WarningIcon size={18} color="var(--expiring-soon)" />
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expiring-soon)' }}>
                 {expiringCount} item{expiringCount > 1 ? 's' : ''} expiring soon!
@@ -664,9 +675,9 @@ export function PantryScreen() {
           const isSwipe = swipingItem === item.id;
 
           return (
+            <div key={item.id} className={`card-enter stagger-${Math.min(i + 1, 6)}`}>
             <div
-              key={item.id}
-              className={`card-enter stagger-${Math.min(i + 1, 6)}`}
+              className={bitingId === item.id ? 'bite-out' : ''}
               style={{ position: 'relative', overflow: 'hidden', borderRadius: '14px' }}
             >
               {isSwipe && (
@@ -751,6 +762,8 @@ export function PantryScreen() {
                   gap: '12px',
                   padding: '14px 16px',
                   borderLeft: `3px solid ${color}`,
+                  // freshness as ambience: the card ground warms as the food ages
+                  backgroundImage: `linear-gradient(${FRESHNESS_TINT[status]}, ${FRESHNESS_TINT[status]})`,
                   opacity: isSwipe ? 0.3 : 1,
                   transition: 'opacity 0.2s',
                 }}
@@ -795,6 +808,7 @@ export function PantryScreen() {
                   </div>
                 </div>
               </Card>
+            </div>
             </div>
           );
         })}

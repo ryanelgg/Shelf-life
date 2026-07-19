@@ -25,9 +25,20 @@ export type OutboxOp =
   | { kind: 'wasteLogAdd'; row: Record<string, unknown> };
 
 interface OutboxEntry {
+  uid: string;   // stable identity so a concurrent flush can tell which entries
+                 // were appended mid-flush without relying on array position.
   op: OutboxOp;
   attempts: number;
   queuedAt: number;
+}
+
+// Monotonic-ish unique id for a queued entry. Combines the clock, a per-session
+// counter and randomness so two entries enqueued in the same millisecond (or
+// across sessions) never collide.
+let uidSeq = 0;
+function makeUid(): string {
+  uidSeq = (uidSeq + 1) % 1_000_000;
+  return `${Date.now().toString(36)}-${uidSeq.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function readOutbox(): OutboxEntry[] {
@@ -52,7 +63,7 @@ function writeOutbox(entries: OutboxEntry[]): void {
 /** Queue an operation that failed to sync so it can be replayed later. */
 export function enqueueOutbox(op: OutboxOp): void {
   const entries = readOutbox();
-  entries.push({ op, attempts: 0, queuedAt: Date.now() });
+  entries.push({ uid: makeUid(), op, attempts: 0, queuedAt: Date.now() });
   // Keep only the most recent MAX_ENTRIES if we somehow overflow. Dropping the
   // oldest is the least-bad choice (a later edit/delete usually supersedes it),
   // but never do it silently — a dropped write is lost data.
@@ -145,9 +156,12 @@ export async function flushOutbox(): Promise<void> {
       remaining.push({ ...entry, attempts });
     }
     // A write enqueued DURING this flush lands in localStorage but not in our
-    // `entries` snapshot. Re-read and preserve anything appended past the
-    // snapshot so a concurrent add/edit isn't silently clobbered (data loss).
-    const appendedDuringFlush = readOutbox().slice(entries.length);
+    // `entries` snapshot. Identify those appended entries by uid (NOT by array
+    // index): an overflow trim in enqueueOutbox can splice off the oldest
+    // entries mid-flush, which would shift positions and make an index-based
+    // slice preserve the wrong entries or drop valid ones (data loss).
+    const processedUids = new Set(entries.map(e => e.uid));
+    const appendedDuringFlush = readOutbox().filter(e => !processedUids.has(e.uid));
     writeOutbox([...remaining, ...appendedDuringFlush]);
     if (remaining.length > 0) {
       debug.warn(`[outbox] ${remaining.length} operation(s) still pending after flush`);

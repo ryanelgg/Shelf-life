@@ -1,28 +1,31 @@
 import { useState } from 'react';
+import type { JSX } from 'react';
 import { AvocadoMascot } from './AvocadoMascot';
+import { PlusIcon, JarIcon, ChatIcon, type IconProps } from './icons';
 import { useStore } from '../store/useStore';
 import { hapticLight } from '../lib/haptics';
 
 // A slight first-run tutorial: a few Avo-guided tips shown once, right after
 // onboarding. Skippable, and never shown again once seen (persisted flag).
-const STEPS: { emoji: string; title: string; body: string }[] = [
+// Icon is null for the intro step — the big Avo mascot already represents it.
+const STEPS: { Icon: ((p: IconProps) => JSX.Element) | null; title: string; body: string }[] = [
   {
-    emoji: '🥑',
+    Icon: null,
     title: "Hey, I'm Avo!",
     body: "Welcome to Pantre. I'll help you keep track of your food and use it up before it goes bad.",
   },
   {
-    emoji: '➕',
+    Icon: PlusIcon,
     title: 'Add your food',
     body: 'Tap the + button to log items — scan a barcode, snap a receipt or your fridge, or just add it manually.',
   },
   {
-    emoji: '🥫',
+    Icon: JarIcon,
     title: 'Your Pantre',
     body: 'The Pantre tab shows everything you have and flags what to use first. Swipe an item to eat, freeze, or extend its date.',
   },
   {
-    emoji: '💬',
+    Icon: ChatIcon,
     title: 'Ask me anything',
     body: "In Chat, tap “Today's briefing” for your daily rundown, or ask me for recipes. Watch your savings and streak grow in Impact!",
   },
@@ -61,7 +64,11 @@ export function TutorialOverlay() {
         <div className="use-tonight-pulse" style={{ marginBottom: '6px' }}>
           <AvocadoMascot size={64} isStatic />
         </div>
-        <div style={{ fontSize: '30px', marginBottom: '2px' }}>{current.emoji}</div>
+        {current.Icon && (
+          <div style={{ marginTop: '4px', marginBottom: '4px', color: 'var(--accent)' }}>
+            <current.Icon size={30} color="var(--accent)" strokeWidth={1.7} />
+          </div>
+        )}
         <div style={{
           fontSize: '20px', fontWeight: 800,
           fontFamily: "'Cormorant Garamond', serif",
@@ -94,7 +101,7 @@ export function TutorialOverlay() {
             cursor: 'pointer',
           }}
         >
-          {isLast ? "Let's go 🥑" : 'Next'}
+          {isLast ? "Let's go" : 'Next'}
         </button>
         {!isLast && (
           <button

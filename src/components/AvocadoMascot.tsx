@@ -2,10 +2,16 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 type Expression = 'happy' | 'excited' | 'sleepy' | 'surprised' | 'wink' | 'love' | 'thinking' | 'normal' | 'sick';
 
+// Exported so screens can drive Avo's resting mood from app state (expiring
+// items → surprised, recall → sick, late night → sleepy…).
+export type AvoMood = Expression;
+
 interface AvocadoMascotProps {
   size?: number;
   isStatic?: boolean;
   className?: string;
+  /** Resting expression when no tap-reaction is playing. Defaults to 'happy'. */
+  mood?: Expression;
 }
 
 // Earthy hand-drawn palette
@@ -19,9 +25,12 @@ const LEAF      = '#3e6a2e';
 const LEAF_LINE = '#264a1c';
 const FACE      = '#3a2010';
 
-export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: AvocadoMascotProps) {
-  const [expression, setExpression] = useState<Expression>('happy');
+export function AvocadoMascot({ size = 56, isStatic = false, className = '', mood }: AvocadoMascotProps) {
+  // Only tap-reactions live in state; the resting face is derived, so a mood
+  // change from the parent shows immediately and reactions settle back to it.
+  const [reactionExpr, setReactionExpr] = useState<Expression | null>(null);
   const [animClass, setAnimClass] = useState('');
+  const expression: Expression = reactionExpr ?? mood ?? 'happy';
   const [splatted, setSplatted] = useState(false);
   const tapTimesRef = useRef<number[]>([]);
   const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -38,10 +47,10 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: A
 
   const triggerReaction = useCallback((expr: Expression, css: string, duration: number) => {
     if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
-    setExpression(expr);
+    setReactionExpr(expr);
     setAnimClass(css);
     animTimeoutRef.current = setTimeout(() => {
-      setExpression('happy');
+      setReactionExpr(null);
       setAnimClass('');
     }, duration);
   }, []);
@@ -56,7 +65,7 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: A
       tapTimesRef.current = [];
       if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
       // Sick face + shake, then SMASH flat into guac
-      setExpression('sick');
+      setReactionExpr('sick');
       setAnimClass('avo-shake');
       smashTimeoutsRef.current.push(setTimeout(() => {
         setAnimClass('avo-smash');
@@ -65,7 +74,7 @@ export function AvocadoMascot({ size = 56, isStatic = false, className = '' }: A
       }, 500));
       animTimeoutRef.current = setTimeout(() => {
         setSplatted(false);
-        setExpression('happy');
+        setReactionExpr(null);
         setAnimClass('');
       }, 3500);
     } else if (tapTimesRef.current.length >= 3) {

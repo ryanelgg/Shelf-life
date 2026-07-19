@@ -36,7 +36,35 @@ export function EmptyState({
         textAlign: 'center',
       }}
     >
-      <AvocadoMascot size={84} />
+      {/* A little scene instead of a floating mascot: Avo sitting on a shelf
+          next to a jar with a sprout — same hand-drawn stroke as the icon set. */}
+      <div style={{ position: 'relative', width: 168, height: 116 }}>
+        <svg
+          viewBox="0 0 168 116"
+          width="168"
+          height="116"
+          fill="none"
+          stroke="var(--text-muted)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ position: 'absolute', inset: 0, opacity: 0.55 }}
+          aria-hidden="true"
+        >
+          {/* shelf plank + support brackets */}
+          <line x1="10" y1="103" x2="158" y2="103" />
+          <path d="M26 103v7M142 103v7" />
+          {/* jar with a sprout growing out of it */}
+          <path d="M28 78h24v20a4 4 0 0 1-4 4H32a4 4 0 0 1-4-4V78Z" />
+          <line x1="26" y1="78" x2="54" y2="78" />
+          <path d="M40 78v-8" />
+          <path d="M40 72c-4-.8-7-3.4-7.6-7 4.2-.5 7 1.7 7.6 4.6Z" />
+          <path d="M40 70c4-.8 7-3.4 7.6-7-4.2-.5-7 1.7-7.6 4.6Z" />
+        </svg>
+        <div style={{ position: 'absolute', right: 22, bottom: 12 }}>
+          <AvocadoMascot size={84} />
+        </div>
+      </div>
       <h2 style={{
         fontSize: '22px',
         fontWeight: 800,
