@@ -589,6 +589,7 @@ export function AddItemScreen() {
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
+                aria-label="Item name"
                 value={name}
                 onChange={e => {
                   setName(e.target.value);
@@ -754,6 +755,7 @@ export function AddItemScreen() {
               </div>
               <input
                 type="number"
+                aria-label="Quantity"
                 value={quantity}
                 onChange={e => setQuantity(e.target.value)}
                 style={{
@@ -768,6 +770,7 @@ export function AddItemScreen() {
                 Unit
               </div>
               <select
+                aria-label="Unit"
                 value={unit}
                 onChange={e => setUnit(e.target.value)}
                 style={{
@@ -791,6 +794,7 @@ export function AddItemScreen() {
               </div>
               <input
                 type="number"
+                aria-label="Estimated value in dollars"
                 value={value}
                 onChange={e => setValue(e.target.value)}
                 placeholder={`~$${(2.99).toFixed(2)}`}
@@ -807,6 +811,7 @@ export function AddItemScreen() {
               </div>
               <input
                 type="number"
+                aria-label="Days until expiration"
                 value={customDays}
                 onChange={e => setCustomDays(e.target.value)}
                 placeholder={`${DEFAULT_SHELF_LIFE[category]}`}
