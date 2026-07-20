@@ -3,7 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 type Expression = 'happy' | 'excited' | 'sleepy' | 'surprised' | 'wink' | 'love' | 'thinking' | 'normal' | 'sick';
 
 // Exported so screens can drive Avo's resting mood from app state (expiring
-// items → surprised, recall → sick, late night → sleepy…).
+// items → surprised, late night → sleepy…).
 export type AvoMood = Expression;
 
 interface AvocadoMascotProps {

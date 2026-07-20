@@ -113,6 +113,15 @@ interface ShelfLifeStore {
   avoAiConsent: 'granted' | 'declined' | null;
   setAvoAiConsent: (consent: 'granted' | 'declined' | null) => void;
 
+  // Meal-Plan Autopilot (Pro): once a week, Avo auto-generates the week's meal
+  // plan (prioritizing soon-to-expire items) and auto-builds a shopping list
+  // for the gaps — hands-free. `week` is the Monday-date key of the last run so
+  // it only fires once per calendar week.
+  mealPlanAutopilot: boolean;
+  setMealPlanAutopilot: (on: boolean) => void;
+  mealPlanAutopilotWeek: string | null;
+  setMealPlanAutopilotWeek: (week: string | null) => void;
+
   // Local notifications (per-device, persisted). null = not asked yet.
   notificationsEnabled: boolean | null;
   setNotificationsEnabled: (enabled: boolean) => void;
@@ -150,6 +159,8 @@ export const useStore = create<ShelfLifeStore>()(
       theme: 'light' as ThemeMode,
       showSettings: false,
       avoAiConsent: null as 'granted' | 'declined' | null,
+      mealPlanAutopilot: false,
+      mealPlanAutopilotWeek: null as string | null,
       notificationsEnabled: null as boolean | null,
       reviewPrompted: false,
       household: null as Household | null,
@@ -214,6 +225,8 @@ export const useStore = create<ShelfLifeStore>()(
           theme: 'light',
           showSettings: false,
           avoAiConsent: null,
+          mealPlanAutopilot: false,
+          mealPlanAutopilotWeek: null,
           notificationsEnabled: null,
           hasSeenTutorial: false,
         });
@@ -518,6 +531,8 @@ export const useStore = create<ShelfLifeStore>()(
       setTheme: (theme: ThemeMode) => set({ theme }),
       setShowSettings: (show: boolean) => set({ showSettings: show }),
       setAvoAiConsent: (consent) => set({ avoAiConsent: consent }),
+      setMealPlanAutopilot: (on) => set({ mealPlanAutopilot: on }),
+      setMealPlanAutopilotWeek: (week) => set({ mealPlanAutopilotWeek: week }),
       setReviewPrompted: () => set({ reviewPrompted: true }),
       setNotificationsEnabled: (enabled) => {
         set({ notificationsEnabled: enabled });
@@ -564,6 +579,8 @@ export const useStore = create<ShelfLifeStore>()(
         mealPlan: state.mealPlan,
         theme: state.theme,
         avoAiConsent: state.avoAiConsent,
+        mealPlanAutopilot: state.mealPlanAutopilot,
+        mealPlanAutopilotWeek: state.mealPlanAutopilotWeek,
         reviewPrompted: state.reviewPrompted,
         notificationsEnabled: state.notificationsEnabled,
         hasSeenTutorial: state.hasSeenTutorial,

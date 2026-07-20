@@ -443,6 +443,16 @@ function todayStr() {
   return formatLocalDate(new Date());
 }
 
+// Monday-of-this-week as a YYYY-MM-DD key, so the meal-plan autopilot fires at
+// most once per calendar week. Impure (reads the clock) — call from effects/
+// handlers only, never during render.
+function currentWeekKey(): string {
+  const d = new Date();
+  const mondayOffset = (d.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+  d.setDate(d.getDate() - mondayOffset);
+  return formatLocalDate(d);
+}
+
 // Cooked leftovers keep ~3–4 days refrigerated (USDA FoodKeeper). Use 4 so the
 // day-of reminder lands while they're still safe to finish.
 const LEFTOVER_FRIDGE_DAYS = 4;
@@ -471,6 +481,7 @@ export function PlanScreen() {
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
     isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, addPantryItem, removePantryItem, setMealPlan,
     incrementAvoChat, decrementAvoChat, avoAiConsent, setAvoAiConsent,
+    mealPlanAutopilot, setMealPlanAutopilot, mealPlanAutopilotWeek, setMealPlanAutopilotWeek,
   } = useStore();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const scheduleToast = useTimeouts();
@@ -489,6 +500,11 @@ export function PlanScreen() {
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [avoMealPlanLoading, setAvoMealPlanLoading] = useState(false);
   const [avoMealPlanError, setAvoMealPlanError] = useState<string | null>(null);
+  const [autopilotNote, setAutopilotNote] = useState<string | null>(null);
+  // Guards against re-firing the weekly autopilot run within a single session
+  // (state updates would otherwise retrigger the effect before the week key
+  // persists).
+  const autopilotRanRef = useRef(false);
   const [recipeFilter, setRecipeFilter] = useState('all');
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => recipeSearchSeed ?? '');
@@ -501,14 +517,14 @@ export function PlanScreen() {
   }, [recipeSearchSeed, setRecipeSearchSeed]);
 
   const generateAvoMealPlan = useCallback(async () => {
-    if (avoMealPlanLoading) return;
+    if (avoMealPlanLoading) return null;
     // Generating a plan is a real AI call, so meter it against the daily Avo
     // quota (Pro: 20/day) exactly like chat does. If the day's quota is spent,
     // don't fire the request; refund in the catch below if it fails to produce
     // a usable plan, so a failed attempt never costs a use.
     if (!incrementAvoChat()) {
       setAvoMealPlanError("You've used all your Avo AI for today — it resets tomorrow.");
-      return;
+      return null;
     }
     setAvoMealPlanLoading(true);
     setAvoMealPlanError(null);
@@ -560,10 +576,12 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       });
 
       setMealPlan(newPlan);
+      return newPlan;
     } catch (e) {
       // Refund the metered use — the request didn't yield a usable plan.
       decrementAvoChat();
       setAvoMealPlanError(e instanceof Error ? e.message : 'Avo couldn\'t generate a plan. Try again!');
+      return null;
     } finally {
       setAvoMealPlanLoading(false);
     }
@@ -581,6 +599,63 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
     () => (user?.dietaryPreferences ?? []).filter((d): d is DietaryPref => d !== 'none'),
     [user?.dietaryPreferences]
   );
+
+  // ── Meal-Plan Autopilot (PRO) ──────────────────────────────────────────────
+  // Once a week, auto-generate the plan (prioritizing soon-to-expire items) and
+  // auto-build a shopping list for the gaps — no taps. Reuses generateAvoMealPlan
+  // (which meters + refunds the Avo quota) and the same diet-filtered list
+  // builder as the manual "Auto-build" button.
+  const runAutopilot = useCallback(async (weekKey: string) => {
+    const plan = await generateAvoMealPlan();
+    if (!plan) {
+      // Quota spent or the request failed. Leave the week unmarked (so a fresh
+      // mount can retry) but keep the session guard set — don't re-fire the AI
+      // call in a loop this session. generateAvoMealPlan already surfaced the
+      // error and refunded any metered use.
+      return;
+    }
+    const planRecipes = plan
+      .map(d => (d.recipeId ? ([...recipes, ...browseRecipes]).find(r => r.id === d.recipeId) : null))
+      .filter((r): r is Recipe => Boolean(r));
+    const gapItems = planRecipes.flatMap(r =>
+      r.missingIngredients.map(name => ({ name, category: 'Other' as FoodCategory, fromRecipe: r.name as string | undefined }))
+    );
+    const staleItems = pantryItems
+      .filter(p => {
+        const s = getFreshnessStatus(p.expirationDate);
+        return s === 'expiring' || s === 'expiring-soon' || s === 'expired';
+      })
+      .map(p => ({ name: p.name, category: p.category, fromRecipe: undefined as string | undefined }));
+
+    const seen = new Set<string>();
+    const items: ShoppingItem[] = [];
+    for (const cand of [...gapItems, ...staleItems]) {
+      const key = cand.name.toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      if (!nameAllowedByDiet(cand.name, activeDiets)) continue; // hard dietary filter
+      seen.add(key);
+      items.push({ id: genId('si'), name: cand.name, category: cand.category, quantity: 1, unit: 'pcs', checked: false, fromRecipe: cand.fromRecipe });
+    }
+    if (items.length > 0) {
+      addShoppingList({ id: genId('sl'), name: `Autopilot · ${todayStr().slice(5)}`, items, createdDate: todayStr() });
+    }
+    setMealPlanAutopilotWeek(weekKey);
+    setAutopilotNote(items.length > 0
+      ? `Avo planned your week and added ${items.length} item${items.length === 1 ? '' : 's'} to shop for.`
+      : 'Avo planned your week — looks like you already have what you need.');
+  }, [generateAvoMealPlan, recipes, browseRecipes, pantryItems, activeDiets, addShoppingList, setMealPlanAutopilotWeek]);
+
+  useEffect(() => {
+    if (autopilotRanRef.current) return;
+    if (!isPro() || !mealPlanAutopilot) return;
+    // Only auto-fire an AI call once the user has granted Avo AI consent.
+    if (avoAiConsent !== 'granted') return;
+    if (pantryItems.length === 0) return;
+    const wk = currentWeekKey();
+    if (mealPlanAutopilotWeek === wk) return; // already ran this week
+    autopilotRanRef.current = true;
+    void runAutopilot(wk);
+  }, [isPro, mealPlanAutopilot, avoAiConsent, pantryItems.length, mealPlanAutopilotWeek, runAutopilot]);
 
   const filteredRecipes = useMemo(() => {
     let result = browseRecipes || [];
@@ -959,6 +1034,51 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
             {avoMealPlanError && (
               <div style={{ fontSize: '11px', color: 'var(--expired)', marginTop: '6px', textAlign: 'center' }}>
                 {avoMealPlanError}
+              </div>
+            )}
+
+            {/* Meal-Plan Autopilot — hands-free weekly plan + shopping list */}
+            <button
+              onClick={() => {
+                if (mealPlanAutopilot) {
+                  setMealPlanAutopilot(false);
+                  setAutopilotNote(null);
+                } else {
+                  // Enabling arms a weekly AI call, so gate on Avo AI consent first.
+                  requireAiConsent(() => setMealPlanAutopilot(true));
+                }
+              }}
+              aria-pressed={mealPlanAutopilot}
+              aria-label="Toggle Meal-Plan Autopilot"
+              style={{
+                marginTop: '8px', width: '100%', padding: '10px 12px', borderRadius: '12px',
+                border: '1px solid rgba(74, 124, 89, 0.15)', background: 'var(--bg-card)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left',
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, fontFamily: "'Cormorant Garamond', serif", display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <SparkleIcon size={13} color="var(--accent)" /> Autopilot
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Auto-plans your week &amp; builds the shopping list, once a week
+                </div>
+              </div>
+              <span style={{
+                width: 40, height: 22, borderRadius: 999, flexShrink: 0,
+                background: mealPlanAutopilot ? 'var(--accent)' : 'var(--input-border)',
+                position: 'relative', transition: 'background 0.2s',
+              }}>
+                <span style={{
+                  position: 'absolute', top: 2, left: mealPlanAutopilot ? 20 : 2,
+                  width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                  transition: 'left 0.2s',
+                }} />
+              </span>
+            </button>
+            {autopilotNote && (
+              <div style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '6px', textAlign: 'center' }}>
+                {autopilotNote}
               </div>
             )}
           </div>

@@ -49,7 +49,7 @@ const TERMS_SECTIONS: { heading: string; body: string }[] = [
   },
   {
     heading: 'Not professional advice',
-    body: 'Expiry estimates, recall alerts, recipes, and Avo AI are informational and provided on a best-effort basis. They are not food-safety, medical, or nutritional guarantees. Always use your own judgment about whether food is safe to eat.',
+    body: 'Expiry estimates, recipes, and Avo AI are informational and provided on a best-effort basis. They are not food-safety, medical, or nutritional guarantees. Always use your own judgment about whether food is safe to eat.',
   },
   {
     heading: 'Subscriptions',
