@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTimeouts } from '../lib/useTimeouts';
 import { WarningIcon } from '../components/icons';
 import posthog from 'posthog-js';
@@ -138,6 +138,18 @@ export function PantryScreen() {
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [alertDismissing, setAlertDismissing] = useState(false);
   const scheduleTimeout = useTimeouts();
+  // The "eaten" action defers its waste-log write + removal 430ms behind the
+  // bite animation. Screens remount on tab change (key={activeTab} in App.tsx),
+  // which would clear that timer and silently drop the save. Track the pending
+  // finish so we can flush it on unmount instead of losing it.
+  const pendingEatFinish = useRef<(() => void) | null>(null);
+  const eatTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (eatTimer.current !== null) {
+      clearTimeout(eatTimer.current);
+      pendingEatFinish.current?.();
+    }
+  }, []);
   const [listAnimKey, setListAnimKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterBubbleKey, setFilterBubbleKey] = useState(0);
@@ -203,8 +215,15 @@ export function PantryScreen() {
     setSwipingItem(null);
     if (action === 'eaten') {
       // Play the "bite" exit first, then log + remove (matches the CSS 430ms).
+      // Use a flush-on-unmount timer (not scheduleTimeout) so a tab switch
+      // mid-animation can't drop the save.
       setBitingId(item.id);
-      scheduleTimeout(finish, 430);
+      pendingEatFinish.current = finish;
+      eatTimer.current = window.setTimeout(() => {
+        eatTimer.current = null;
+        pendingEatFinish.current = null;
+        finish();
+      }, 430);
       return;
     }
     finish();

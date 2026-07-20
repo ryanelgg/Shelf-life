@@ -50,7 +50,9 @@ export function CookScreen() {
     ? (user?.avoChatResetDate === today ? (user?.avoChatCount ?? 0) : 0)
     : (user?.avoFreeChatsUsed ?? 0);
   const chatLimit = hasProAccess ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
-  const chatsRemaining = chatLimit - chatsUsed;
+  // Clamp: a legacy free user migrated with avoChatCount > avoChatTotal would
+  // otherwise render a negative remaining count (e.g. "-3/5 free chats").
+  const chatsRemaining = Math.max(0, chatLimit - chatsUsed);
   // Chips are dead when AI is off (declined) — disable them so a tap isn't a
   // silent no-op. (When consent is null the consent modal is covering the screen.)
   const chipsDisabled = isStreaming || avoAiConsent === 'declined';
