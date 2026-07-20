@@ -39,22 +39,6 @@ function isLateNight(): boolean {
   return h >= 22 || h < 6;
 }
 
-const CALM_QUOTES = [
-  'A well-kept shelf is a quiet victory.',
-  'Everything in its jar, everything in its time.',
-  'Nothing wasted today. Avo approves.',
-  'The freezer is just a pause button for food.',
-  'Cook the oldest thing first — future you says thanks.',
-  'A full pantry is a promise to yourself.',
-  'Small saves add up to real dinners.',
-];
-
-function calmQuoteOfTheDay(): string {
-  const now = new Date();
-  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000);
-  return CALM_QUOTES[dayOfYear % CALM_QUOTES.length];
-}
-
 const FREEZER_FALLBACK_DAYS: Record<FoodCategory, number> = {
   Produce: 365, Dairy: 90, Meat: 120, Seafood: 90,
   Grains: 365, Frozen: 365, Canned: 730, Snacks: 180,
@@ -196,14 +180,6 @@ export function PantryScreen() {
     isLateNight() ? 'sleepy' :
     'happy';
 
-  // One quiet editorial line from Avo, rotated daily. The urgency variant takes
-  // over when something actually needs attention.
-  const avoQuote =
-    pantryItems.length === 0 ? null :
-    urgentItems.length > 0 ? `The ${urgentItems[0]!.name.toLowerCase()} is counting on you.` :
-    calmQuoteOfTheDay();
-
-
   const handleAction = (item: PantryItem, action: WasteAction) => {
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
     if (action === 'eaten') {
@@ -344,21 +320,6 @@ export function PantryScreen() {
           </svg>
         </button>
       </div>
-
-      {/* Avo's daily line — one quiet editorial note, serif italic */}
-      {avoQuote && (
-        <div className="card-enter stagger-1" style={{
-          fontFamily: "'Cormorant Garamond', serif",
-          fontStyle: 'italic',
-          fontSize: '14px',
-          color: 'var(--text-muted)',
-          textAlign: 'center',
-          marginTop: '-6px',
-          lineHeight: 1.4,
-        }}>
-          “{avoQuote}”
-        </div>
-      )}
 
       {/* Stats row — tappable as filters */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
