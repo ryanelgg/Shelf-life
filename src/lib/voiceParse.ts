@@ -27,6 +27,11 @@ const WEEKDAYS: Record<string, number> = {
   saturday: 6, sun: 0, mon: 1, tue: 2, tues: 2, wed: 3, thu: 4, thur: 4,
   thurs: 4, fri: 5, sat: 6,
 };
+// Full names (≥6 letters) are safe to read anywhere in a phrase. The short
+// abbreviations collide with real food words ("sun"-dried, "wed"…), so they get
+// stricter matching below.
+const FULL_WEEKDAYS = Object.keys(WEEKDAYS).filter(w => w.length >= 6);
+const ABBR_WEEKDAYS = Object.keys(WEEKDAYS).filter(w => w.length < 6);
 
 // Units we recognise, normalised to the short forms the manual form uses.
 const UNITS: Record<string, string> = {
@@ -117,7 +122,16 @@ function extractDateOffset(text: string, today: Date): { offset: number; matched
   // Leading \b is essential: without it a weekday abbreviation matches as a
   // suffix of a real word — "salmon"→"mon", "cinnamon"→"mon", "persimmon"→"mon" —
   // silently corrupting the item name and setting a bogus expiry.
-  m = text.match(new RegExp(lead + '(this\\s+|next\\s+)?\\b(' + Object.keys(WEEKDAYS).join('|') + ')\\b', 'i'));
+  //
+  // Full weekday NAMES may appear bare ("milk friday"). The short ABBREVIATIONS
+  // (sun/mon/wed/…) are ambiguous with food words, so they only count as a date
+  // when a lead-in word precedes them or they sit at the very end of the phrase
+  // — never mid-name. This keeps "sun-dried tomatoes" a food while still reading
+  // "add milk sun" and "milk expiring wed" as dates.
+  const abbrLead = '(?:that\\s+)?(?:expir\\w*|use(?:d)?\\s+by|best\\s+(?:by|before)|good\\s+(?:until|till|til)|goes?\\s+bad|until|till|til|by)\\s+';
+  m = text.match(new RegExp(lead + '(this\\s+|next\\s+)?\\b(' + FULL_WEEKDAYS.join('|') + ')\\b', 'i'))
+    || text.match(new RegExp(abbrLead + '(this\\s+|next\\s+)?\\b(' + ABBR_WEEKDAYS.join('|') + ')\\b', 'i'))
+    || text.match(new RegExp('(this\\s+|next\\s+)?\\b(' + ABBR_WEEKDAYS.join('|') + ')\\s*$', 'i'));
   if (m) {
     const isNext = /next/i.test(m[1] || '');
     const target = WEEKDAYS[m[2].toLowerCase()];

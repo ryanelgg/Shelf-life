@@ -75,4 +75,27 @@ describe('parseVoiceItems weekday false-matches (regression)', () => {
     // 2026-07-02 is a Thursday; "friday" is the next day.
     expect(parseVoiceItems('milk friday', TODAY)[0].expirationDate).toBe('2026-07-03');
   });
+
+  it('does not read "sun" (Sunday) out of "sun-dried tomatoes"', () => {
+    const items = parseVoiceItems('add sun-dried tomatoes', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('sun-dried tomatoes');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
+
+  it('does not read "sun" out of "sun dried tomatoes" (no hyphen)', () => {
+    const items = parseVoiceItems('add sun dried tomatoes', TODAY);
+    expect(items[0].name.toLowerCase()).toBe('sun dried tomatoes');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
+
+  it('still reads a trailing abbreviation as a date ("add milk sun" → Sunday)', () => {
+    // 2026-07-02 is Thursday; the coming Sunday is 2026-07-05.
+    expect(parseVoiceItems('add milk sun', TODAY)[0].expirationDate).toBe('2026-07-05');
+  });
+
+  it('still reads an abbreviation after a lead-in word ("milk expiring wed")', () => {
+    // Coming Wednesday from Thursday 2026-07-02 is 2026-07-08.
+    expect(parseVoiceItems('milk expiring wed', TODAY)[0].expirationDate).toBe('2026-07-08');
+  });
 });

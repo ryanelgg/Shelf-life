@@ -255,7 +255,10 @@ export const useStore = create<ShelfLifeStore>()(
         const { supabaseUserId, notificationsEnabled, pantryItems, user } = useStore.getState();
         if (supabaseUserId) syncPantryUpdate(id, updates);
         if (notificationsEnabled) {
-          if (updates.expirationDate !== undefined) {
+          // Reschedule when the expiry OR the name changed — a scheduled reminder
+          // bakes the name into its body, so a renamed item would otherwise keep
+          // firing with the old (often typo'd) label the user just corrected.
+          if (updates.expirationDate !== undefined || updates.name !== undefined) {
             const updated = pantryItems.find(i => i.id === id);
             if (updated) void rescheduleItemNotifications(updated, user?.name);
           }
