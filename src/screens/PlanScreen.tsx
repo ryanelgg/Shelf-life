@@ -596,7 +596,10 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
-      const item = pantryItems.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
+      // Use the same word-level matcher as the rest of the file — exact-name
+      // equality almost never matches real pantry names ("Free Range Eggs"
+      // vs "eggs"), so the "uses expiring items" badge rarely fired.
+      const item = pantryItems.find(p => ingredientMatchesItem(ing.name, p.name));
       if (!item) return false;
       const s = getFreshnessStatus(item.expirationDate);
       return s === 'expiring' || s === 'expiring-soon';
