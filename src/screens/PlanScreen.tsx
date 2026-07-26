@@ -409,7 +409,14 @@ function getIngredientStatus(
     (neededUnit !== null && neededUnit === pantryUnit) ||
     (neededUnit === null && COUNTABLE.has(pantryUnit))
   );
-  if (canCompareQuantity && match.quantity < neededNum) {
+  // A pantry item stored in "dozen" holds 12 per unit, so 1 dozen eggs must
+  // satisfy a raw "2 eggs" requirement. Only scale when comparing a dozen
+  // pantry item against a unit-less ingredient count (dozen-vs-dozen already
+  // matches directly).
+  const effectiveQty = pantryUnit === 'dozen' && neededUnit === null
+    ? match.quantity * 12
+    : match.quantity;
+  if (canCompareQuantity && effectiveQty < neededNum) {
     return { status: 'low', pantryQty: match.quantity, pantryUnit: match.unit, neededQty: neededNum };
   }
   return { status: 'have', pantryQty: match.quantity, pantryUnit: match.unit };
