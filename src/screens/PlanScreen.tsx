@@ -522,7 +522,8 @@ export function PlanScreen() {
     // quota (Pro: 20/day) exactly like chat does. If the day's quota is spent,
     // don't fire the request; refund in the catch below if it fails to produce
     // a usable plan, so a failed attempt never costs a use.
-    if (!incrementAvoChat()) {
+    const chargedBucket = incrementAvoChat();
+    if (!chargedBucket) {
       setAvoMealPlanError("You've used all your Avo AI for today — it resets tomorrow.");
       return null;
     }
@@ -579,7 +580,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       return newPlan;
     } catch (e) {
       // Refund the metered use — the request didn't yield a usable plan.
-      decrementAvoChat();
+      decrementAvoChat(chargedBucket);
       setAvoMealPlanError(e instanceof Error ? e.message : 'Avo couldn\'t generate a plan. Try again!');
       return null;
     } finally {

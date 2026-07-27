@@ -181,6 +181,11 @@ export function PantryScreen() {
     'happy';
 
   const handleAction = (item: PantryItem, action: WasteAction) => {
+    // The 'eaten' action defers its log+remove by 430ms for the bite animation,
+    // during which the item and its buttons stay on screen. Ignore repeat taps
+    // on an item already mid-bite so a double-tap can't write two waste logs
+    // (double-counting money/items saved on the Impact screen).
+    if (bitingId === item.id) return;
     const daysLeft = getDaysUntilExpiration(item.expirationDate);
     if (action === 'eaten') {
       posthog.capture('pantry_item_eaten', { days_until_expiry: daysLeft, category: item.category });

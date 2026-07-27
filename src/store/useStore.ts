@@ -26,11 +26,6 @@ import { requestInAppReview } from '../lib/appReview';
 // trial. isAvoTrialActive() reads this as expired.
 const TRIAL_USED_SENTINEL = '1970-01-01';
 
-// Which daily/lifetime counter incrementAvoChat last charged, so decrementAvoChat
-// can refund exactly that one on a failed request. Chats are sent one at a time
-// (the composer blocks while streaming), so a single slot is sufficient.
-let lastChargedBucket: 'pro' | 'free' | null = null;
-
 interface ShelfLifeStore {
   // State
   user: User | null;
@@ -99,8 +94,13 @@ interface ShelfLifeStore {
 
   // Subscription
   setSubscriptionTier: (tier: SubscriptionTier) => Promise<void>;
-  incrementAvoChat: () => boolean; // returns false if limit hit
-  decrementAvoChat: () => void;
+  // Returns the quota bucket that was charged ('pro' or 'free'), or null if the
+  // daily/lifetime limit was hit and nothing was charged. Pass that same bucket
+  // back to decrementAvoChat to refund exactly what THIS call charged if the
+  // request later fails — a shared global couldn't tell two overlapping callers
+  // (e.g. a Cook chat and a Plan autopilot generation) apart.
+  incrementAvoChat: () => 'pro' | 'free' | null;
+  decrementAvoChat: (bucket: 'pro' | 'free' | null) => void;
   canAddPantryItem: () => boolean;
   isPro: () => boolean;
 
@@ -433,9 +433,9 @@ export const useStore = create<ShelfLifeStore>()(
           });
         }
       },
-      incrementAvoChat: (): boolean => {
+      incrementAvoChat: (): 'pro' | 'free' | null => {
         const s = useStore.getState();
-        if (!s.user) return false;
+        if (!s.user) return null;
         const today = formatLocalDate(new Date());
 
         // Lazily start the 7-day Avo trial on the user's first chat (free users
@@ -460,10 +460,9 @@ export const useStore = create<ShelfLifeStore>()(
                 syncProfileUpdates(s.supabaseUserId, { avo_trial_started_at: user.avoTrialStartedAt }).catch(debug.error);
               }
             }
-            return false;
+            return null;
           }
           const nextUser = { ...user, avoChatCount: count + 1, avoChatResetDate: today };
-          lastChargedBucket = 'pro';
           set({ user: nextUser });
           if (s.supabaseUserId) {
             syncProfileUpdates(s.supabaseUserId, {
@@ -472,31 +471,29 @@ export const useStore = create<ShelfLifeStore>()(
               avo_trial_started_at: nextUser.avoTrialStartedAt,
             }).catch(debug.error);
           }
-          return true;
+          return 'pro';
         }
 
         // Free tier, trial ended: 5 chats total (permanent, never resets).
         const freeUsed = user.avoFreeChatsUsed ?? 0;
-        if (freeUsed >= FREE_LIMITS.avoChatTotal) return false;
+        if (freeUsed >= FREE_LIMITS.avoChatTotal) return null;
         const nextUser = { ...user, avoFreeChatsUsed: freeUsed + 1 };
-        lastChargedBucket = 'free';
         set({ user: nextUser });
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, {
             avo_free_chats_used: nextUser.avoFreeChatsUsed,
           }).catch(debug.error);
         }
-        return true;
+        return 'free';
       },
-      decrementAvoChat: (): void => {
+      decrementAvoChat: (bucket: 'pro' | 'free' | null): void => {
         const s = useStore.getState();
         if (!s.user) return;
-        // Refund the counter that was ACTUALLY charged for this request, not
-        // whichever bucket the user's status maps to now — the two can differ if
-        // Pro/trial status flipped between charging and refunding, which would
-        // otherwise silently drain a free chat.
-        const bucket = lastChargedBucket;
-        lastChargedBucket = null;
+        // Refund the counter that was ACTUALLY charged for this request (the
+        // bucket incrementAvoChat returned to the caller), not whichever bucket
+        // the user's status maps to now — the two can differ if Pro/trial status
+        // flipped between charging and refunding, which would otherwise silently
+        // drain a free chat.
         if (!bucket) return;
         const nextUser = bucket === 'pro'
           ? { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) }
