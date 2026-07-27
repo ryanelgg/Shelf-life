@@ -20,6 +20,15 @@ const LOCATION_LABELS: Record<StorageLocation, string> = {
   counter: 'Counter',
 };
 
+// Drinks/liquids can't be "cooked" — milk, juice, soda, etc. For these the
+// Use-It-Tonight rescue button reads "Use" (open ways-to-use-it recipes) instead
+// of "Cook", which was nonsense ("cook milk"). Word-boundary matched so
+// "watermelon" isn't mistaken for "water".
+const LIQUID_NAME_RE = /\b(milk|juice|soda|tea|coffee|kombucha|kefir|lemonade|cola|wine|beer|cider|broth|stock|smoothie|water)\b/i;
+function isLiquid(item: { name: string; category: FoodCategory }): boolean {
+  return item.category === 'Beverages' || LIQUID_NAME_RE.test(item.name);
+}
+
 // Freshness as ambience: item cards warm as food ages — cool green when fresh,
 // honey as the date nears, dried-out brown once past. Low-alpha tints layered
 // over the card ground so both themes keep their footing. (The icon + label
@@ -417,7 +426,7 @@ export function PantryScreen() {
                         cursor: 'pointer',
                       }}
                     >
-                      Cook
+                      {isLiquid(item) ? 'Use' : 'Cook'}
                     </button>
                     {item.location !== 'freezer' && (
                       <button
