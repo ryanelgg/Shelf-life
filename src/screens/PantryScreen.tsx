@@ -175,9 +175,12 @@ export function PantryScreen() {
   }).length;
 
   const totalValue = pantryItems.reduce((s, i) => s + i.estimatedValue, 0);
+  // "Use It Tonight" is only for food that genuinely needs using now — overdue,
+  // today, or tomorrow (<= 1 day). Items 2-3 days out are covered by the softer
+  // "expiring soon" banner instead, and the two never show at the same time.
   const urgentItems = useMemo(() => (
     pantryItems
-      .filter(i => ['expired', 'expiring', 'expiring-soon'].includes(getFreshnessStatus(i.expirationDate)))
+      .filter(i => getDaysUntilExpiration(i.expirationDate) <= 1)
       .sort((a, b) => parseLocalDate(a.expirationDate).getTime() - parseLocalDate(b.expirationDate).getTime())
       .slice(0, 3)
   ), [pantryItems]);
@@ -605,7 +608,7 @@ export function PantryScreen() {
       </div>
 
       {/* Expiring soon alert — slides up cleanly when dismissed */}
-      {expiringCount > 0 && !alertDismissed && (
+      {urgentItems.length === 0 && expiringCount > 0 && !alertDismissed && (
         <Card
           className={alertDismissing ? 'slide-up-fade' : 'card-enter stagger-3'}
           style={{
