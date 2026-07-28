@@ -16,6 +16,8 @@ describe('normalizeName', () => {
     expect(normalizeName('  Eggs ')).toBe('egg');
     expect(normalizeName('MILK')).toBe('milk');
     expect(normalizeName('glass')).toBe('glass'); // never strips "ss"
+    expect(normalizeName('Berries')).toBe('berry'); // "-ies" → "-y", not "berrie"
+    expect(normalizeName('Strawberries')).toBe('strawberry');
   });
 });
 

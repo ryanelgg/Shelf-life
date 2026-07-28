@@ -39,7 +39,11 @@ export interface RestockPrediction {
 /** Lowercase, collapse whitespace, and lightly singularize so "Eggs"/"egg" fold together. */
 export function normalizeName(raw: string): string {
   let s = raw.trim().toLowerCase().replace(/\s+/g, ' ');
-  if (s.length > 3 && s.endsWith('s') && !s.endsWith('ss')) s = s.slice(0, -1);
+  // "-ies" → "-y" (berries→berry, strawberries→strawberry) before the plain
+  // "-s" strip, which alone would mangle these to "berrie" and fail to fold
+  // them with the singular spelling the rest of the pantry may use.
+  if (s.length > 4 && s.endsWith('ies')) s = s.slice(0, -3) + 'y';
+  else if (s.length > 3 && s.endsWith('s') && !s.endsWith('ss')) s = s.slice(0, -1);
   return s;
 }
 
