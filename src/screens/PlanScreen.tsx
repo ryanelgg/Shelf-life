@@ -281,9 +281,13 @@ function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    // Whole-word match, not substring — otherwise "egg" hides eggplant (vegan),
-    // "wheat" hides buckwheat (gluten-free), and "ham" hides graham crackers.
-    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(ingredNames))) return false;
+    // Whole-word match with an optional trailing "s", not substring. Whole-word
+    // keeps "egg" from hiding eggplant (vegan), "wheat" from hiding buckwheat
+    // (gluten-free), and "ham" from hiding graham crackers. The optional "s" is
+    // essential: the recipe catalog stores plurals ("Eggs", "Walnuts",
+    // "Almonds"), and a bare \begg\b never matches "eggs" — so a nut-free or
+    // vegan user was being shown recipes that violate their diet/allergy.
+    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?\\b`, 'i').test(ingredNames))) return false;
   }
   return true;
 }
@@ -296,10 +300,11 @@ function nameAllowedByDiet(name: string, diets: DietaryPref[]): boolean {
   const lower = name.toLowerCase();
   for (const diet of active) {
     const blocked = DIET_BLOCKLIST[diet] ?? [];
-    // Whole-word match, not substring — mirrors meetsDiet above so the auto-built
-    // shopping list doesn't silently drop "eggplant" (contains egg, vegan-ok),
-    // "buckwheat" (contains wheat, GF-ok), or "graham" (contains ham).
-    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower))) return false;
+    // Whole-word match with an optional trailing "s" — mirrors meetsDiet above so
+    // the auto-built shopping list blocks plurals ("Walnuts", "Eggs") while still
+    // not dropping "eggplant" (contains egg, vegan-ok), "buckwheat" (contains
+    // wheat, GF-ok), or "graham" (contains ham).
+    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?\\b`, 'i').test(lower))) return false;
   }
   return true;
 }
@@ -404,7 +409,12 @@ function getIngredientStatus(
   const neededNum = parseFloat(ingredientAmount.match(/[\d.]+/)?.[0] ?? '0');
   const neededUnit = parseAmountUnit(ingredientAmount);
   const pantryUnit = normalizeUnit(match.unit);
-  const COUNTABLE: Set<string | null> = new Set([null, 'pcs', 'dozen']);
+  // NOTE: 'dozen' is deliberately NOT countable here. A "dozen" pantry item is
+  // 12 units, so comparing its quantity (e.g. 1 dozen) against a raw recipe
+  // count (e.g. "2 eggs") as 1 < 2 wrongly flagged plenty of eggs as "need
+  // more". A dozen-vs-dozen need still compares via the neededUnit===pantryUnit
+  // clause below; only the raw-count case (which can't be converted) is skipped.
+  const COUNTABLE: Set<string | null> = new Set([null, 'pcs']);
   const canCompareQuantity = neededNum > 0 && (
     (neededUnit !== null && neededUnit === pantryUnit) ||
     (neededUnit === null && COUNTABLE.has(pantryUnit))
