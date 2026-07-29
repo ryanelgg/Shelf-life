@@ -17,6 +17,11 @@ describe('normalizeName', () => {
     expect(normalizeName('MILK')).toBe('milk');
     expect(normalizeName('glass')).toBe('glass'); // never strips "ss"
   });
+  it('folds "-ies" plurals to "-y" so they match the singular', () => {
+    expect(normalizeName('berries')).toBe('berry');
+    expect(normalizeName('Strawberries')).toBe('strawberry');
+    expect(normalizeName('berry')).toBe('berry'); // singular is stable
+  });
 });
 
 describe('predictRestocks', () => {
