@@ -13,6 +13,7 @@ import { FoodCategoryIcon } from '../components/FoodCategoryIcon';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AvoConsentModal } from '../components/AvoConsentModal';
 import { predictRestocks } from '../lib/shoppingRadar';
+import { meetsDiet, nameAllowedByDiet } from '../lib/dietFilter';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -244,65 +245,7 @@ function NotepadIcon({ size = 38, color = 'currentColor' }: { size?: number; col
 }
 
 // ── Dietary preference filtering ────────────────────────────────────────────
-
-const DIET_BLOCKLIST: Record<string, string[]> = {
-  vegetarian: [
-    'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
-    'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
-    'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
-    'mussels', 'halibut', 'trout', 'mahi', 'catfish',
-  ],
-  vegan: [
-    'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
-    'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
-    'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
-    'egg', 'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
-    'cheddar', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
-  ],
-  'gluten-free': [
-    'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
-    'wheat', 'barley', 'rye', 'couscous', 'noodle', 'tortilla', 'pita',
-    'crouton', 'panko', 'udon', 'ramen',
-  ],
-  'dairy-free': [
-    'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella', 'cheddar',
-    'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
-    'half-and-half', 'sour cream',
-  ],
-  'nut-free': [
-    'almond', 'walnut', 'pecan', 'cashew', 'peanut', 'pistachio', 'hazelnut',
-    'macadamia', 'pine nut', 'brazil nut',
-  ],
-};
-
-function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
-  const active = diets.filter(d => d !== 'none');
-  if (active.length === 0) return true;
-  const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
-  for (const diet of active) {
-    const blocked = DIET_BLOCKLIST[diet] ?? [];
-    // Whole-word match, not substring — otherwise "egg" hides eggplant (vegan),
-    // "wheat" hides buckwheat (gluten-free), and "ham" hides graham crackers.
-    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(ingredNames))) return false;
-  }
-  return true;
-}
-
-// Same blocklist, applied to a single item name — used to keep the auto-built
-// shopping list from suggesting anything that violates the user's diet.
-function nameAllowedByDiet(name: string, diets: DietaryPref[]): boolean {
-  const active = diets.filter(d => d !== 'none');
-  if (active.length === 0) return true;
-  const lower = name.toLowerCase();
-  for (const diet of active) {
-    const blocked = DIET_BLOCKLIST[diet] ?? [];
-    // Whole-word match, not substring — mirrors meetsDiet above so the auto-built
-    // shopping list doesn't silently drop "eggplant" (contains egg, vegan-ok),
-    // "buckwheat" (contains wheat, GF-ok), or "graham" (contains ham).
-    if (blocked.some(b => new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower))) return false;
-  }
-  return true;
-}
+// meetsDiet / nameAllowedByDiet live in ../lib/dietFilter (pure + unit-tested).
 
 const DIET_LABEL: Record<string, string> = {
   vegetarian: 'Vegetarian',
@@ -399,12 +342,14 @@ function getIngredientStatus(
   // Try numeric comparison only when units are compatible.
   // When neededUnit is null (unrecognised unit like "cloves"), only compare
   // raw quantities if the pantry item is also stored as a plain count (pcs /
-  // dozen / no unit).  Container units like "head", "bunch", "gal" cannot be
-  // meaningfully compared to a raw number without conversion tables.
+  // no unit).  "dozen" is deliberately excluded: "1 dozen eggs" is 12 eggs, so
+  // comparing its quantity (1) against a raw recipe count ("2 eggs") wrongly
+  // flags it as low.  Container units like "head", "bunch", "gal" likewise
+  // cannot be compared to a raw number without conversion tables.
   const neededNum = parseFloat(ingredientAmount.match(/[\d.]+/)?.[0] ?? '0');
   const neededUnit = parseAmountUnit(ingredientAmount);
   const pantryUnit = normalizeUnit(match.unit);
-  const COUNTABLE: Set<string | null> = new Set([null, 'pcs', 'dozen']);
+  const COUNTABLE: Set<string | null> = new Set([null, 'pcs']);
   const canCompareQuantity = neededNum > 0 && (
     (neededUnit !== null && neededUnit === pantryUnit) ||
     (neededUnit === null && COUNTABLE.has(pantryUnit))
@@ -589,7 +534,10 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
 
   const recipeUsesExpiring = (recipe: Recipe) =>
     recipe.ingredients.some(ing => {
-      const item = pantryItems.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
+      // Word-level match (same helper the rest of the screen uses) so
+      // "eggs" ↔ "Free-range eggs" and "chicken" ↔ "Chicken breast" register;
+      // exact-string equality almost never matched real pantry names.
+      const item = findPantryMatch(ing.name, pantryItems);
       if (!item) return false;
       const s = getFreshnessStatus(item.expirationDate);
       return s === 'expiring' || s === 'expiring-soon';
