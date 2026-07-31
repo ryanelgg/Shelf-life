@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { useTimeouts } from '../lib/useTimeouts';
-import { WarningIcon } from '../components/icons';
 import posthog from 'posthog-js';
 import { AvocadoMascot, type AvoMood } from '../components/AvocadoMascot';
 import { Card } from '../components/Card';
@@ -135,8 +134,6 @@ export function PantryScreen() {
   // Item currently playing its "bite" exit (eaten action) before removal.
   const [bitingId, setBitingId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
-  const [alertDismissed, setAlertDismissed] = useState(false);
-  const [alertDismissing, setAlertDismissing] = useState(false);
   const scheduleTimeout = useTimeouts();
   const [listAnimKey, setListAnimKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -244,12 +241,6 @@ export function PantryScreen() {
     setActiveTab('plan');
   };
 
-  const handleDismissAlert = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setAlertDismissing(true);
-    scheduleTimeout(() => setAlertDismissed(true), 290);
-  };
-
   const handleLocationChange = (loc: StorageLocation | 'all') => {
     setActiveLocation(loc);
     setListAnimKey(k => k + 1);
@@ -336,109 +327,6 @@ export function PantryScreen() {
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>Value</div>
         </Card>
       </div>
-
-      {/* Use it tonight */}
-      {urgentItems.length > 0 && (
-        <Card className="card-enter stagger-2" style={{
-          padding: '16px',
-          border: '1px solid rgba(212, 134, 11, 0.25)',
-          background: 'rgba(212, 134, 11, 0.04)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', marginBottom: '12px' }}>
-            <div>
-              <div style={{ fontSize: '16px', fontWeight: 800 }}>Use It Tonight</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Avo picked the food most worth rescuing now.
-              </div>
-            </div>
-            <button
-              onClick={() => { setExpiringOnly(true); setListAnimKey(k => k + 1); }}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '999px',
-                border: '1px solid rgba(212,134,11,0.28)',
-                background: 'var(--bg-card)',
-                color: 'var(--expiring-soon)',
-                fontSize: '11px',
-                fontWeight: 700,
-                fontFamily: "'Cormorant Garamond', serif",
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Show all
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {urgentItems.map((item, index) => {
-              const days = getDaysUntilExpiration(item.expirationDate);
-              const color = getFreshnessColor(getFreshnessStatus(item.expirationDate));
-              return (
-                <div
-                  key={item.id}
-                  className={`use-tonight-row use-tonight-row-${index + 1}`}
-                  style={{
-                    padding: '11px 12px',
-                    borderRadius: '13px',
-                    background: 'var(--bg-card)',
-                    border: '1px solid rgba(74,124,89,0.10)',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr auto',
-                    gap: '10px',
-                    alignItems: 'center',
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <FoodCategoryIcon category={item.category} size={18} />
-                      <span style={{ fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color, marginTop: '4px', fontWeight: 700 }}>
-                      {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Expires today' : `${days} day${days === 1 ? '' : 's'} left`}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                      onClick={() => openRecipesFor(item)}
-                      style={{
-                        padding: '7px 10px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        fontFamily: "'Cormorant Garamond', serif",
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Cook
-                    </button>
-                    {item.location !== 'freezer' && (
-                      <button
-                        onClick={() => handleFreezeItem(item)}
-                        style={{
-                          padding: '7px 10px',
-                          borderRadius: '10px',
-                          border: '1px solid var(--accent)',
-                          background: 'var(--accent-dim)',
-                          color: 'var(--accent)',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          fontFamily: "'Cormorant Garamond', serif",
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Freeze
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
 
       {/* Search bar */}
       <div className="card-enter stagger-2" style={{ position: 'relative' }}>
@@ -590,39 +478,106 @@ export function PantryScreen() {
         </div>
       </div>
 
-      {/* Expiring soon alert — slides up cleanly when dismissed */}
-      {expiringCount > 0 && !alertDismissed && (
-        <Card
-          className={alertDismissing ? 'slide-up-fade' : 'card-enter stagger-3'}
-          style={{
-            padding: '12px 16px',
-            border: '1px solid rgba(212, 134, 11, 0.25)',
-            background: 'rgba(212, 134, 11, 0.04)',
-            position: 'relative',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '24px' }}>
-            <WarningIcon size={18} color="var(--expiring-soon)" />
+      {/* Use it tonight */}
+      {urgentItems.length > 0 && (
+        <Card className="card-enter stagger-3" style={{
+          padding: '16px',
+          border: '1px solid rgba(212, 134, 11, 0.25)',
+          background: 'rgba(212, 134, 11, 0.04)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', marginBottom: '12px' }}>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--expiring-soon)' }}>
-                {expiringCount} item{expiringCount > 1 ? 's' : ''} expiring soon!
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Use them up or check the Cook tab for recipe ideas
+              <div style={{ fontSize: '16px', fontWeight: 800 }}>Use It Tonight</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Avo picked the food most worth rescuing now.
               </div>
             </div>
+            <button
+              onClick={() => { setExpiringOnly(true); setListAnimKey(k => k + 1); }}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '999px',
+                border: '1px solid rgba(212,134,11,0.28)',
+                background: 'var(--bg-card)',
+                color: 'var(--expiring-soon)',
+                fontSize: '11px',
+                fontWeight: 700,
+                fontFamily: "'Cormorant Garamond', serif",
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Show all
+            </button>
           </div>
-          <button
-            onClick={handleDismissAlert}
-            style={{
-              position: 'absolute', top: 8, right: 10,
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text-muted)', fontSize: '16px', padding: '4px',
-              lineHeight: 1,
-            }}
-          >
-            ✕
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {urgentItems.map((item, index) => {
+              const days = getDaysUntilExpiration(item.expirationDate);
+              const color = getFreshnessColor(getFreshnessStatus(item.expirationDate));
+              return (
+                <div
+                  key={item.id}
+                  className={`use-tonight-row use-tonight-row-${index + 1}`}
+                  style={{
+                    padding: '11px 12px',
+                    borderRadius: '13px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid rgba(74,124,89,0.10)',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto',
+                    gap: '10px',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <FoodCategoryIcon category={item.category} size={18} />
+                      <span style={{ fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color, marginTop: '4px', fontWeight: 700 }}>
+                      {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Expires today' : `${days} day${days === 1 ? '' : 's'} left`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => openRecipesFor(item)}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: 'var(--accent)',
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        fontFamily: "'Cormorant Garamond', serif",
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cook
+                    </button>
+                    {item.location !== 'freezer' && (
+                      <button
+                        onClick={() => handleFreezeItem(item)}
+                        style={{
+                          padding: '7px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid var(--accent)',
+                          background: 'var(--accent-dim)',
+                          color: 'var(--accent)',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          fontFamily: "'Cormorant Garamond', serif",
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Freeze
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 
