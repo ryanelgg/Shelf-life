@@ -364,6 +364,16 @@ function findPantryMatch(ingredientName: string, pantryItems: PantryItem[]): Pan
   return pantryItems.find(item => ingredientMatchesItem(ingredientName, item.name));
 }
 
+// The recipe's ingredients that nothing in the pantry matches — the real "gaps"
+// to buy. Mirrors the per-card "missing" badge (getIngredientStatus → 'missing'),
+// and replaces the static recipe.missingIngredients field, which is always empty
+// because setRecipes is never called and browse recipes hard-code it to [].
+function recipeGapIngredients(recipe: Recipe, pantryItems: PantryItem[]): string[] {
+  return recipe.ingredients
+    .filter(ing => !findPantryMatch(ing.name, pantryItems))
+    .map(ing => ing.name);
+}
+
 function matchedPantryItemsForRecipe(recipe: Recipe, pantryItems: PantryItem[]): PantryItem[] {
   const seen = new Set<string>();
   return recipe.ingredients
@@ -467,7 +477,8 @@ export function PlanScreen() {
     // quota (Pro: 20/day) exactly like chat does. If the day's quota is spent,
     // don't fire the request; refund in the catch below if it fails to produce
     // a usable plan, so a failed attempt never costs a use.
-    if (!incrementAvoChat()) {
+    const chargedBucket = incrementAvoChat();
+    if (!chargedBucket) {
       setAvoMealPlanError("You've used all your Avo AI for today — it resets tomorrow.");
       return null;
     }
@@ -524,7 +535,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       return newPlan;
     } catch (e) {
       // Refund the metered use — the request didn't yield a usable plan.
-      decrementAvoChat();
+      decrementAvoChat(chargedBucket);
       setAvoMealPlanError(e instanceof Error ? e.message : 'Avo couldn\'t generate a plan. Try again!');
       return null;
     } finally {
@@ -566,7 +577,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       .map(d => (d.recipeId ? ([...recipes, ...browseRecipes]).find(r => r.id === d.recipeId) : null))
       .filter((r): r is Recipe => Boolean(r));
     const gapItems = planRecipes.flatMap(r =>
-      r.missingIngredients.map(name => ({ name, category: 'Other' as FoodCategory, fromRecipe: r.name as string | undefined }))
+      recipeGapIngredients(r, pantryItems).map(name => ({ name, category: 'Other' as FoodCategory, fromRecipe: r.name as string | undefined }))
     );
     const staleItems = pantryItems
       .filter(p => {
@@ -707,7 +718,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
   const handleAutoBuild = () => {
     if (!isPro()) { setShowUpgrade(true); return; }
     const gapItems = plannedRecipes.flatMap(r =>
-      r.missingIngredients.map(name => ({ name, category: 'Other' as FoodCategory, fromRecipe: r.name as string | undefined }))
+      recipeGapIngredients(r, pantryItems).map(name => ({ name, category: 'Other' as FoodCategory, fromRecipe: r.name as string | undefined }))
     );
     const staleItems = pantryItems
       .filter(p => {
@@ -807,11 +818,12 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
   };
 
   const suggestions = plannedRecipes.flatMap(r =>
-    r.missingIngredients.map(ing => ({
+    recipeGapIngredients(r, pantryItems).map(ing => ({
       name: ing,
       fromRecipe: r.name,
     }))
-  ).filter((s, i, arr) => arr.findIndex(a => a.name === s.name) === i).slice(0, 8);
+  ).filter(s => nameAllowedByDiet(s.name, activeDiets))
+    .filter((s, i, arr) => arr.findIndex(a => a.name === s.name) === i).slice(0, 8);
 
   // Total items to buy from meal plan
   const totalToBuy = mealPlan.reduce((s, d) => s + d.toBuy, 0);
