@@ -99,7 +99,8 @@ export function CookScreen() {
 
     hapticLight();
 
-    if (!incrementAvoChat()) {
+    const chargedBucket = incrementAvoChat();
+    if (!chargedBucket) {
       setUpgradeReason('chat');
       setShowUpgrade(true);
       return;
@@ -155,7 +156,7 @@ export function CookScreen() {
     } catch (err) {
       debug.error('[Avo chat error]', err);
       // Rollback the chat credit since the request failed
-      decrementAvoChat();
+      decrementAvoChat(chargedBucket);
       const status = (err as { status?: number })?.status;
       const friendly = (err as { friendly?: boolean })?.friendly;
       const errorMsg = friendly

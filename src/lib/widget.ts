@@ -59,10 +59,13 @@ export async function publishWidgetData(items: PantryItem[]): Promise<void> {
   if (Capacitor.getPlatform() !== 'ios') return;
   const value = JSON.stringify(buildWidgetPayload(items));
   if (value === lastSerialized) return; // nothing changed — skip the native call
-  lastSerialized = value;
   try {
     // Writes to the App Group suite and calls WidgetCenter.reloadAllTimelines().
     await PantreWidget.setData({ value });
+    // Cache only AFTER a successful write — otherwise a failed publish poisons
+    // the dedupe cache and the widget freezes on stale data until the payload
+    // changes again.
+    lastSerialized = value;
   } catch (e) {
     debug.error('[widget] publish failed', e);
   }
