@@ -703,6 +703,21 @@ export function PantryScreen() {
                     <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--fresh)', fontFamily: "'Cormorant Garamond', serif" }}>+{EXTEND_DAYS}d</span>
                   </button>
                   <button
+                    onClick={() => { setEditingItem(item); setSwipingItem(null); }}
+                    aria-label={`Edit ${item.name}`}
+                    style={{
+                      flex: 1, padding: '10px 4px', background: 'transparent',
+                      border: '1px solid var(--text-muted)',
+                      borderRadius: '10px', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    </svg>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'Cormorant Garamond', serif" }}>Edit</span>
+                  </button>
+                  <button
                     onClick={() => setSwipingItem(null)}
                     style={{
                       position: 'absolute', top: 6, right: 8,
