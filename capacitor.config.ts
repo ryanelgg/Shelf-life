@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.elghazzali.shelflife',
-  appName: 'Shelf Life',
+  appName: 'Pantre',
   webDir: 'dist',
   server: {
     iosScheme: 'shelflife',
