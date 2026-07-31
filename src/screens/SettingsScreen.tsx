@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import posthog from 'posthog-js';
 import { Card } from '../components/Card';
 import { AvocadoMascot } from '../components/AvocadoMascot';
@@ -45,6 +45,12 @@ export function SettingsScreen() {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  // Clear the pending toast timer on unmount so it can't fire setToast on an
+  // unmounted component (e.g. after tapping Done while a toast is showing).
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
   const close = () => {

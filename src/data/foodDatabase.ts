@@ -86,7 +86,7 @@ function searchDatabase(db: FoodEntry[], query: string, limit: number) {
 export function searchFoods(query: string, limit = 6): FoodEntry[] {
   if (query.trim().length < 2) return [];
 
-  const normalizedQuery = query.toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
   const database = fullDatabase ?? coreDatabase;
   if (!database) {
     void preloadCoreDatabase();
