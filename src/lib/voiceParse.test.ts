@@ -25,6 +25,20 @@ describe('parseVoiceItems date parsing', () => {
   it('number words still work ("in two days")', () => {
     expect(expOf('eggs in two days')).toBe('2026-07-04');
   });
+
+  it('"this week" is +7 days (regression: only "a/next week" parsed before)', () => {
+    expect(expOf('milk this week')).toBe('2026-07-09');
+  });
+
+  it('"this month" is +30 days', () => {
+    expect(expOf('milk this month')).toBe('2026-08-01');
+  });
+
+  it('"this week" does not pollute the item name', () => {
+    const items = parseVoiceItems('add milk this week', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('milk');
+  });
 });
 
 describe('parseVoiceItems compound foods', () => {

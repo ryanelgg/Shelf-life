@@ -107,10 +107,10 @@ function extractDateOffset(text: string, today: Date): { offset: number; matched
   m = text.match(new RegExp(lead + '(tomorrow|tmrw|tmw)\\b', 'i'));
   if (m) return { offset: 1, matched: m[0] };
 
-  // next week / this week / next month
-  m = text.match(new RegExp(lead + '(?:in\\s+)?(?:a|next)\\s+week\\b', 'i'));
+  // next week / this week / a week / next month / this month
+  m = text.match(new RegExp(lead + '(?:in\\s+)?(?:a|this|next)\\s+week\\b', 'i'));
   if (m) return { offset: 7, matched: m[0] };
-  m = text.match(new RegExp(lead + '(?:in\\s+)?(?:a|next)\\s+month\\b', 'i'));
+  m = text.match(new RegExp(lead + '(?:in\\s+)?(?:a|this|next)\\s+month\\b', 'i'));
   if (m) return { offset: 30, matched: m[0] };
 
   // (this/next) weekday — soonest future occurrence, +7 more for "next".
