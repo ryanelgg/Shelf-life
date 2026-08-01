@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import { AvocadoMascot } from '../components/AvocadoMascot';
 import { PlateIcon, LeafIcon, SproutIcon, WheatIcon, MilkIcon, PeanutIcon, type IconProps } from '../components/icons';
 import { UpgradeModal } from '../components/UpgradeModal';
-import { useStore } from '../store/useStore';
+import { useStore, TRIAL_USED_SENTINEL } from '../store/useStore';
 import { formatLocalDate } from '../types';
 import type { DietaryPref, AuthProvider, SubscriptionTier } from '../types';
 import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError, verifyEmailOtp, resendEmailOtp } from '../lib/supabaseSync';
@@ -220,8 +220,11 @@ export function OnboardingFlow() {
       avoChatCount: 0,
       avoChatResetDate: formatLocalDate(new Date()),
       // Trial starts lazily on first Avo chat (see incrementAvoChat), so a user
-      // who never opens Avo doesn't burn their 7 days.
-      avoTrialStartedAt: null,
+      // who never opens Avo doesn't burn their 7 days. But if they onboard
+      // straight into Pro, stamp the trial "used" sentinel — same as
+      // setSubscriptionTier('pro') — so cancelling Pro later can't hand them a
+      // fresh free week via the lazy "not pro && never started a trial" check.
+      avoTrialStartedAt: chosenTier === 'pro' ? TRIAL_USED_SENTINEL : null,
       avoFreeChatsUsed: 0,
     };
     setUser(newUser);
@@ -905,12 +908,16 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
     const progressInterval = 30;
     let elapsed = 0;
 
+    // Tracked so the completion callback can't fire onDone() after unmount if
+    // the setup screen is torn down within ~400ms of the bar filling.
+    let doneTimer: ReturnType<typeof setTimeout> | undefined;
+
     const progressTimer = setInterval(() => {
       elapsed += progressInterval;
       setProgress(Math.min(100, (elapsed / totalDuration) * 100));
       if (elapsed >= totalDuration) {
         clearInterval(progressTimer);
-        setTimeout(() => onDoneRef.current(), 400);
+        doneTimer = setTimeout(() => onDoneRef.current(), 400);
       }
     }, progressInterval);
 
@@ -922,7 +929,11 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
       });
     }, msgInterval);
 
-    return () => { clearInterval(progressTimer); clearInterval(msgTimer); };
+    return () => {
+      clearInterval(progressTimer);
+      clearInterval(msgTimer);
+      if (doneTimer) clearTimeout(doneTimer);
+    };
   }, []);
 
   return (

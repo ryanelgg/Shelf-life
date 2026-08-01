@@ -24,7 +24,7 @@ import { requestInAppReview } from '../lib/appReview';
 // A long-past date used to mark the one-time Avo trial "already used" for a user
 // who reached Pro without starting it, so cancelling Pro can't grant a fresh
 // trial. isAvoTrialActive() reads this as expired.
-const TRIAL_USED_SENTINEL = '1970-01-01';
+export const TRIAL_USED_SENTINEL = '1970-01-01';
 
 // Which daily/lifetime counter a charge landed on. incrementAvoChat returns the
 // bucket it charged (or null if it couldn't) and decrementAvoChat takes that
