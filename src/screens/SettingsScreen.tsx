@@ -40,6 +40,7 @@ export function SettingsScreen() {
   const [closing, setClosing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -51,11 +52,14 @@ export function SettingsScreen() {
   // unmounted component (e.g. after tapping Done while a toast is showing).
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
   }, []);
 
   const close = () => {
     setClosing(true);
-    setTimeout(() => {
+    // Tracked so the exit-animation timer can't setState after unmount.
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => {
       setShowSettings(false);
       setClosing(false);
     }, 280);
