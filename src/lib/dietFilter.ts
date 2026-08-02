@@ -14,8 +14,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
-    'egg', 'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
-    'cheddar', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
+    'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
+    'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -23,8 +23,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'crouton', 'panko', 'udon', 'ramen',
   ],
   'dairy-free': [
-    'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella', 'cheddar',
-    'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
+    'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
+    'cheddar', 'brie', 'feta', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
     'half-and-half', 'sour cream',
   ],
   'nut-free': [
@@ -57,8 +57,21 @@ function blockRegex(term: string): RegExp {
   return new RegExp(`\\b(?:${singular}|${plural})\\b`, 'i');
 }
 
+// Plant-based "milk"/"cream" (coconut milk, almond milk, oat milk, coconut
+// cream, …) are vegan AND dairy-free, but the bare 'milk'/'cream' blocklist
+// terms would otherwise match the "milk"/"cream" token inside them and wrongly
+// hide vegan-tagged recipes. We blank out just that trailing token, leaving the
+// plant qualifier intact so nut-free still blocks "almond milk" via 'almond'.
+const PLANT_MILK_PHRASE =
+  /\b(coconut|almond|oat|soy|soya|rice|cashew|hemp|pea|flax|macadamia|hazelnut|walnut|sunflower|pistachio)\s+(?:milk|cream)\b/gi;
+
+function scrubPlantMilks(text: string): string {
+  return text.replace(PLANT_MILK_PHRASE, '$1 plantbev');
+}
+
 function isBlocked(text: string, blocked: string[]): boolean {
-  return blocked.some(b => blockRegex(b).test(text));
+  const scrubbed = scrubPlantMilks(text);
+  return blocked.some(b => blockRegex(b).test(scrubbed));
 }
 
 // True if the recipe is safe for every active dietary preference.

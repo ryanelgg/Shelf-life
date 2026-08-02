@@ -13,6 +13,7 @@ const NUT_FREE: DietaryPref[] = ['nut-free'];
 const VEGAN: DietaryPref[] = ['vegan'];
 const VEGETARIAN: DietaryPref[] = ['vegetarian'];
 const GF: DietaryPref[] = ['gluten-free'];
+const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
 
 describe('meetsDiet — plural allergen names (regression: recipes store plurals)', () => {
   it('blocks recipes whose ingredients are stored in the plural form', () => {
@@ -45,6 +46,38 @@ describe('meetsDiet — plural allergen names (regression: recipes store plurals
 
   it('no active diet → everything passes', () => {
     expect(meetsDiet(recipe('Walnuts', 'Eggs'), ['none'])).toBe(true);
+  });
+});
+
+describe('meetsDiet — plant milks/creams are vegan & dairy-free (regression)', () => {
+  it('does NOT hide vegan/dairy-free recipes that use plant milk/cream', () => {
+    // Real catalog recipes (Coconut Red Lentil Dal, Chickpea Spinach Curry,
+    // chia puddings) are tagged vegan+dairy-free and use "Coconut milk".
+    expect(meetsDiet(recipe('Coconut milk', 'Chickpeas', 'Spinach'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Coconut milk', 'Chickpeas'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Almond milk', 'Banana'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Oat milk'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Coconut cream', 'Mango'), VEGAN)).toBe(true);
+  });
+
+  it('STILL blocks genuine dairy milk/cream', () => {
+    expect(meetsDiet(recipe('Whole milk'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Milk'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Heavy cream'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Sour cream'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Ice cream'), VEGAN)).toBe(false);
+  });
+
+  it('nut-free STILL blocks almond milk (via the "almond" term)', () => {
+    expect(meetsDiet(recipe('Almond milk'), NUT_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Cashew milk'), NUT_FREE)).toBe(false);
+  });
+
+  it('catches fused/omitted dairy terms (buttermilk, feta)', () => {
+    expect(meetsDiet(recipe('Buttermilk'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Buttermilk'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Feta'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Feta cheese', 'Olives'), VEGAN)).toBe(false);
   });
 });
 
