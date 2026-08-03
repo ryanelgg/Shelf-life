@@ -4,7 +4,7 @@ import { AvocadoMascot } from '../components/AvocadoMascot';
 import { PlateIcon, LeafIcon, SproutIcon, WheatIcon, MilkIcon, PeanutIcon, type IconProps } from '../components/icons';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { useStore } from '../store/useStore';
-import { formatLocalDate } from '../types';
+import { formatLocalDate, initialTrialStamp } from '../types';
 import type { DietaryPref, AuthProvider, SubscriptionTier } from '../types';
 import { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, upsertProfile, EmailAlreadyRegisteredError, verifyEmailOtp, resendEmailOtp } from '../lib/supabaseSync';
 import { meetsMinimumAge, isValidBirthYear } from '../lib/age';
@@ -219,9 +219,11 @@ export function OnboardingFlow() {
       subscriptionTier: chosenTier,
       avoChatCount: 0,
       avoChatResetDate: formatLocalDate(new Date()),
-      // Trial starts lazily on first Avo chat (see incrementAvoChat), so a user
-      // who never opens Avo doesn't burn their 7 days.
-      avoTrialStartedAt: null,
+      // Free users: trial starts lazily on first Avo chat (see incrementAvoChat),
+      // so someone who never opens Avo doesn't burn their 7 days. Onboarding
+      // straight into Pro instead pre-marks the trial used, so cancelling Pro
+      // later can't hand out a fresh free 7-day Avo trial.
+      avoTrialStartedAt: initialTrialStamp(chosenTier),
       avoFreeChatsUsed: 0,
     };
     setUser(newUser);

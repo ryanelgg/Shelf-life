@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import posthog from 'posthog-js';
 import type { User, PantryItem, WasteLog, Recipe, ShoppingList, Tab, ThemeMode, MealPlanDay, SubscriptionTier, AuthProvider, Household } from '../types';
 import { BROWSE_RECIPES } from '../data/recipes';
-import { formatLocalDate, FREE_LIMITS, isAvoTrialActive } from '../types';
+import { formatLocalDate, FREE_LIMITS, isAvoTrialActive, TRIAL_USED_SENTINEL } from '../types';
 import { syncPantryAdd, syncPantryUpdate, syncPantryRemove, syncWasteLog, syncProfileUpdates } from '../lib/supabaseSync';
 import { clearOutbox } from '../lib/syncOutbox';
 import { resetAvoChatSession } from '../lib/avoChatSession';
@@ -20,11 +20,6 @@ import {
   celebrateStreakMilestone,
 } from '../lib/notifications';
 import { requestInAppReview } from '../lib/appReview';
-
-// A long-past date used to mark the one-time Avo trial "already used" for a user
-// who reached Pro without starting it, so cancelling Pro can't grant a fresh
-// trial. isAvoTrialActive() reads this as expired.
-const TRIAL_USED_SENTINEL = '1970-01-01';
 
 // Which daily/lifetime counter a charge landed on. incrementAvoChat returns the
 // bucket it charged (or null if it couldn't) and decrementAvoChat takes that
