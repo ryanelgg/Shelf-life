@@ -53,6 +53,24 @@ export function isAvoTrialActive(
   return avoTrialDaysLeft(u, now) > 0;
 }
 
+/**
+ * A long-past date stamped into `avoTrialStartedAt` to mark the one-time Avo
+ * trial as already spent (isAvoTrialActive reads it as expired). Used when a
+ * user reaches Pro without ever starting the free trial, so cancelling Pro
+ * later can't hand them a fresh free week.
+ */
+export const TRIAL_USED_SENTINEL = '1970-01-01';
+
+/**
+ * The `avoTrialStartedAt` value a brand-new user should be created with for a
+ * chosen tier. A user who onboards straight into Pro must have the trial
+ * pre-marked used (the sentinel); a free user starts `null`, so the trial can
+ * begin lazily on their first Avo chat.
+ */
+export function initialTrialStamp(tier: SubscriptionTier): string | null {
+  return tier === 'pro' ? TRIAL_USED_SENTINEL : null;
+}
+
 export type ThemeMode = 'dark' | 'light';
 
 export type DietaryPref = 'vegetarian' | 'vegan' | 'gluten-free' | 'dairy-free' | 'nut-free' | 'none';

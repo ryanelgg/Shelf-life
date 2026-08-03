@@ -70,6 +70,27 @@ describe('predictRestocks', () => {
     expect(eggs!.daysUntilRunOut).toBeGreaterThanOrEqual(-RADAR_HORIZON_DAYS - 30);
   });
 
+  it('keeps showing an item that is only ~1 cycle overdue', () => {
+    // ~10-day cadence, run-out 2026-06-30 → 14 days overdue (< 2 cycles = 20).
+    const logs = [waste('Rice', '2026-05-31'), waste('Rice', '2026-06-10'), waste('Rice', '2026-06-20')];
+    const rice = predictRestocks([], logs, TODAY).find(p => p.key === 'rice');
+    expect(rice).toBeTruthy();
+    expect(rice!.daysUntilRunOut).toBeLessThan(0);
+  });
+
+  it('stops nagging once an item is more than two full restock cycles overdue', () => {
+    // ~10-day cadence, last bought 2026-05-31 → run-out 2026-06-10, i.e. 34 days
+    // overdue (> 2 cycles = 20). You clearly stopped buying it, so drop it.
+    const logs = [
+      waste('Rice', '2026-05-01'),
+      waste('Rice', '2026-05-11'),
+      waste('Rice', '2026-05-21'),
+      waste('Rice', '2026-05-31'),
+    ];
+    const preds = predictRestocks([], logs, TODAY);
+    expect(preds.find(p => p.key === 'rice')).toBeFalsy();
+  });
+
   it('sorts most-urgent first', () => {
     const logs = [
       // Eggs overdue

@@ -14,8 +14,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
-    'egg', 'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
-    'cheddar', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
+    'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
+    'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -23,8 +23,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'crouton', 'panko', 'udon', 'ramen',
   ],
   'dairy-free': [
-    'milk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella', 'cheddar',
-    'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
+    'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
+    'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
     'half-and-half', 'sour cream',
   ],
   'nut-free': [
@@ -57,8 +57,28 @@ function blockRegex(term: string): RegExp {
   return new RegExp(`\\b(?:${singular}|${plural})\\b`, 'i');
 }
 
+// Plant-based "milk"/"cream" phrases are vegan AND dairy-free, yet the bare
+// blocklist terms `milk`/`cream` match the "milk"/"cream" token inside them
+// ("Coconut milk", "Almond milk", "Oat milk", "Coconut cream"). Neutralize just
+// the trailing "milk"/"cream" word of a plant phrase before the dairy check,
+// while LEAVING the qualifier ("almond", "coconut", …) intact so that nut-free
+// still blocks "almond milk"/"cashew cream" via the `almond`/`cashew` terms and
+// so no real dairy term is affected.
+const PLANT_MILK_QUALIFIERS =
+  'coconut|almond|oat|soy|rice|cashew|hazelnut|macadamia|hemp|flax|pea|walnut|pistachio|quinoa|banana';
+const PLANT_MILK_CREAM = new RegExp(
+  `\\b(${PLANT_MILK_QUALIFIERS})\\s+(milk|cream)\\b`,
+  'gi',
+);
+
+function scrubPlantDairy(text: string): string {
+  // Drop only the "milk"/"cream" word, keep the qualifier for allergen checks.
+  return text.replace(PLANT_MILK_CREAM, '$1');
+}
+
 function isBlocked(text: string, blocked: string[]): boolean {
-  return blocked.some(b => blockRegex(b).test(text));
+  const scrubbed = scrubPlantDairy(text);
+  return blocked.some(b => blockRegex(b).test(scrubbed));
 }
 
 // True if the recipe is safe for every active dietary preference.
