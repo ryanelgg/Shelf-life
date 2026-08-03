@@ -19,6 +19,14 @@ import { parseLocalDate, formatLocalDate } from '../types';
 export const RADAR_MIN_EVENTS = 3;
 /** Surface an item when it's predicted to run out within this many days (incl. overdue). */
 export const RADAR_HORIZON_DAYS = 4;
+/**
+ * How many full restock cycles past the predicted run-out we keep nagging
+ * before giving up. A staple you bought a few times months ago then stopped
+ * buying would otherwise read "likely out now" forever and keep auto-adding to
+ * the list; once it's more than this many average intervals overdue we assume
+ * you simply stopped buying it and drop it.
+ */
+export const RADAR_OVERDUE_CYCLES = 2;
 
 const DAY_MS = 86_400_000;
 
@@ -139,6 +147,10 @@ export function predictRestocks(
     const predictedRunOutDate = addDaysStr(lastActivityDate, avgIntervalDays);
     const daysUntilRunOut = daysBetween(todayStr, predictedRunOutDate);
     if (daysUntilRunOut > RADAR_HORIZON_DAYS) continue;
+    // Lower bound: stop nagging once an item is more than RADAR_OVERDUE_CYCLES
+    // full restock intervals overdue — you've clearly stopped buying it, so
+    // don't keep showing "likely out now" and auto-adding it forever.
+    if (daysUntilRunOut < -RADAR_OVERDUE_CYCLES * avgIntervalDays) continue;
 
     const qty = Math.max(1, Math.round(median(agg.quantities)));
     const confidence: RestockPrediction['confidence'] =
