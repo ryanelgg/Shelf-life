@@ -48,6 +48,42 @@ describe('meetsDiet — plural allergen names (regression: recipes store plurals
   });
 });
 
+describe('meetsDiet — plant-based milk/cream is vegan & dairy-free (regression: coconut milk was hidden)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('does NOT hide plant-milk recipes from vegan users', () => {
+    // The catalog ships these tagged vegan+dairy-free (e.g. Coconut Red Lentil Dal).
+    expect(meetsDiet(recipe('Coconut milk', 'Red lentils'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Almond milk', 'Banana'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Oat milk'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Coconut cream'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Soy milk'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Cashew cream'), DAIRY_FREE)).toBe(true);
+  });
+
+  it('still blocks GENUINE dairy for vegan & dairy-free', () => {
+    expect(meetsDiet(recipe('Whole milk'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Milk'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Heavy cream'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Sour cream'), DAIRY_FREE)).toBe(false);
+    // fused/aliased dairy the whole-word matcher used to miss
+    expect(meetsDiet(recipe('Buttermilk'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Buttermilk'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Feta'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Feta'), DAIRY_FREE)).toBe(false);
+  });
+
+  it('keeps nut-free blocking "almond milk"/"cashew cream" via the qualifier', () => {
+    // Scrubbing removes only "milk"/"cream"; the nut qualifier must still match.
+    expect(meetsDiet(recipe('Almond milk'), NUT_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Cashew cream'), NUT_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Hazelnut milk'), NUT_FREE)).toBe(false);
+    // …but coconut/oat/soy milk are nut-free-safe.
+    expect(meetsDiet(recipe('Coconut milk'), NUT_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Oat milk'), NUT_FREE)).toBe(true);
+  });
+});
+
 describe('nameAllowedByDiet — single shopping-list item names', () => {
   it('rejects plural allergen item names', () => {
     expect(nameAllowedByDiet('Walnuts', NUT_FREE)).toBe(false);
