@@ -434,7 +434,7 @@ export function PlanScreen() {
   const {
     mealPlan, recipes, pantryItems, browseRecipes, user, wasteLogs,
     shoppingLists, toggleShoppingItem, addShoppingList, removeShoppingList, updateShoppingList, removeShoppingItem,
-    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, addPantryItem, removePantryItem, setMealPlan,
+    isPro, setSubscriptionTier, recipeSearchSeed, setRecipeSearchSeed, addWasteLog, addPantryItem, updatePantryItem, removePantryItem, canAddPantryItem, setMealPlan,
     incrementAvoChat, decrementAvoChat, avoAiConsent, setAvoAiConsent,
     mealPlanAutopilot, setMealPlanAutopilot, mealPlanAutopilotWeek, setMealPlanAutopilotWeek,
   } = useStore();
@@ -781,6 +781,15 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
   };
 
   const handleCookFinish = (recipe: Recipe, usedItemIds: string[], saveLeftovers: boolean) => {
+    // When saving leftovers, repurpose one of the just-consumed pantry rows into
+    // the cooked dish instead of adding a brand-new item. That keeps the pantry
+    // count flat (it only ever goes down as you cook), so cooking can never push
+    // a free user past the 20-item cap. Pick the first still-present used item as
+    // the "main" ingredient to transform.
+    const leftoverHostId = saveLeftovers
+      ? usedItemIds.find(id => pantryItems.some(p => p.id === id))
+      : undefined;
+
     usedItemIds.forEach(id => {
       const item = pantryItems.find(p => p.id === id);
       if (!item) return;
@@ -793,25 +802,35 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
         estimatedValue: item.estimatedValue,
         quantity: item.quantity,
       });
-      removePantryItem(id);
+      // Every consumed ingredient is credited as "eaten" above; remove them all
+      // — except the one we're turning into the leftover dish (updated below).
+      if (id !== leftoverHostId) removePantryItem(id);
     });
-    // Leftovers timer: drop the cooked dish back into the fridge with a 4-day
-    // use-by date so it gets its own expiry reminders (addPantryItem schedules
-    // them). estimatedValue 0 — the ingredients' value was already credited as
-    // "eaten" above, so this must not double-count toward money saved.
+
+    // Leftovers timer: give the cooked dish a 4-day use-by date so it gets its
+    // own expiry reminders. estimatedValue 0 — the ingredients' value was
+    // already credited as "eaten" above, so this must not double-count toward
+    // money saved.
     if (saveLeftovers) {
-      addPantryItem({
-        id: genId('leftover'),
+      const leftover = {
         name: `${recipe.name} (leftovers)`,
-        category: 'Other',
-        location: 'fridge',
+        category: 'Other' as const,
+        location: 'fridge' as const,
         quantity: 1,
         unit: 'serving',
         addedDate: todayStr(),
         expirationDate: leftoverExpiryStr(),
         estimatedValue: 0,
-        dateType: 'use-by',
-      });
+        dateType: 'use-by' as const,
+      };
+      if (leftoverHostId) {
+        // Transform the consumed row in place — no net change to the item count.
+        updatePantryItem(leftoverHostId, leftover);
+      } else if (canAddPantryItem()) {
+        // Rare: the recipe used no pantry rows to repurpose. Only add a fresh
+        // leftover item if there's still room under the free-tier cap.
+        addPantryItem({ id: genId('leftover'), ...leftover });
+      }
     }
     setCookingRecipe(null);
     setExpandedRecipe(recipe.id);
