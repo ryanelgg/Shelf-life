@@ -84,6 +84,58 @@ describe('meetsDiet — plant-based milk/cream is vegan & dairy-free (regression
   });
 });
 
+describe('meetsDiet — non-dairy "butter"/"cream" are not dairy (regression: peanut butter was hidden)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('does NOT hide nut/seed/fruit butters from vegan & dairy-free users', () => {
+    expect(meetsDiet(recipe('Peanut butter', 'Banana'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Almond butter'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Cocoa butter'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Apple butter'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Sunflower butter'), VEGAN)).toBe(true);
+  });
+
+  it('does NOT hide "butter lettuce"/"butter beans" or "cream of tartar"', () => {
+    expect(meetsDiet(recipe('Butter lettuce', 'Tomato'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Butter beans'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Cream of tartar', 'Egg whites'), DAIRY_FREE)).toBe(true);
+  });
+
+  it('still blocks GENUINE butter/cream for vegan & dairy-free', () => {
+    expect(meetsDiet(recipe('Butter'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Unsalted butter'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Cream cheese'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Heavy cream'), DAIRY_FREE)).toBe(false);
+  });
+
+  it('keeps nut-free blocking nut butters via the qualifier', () => {
+    expect(meetsDiet(recipe('Peanut butter'), NUT_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Almond butter'), NUT_FREE)).toBe(false);
+    // …but sunflower/soy/apple butter are nut-free-safe.
+    expect(meetsDiet(recipe('Sunflower butter'), NUT_FREE)).toBe(true);
+  });
+});
+
+describe('meetsDiet — gluten-free noodles & mussel plural (regressions)', () => {
+  it('does NOT hide naturally gluten-free noodles', () => {
+    expect(meetsDiet(recipe('Rice noodles', 'Tofu'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Glass noodles'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Shirataki noodles'), GF)).toBe(true);
+  });
+
+  it('still blocks wheat-based noodles for gluten-free', () => {
+    expect(meetsDiet(recipe('Egg noodles'), GF)).toBe(false); // bare "noodle" still blocks
+    expect(meetsDiet(recipe('Udon noodles'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Ramen'), GF)).toBe(false);
+  });
+
+  it('blocks mussels (singular OR plural) for vegetarian & vegan', () => {
+    expect(meetsDiet(recipe('Mussel'), VEGETARIAN)).toBe(false);
+    expect(meetsDiet(recipe('Mussels'), VEGETARIAN)).toBe(false);
+    expect(meetsDiet(recipe('Mussels'), VEGAN)).toBe(false);
+  });
+});
+
 describe('nameAllowedByDiet — single shopping-list item names', () => {
   it('rejects plural allergen item names', () => {
     expect(nameAllowedByDiet('Walnuts', NUT_FREE)).toBe(false);

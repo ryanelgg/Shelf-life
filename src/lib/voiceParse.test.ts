@@ -89,4 +89,11 @@ describe('parseVoiceItems weekday false-matches (regression)', () => {
     // 2026-07-02 is a Thursday; "friday" is the next day.
     expect(parseVoiceItems('milk friday', TODAY)[0].expirationDate).toBe('2026-07-03');
   });
+
+  it('does not read "sun" out of "sun-dried tomatoes"', () => {
+    const items = parseVoiceItems('add sun-dried tomatoes', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toContain('dried tomatoes');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
 });

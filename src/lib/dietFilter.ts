@@ -8,12 +8,12 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
-    'mussels', 'halibut', 'trout', 'mahi', 'catfish',
+    'mussel', 'halibut', 'trout', 'mahi', 'catfish',
   ],
   vegan: [
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
-    'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
+    'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
     'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
   ],
@@ -71,9 +71,33 @@ const PLANT_MILK_CREAM = new RegExp(
   'gi',
 );
 
+// Non-dairy uses of "butter" that the bare `butter` term wrongly matches:
+// nut/seed butters (peanut, almond, cashew…), fruit/plant butters (apple, cocoa,
+// coconut), and "butter" as an adjective ("butter lettuce", "butter beans").
+// Keep the qualifier so nut-free still blocks "almond butter"/"peanut butter"
+// via the nut terms; genuine dairy "butter" (unqualified) is left untouched.
+const NON_DAIRY_BUTTER_QUALIFIERS =
+  'peanut|almond|cashew|hazelnut|macadamia|pistachio|walnut|pecan|sunflower|sesame|soy|apple|cocoa|coconut';
+const NON_DAIRY_BUTTER = new RegExp(
+  `\\b(${NON_DAIRY_BUTTER_QUALIFIERS})\\s+butter\\b`,
+  'gi',
+);
+const BUTTER_ADJECTIVE = /\bbutter\s+(lettuce|beans?)\b/gi;
+// "cream of tartar" is a leavening acid, not dairy cream.
+const CREAM_OF_TARTAR = /\bcream\s+of\s+tartar\b/gi;
+
+// Naturally gluten-free noodles the bare `noodle` term wrongly hides from
+// gluten-free users. Keep the qualifier; wheat noodles/udon/ramen stay blocked.
+const GF_NOODLES = /\b(rice|glass|kelp|shirataki|mung bean|sweet potato)\s+noodles?\b/gi;
+
 function scrubPlantDairy(text: string): string {
-  // Drop only the "milk"/"cream" word, keep the qualifier for allergen checks.
-  return text.replace(PLANT_MILK_CREAM, '$1');
+  // Drop only the dairy-sounding word, keep the qualifier for allergen checks.
+  return text
+    .replace(PLANT_MILK_CREAM, '$1')
+    .replace(NON_DAIRY_BUTTER, '$1')
+    .replace(BUTTER_ADJECTIVE, '$1')
+    .replace(CREAM_OF_TARTAR, 'tartar')
+    .replace(GF_NOODLES, '$1');
 }
 
 function isBlocked(text: string, blocked: string[]): boolean {
