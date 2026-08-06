@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { meetsDiet, nameAllowedByDiet } from './dietFilter';
+import { meetsDiet, nameAllowedByDiet, DIET_BLOCKLIST } from './dietFilter';
 import type { Recipe, DietaryPref } from '../types';
 
 // Minimal recipe factory — meetsDiet only reads ingredient names.
@@ -134,6 +134,26 @@ describe('meetsDiet — naturally gluten-free noodles (regression: rice noodles 
     expect(meetsDiet(recipe('Udon noodles'), GF)).toBe(false);
     expect(meetsDiet(recipe('Ramen noodles'), GF)).toBe(false);
     expect(meetsDiet(recipe('Noodles'), GF)).toBe(false); // bare/unqualified stays blocked
+  });
+});
+
+describe('meetsDiet — vegan is a strict superset of vegetarian (regression: fish leaked)', () => {
+  it('blocks every vegetarian-blocked animal food for vegans too', () => {
+    // Vegan is stricter than vegetarian; any term the vegetarian list blocks the
+    // vegan list must also block, or a vegan gets told meat/fish is "vegan-safe".
+    const missing = DIET_BLOCKLIST.vegetarian.filter(
+      t => !DIET_BLOCKLIST.vegan.includes(t),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('specifically blocks halibut/trout/mahi/catfish for vegans', () => {
+    expect(meetsDiet(recipe('Halibut'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Trout'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Mahi'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Catfish'), VEGAN)).toBe(false);
+    // and the shopping-list gate (nameAllowedByDiet) rejects them too
+    expect(nameAllowedByDiet('Trout', VEGAN)).toBe(false);
   });
 });
 
