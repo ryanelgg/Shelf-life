@@ -8,5 +8,6 @@ class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(SignInWithApple())
         bridge?.registerPluginInstance(CapacitorBarcodeScanner())
+        bridge?.registerPluginInstance(DeclaredAgeRangePlugin())
     }
 }
