@@ -8,12 +8,13 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
-    'mussels', 'halibut', 'trout', 'mahi', 'catfish',
+    'mussel', 'halibut', 'trout', 'mahi', 'catfish',
   ],
   vegan: [
     'chicken', 'beef', 'pork', 'turkey', 'tuna', 'salmon', 'shrimp', 'lamb',
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
-    'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
+    'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
+    'halibut', 'trout', 'mahi', 'catfish',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
     'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
   ],
@@ -57,27 +58,47 @@ function blockRegex(term: string): RegExp {
   return new RegExp(`\\b(?:${singular}|${plural})\\b`, 'i');
 }
 
-// Plant-based "milk"/"cream" phrases are vegan AND dairy-free, yet the bare
-// blocklist terms `milk`/`cream` match the "milk"/"cream" token inside them
-// ("Coconut milk", "Almond milk", "Oat milk", "Coconut cream"). Neutralize just
-// the trailing "milk"/"cream" word of a plant phrase before the dairy check,
-// while LEAVING the qualifier ("almond", "coconut", …) intact so that nut-free
-// still blocks "almond milk"/"cashew cream" via the `almond`/`cashew` terms and
-// so no real dairy term is affected.
-const PLANT_MILK_QUALIFIERS =
-  'coconut|almond|oat|soy|rice|cashew|hazelnut|macadamia|hemp|flax|pea|walnut|pistachio|quinoa|banana';
-const PLANT_MILK_CREAM = new RegExp(
-  `\\b(${PLANT_MILK_QUALIFIERS})\\s+(milk|cream)\\b`,
+// Plant-based "milk"/"cream"/"butter" phrases are vegan AND dairy-free, yet the
+// bare blocklist terms `milk`/`cream`/`butter` match the dairy token inside them
+// ("Coconut milk", "Almond milk", "Peanut butter", "Cocoa butter"). Neutralize
+// just the trailing dairy word of a plant phrase before the dairy check, while
+// LEAVING the qualifier ("almond", "coconut", "peanut", …) intact so that
+// nut-free still blocks "almond milk"/"peanut butter" via the `almond`/`peanut`
+// terms and so no real dairy term is affected. Longer qualifiers come first so
+// alternation prefers "peanut" over "pea" and "sunflower" over "sun".
+const PLANT_DAIRY_QUALIFIERS =
+  'coconut|peanut|almond|cashew|hazelnut|macadamia|pistachio|sunflower|pumpkin|' +
+  'oat|soy|rice|hemp|flax|walnut|quinoa|banana|cocoa|apple|seed|nut|sun|pea';
+const PLANT_DAIRY = new RegExp(
+  `\\b(${PLANT_DAIRY_QUALIFIERS})[-\\s]+(milk|cream|butter)\\b`,
   'gi',
 );
 
-function scrubPlantDairy(text: string): string {
-  // Drop only the "milk"/"cream" word, keep the qualifier for allergen checks.
-  return text.replace(PLANT_MILK_CREAM, '$1');
+// Foods that merely START with "butter" but contain no dairy — drop the leading
+// "butter" so the food word (which no diet blocks) is what remains. "Butternut"
+// is already safe because \bbutter\b needs a boundary the fused word denies.
+const BUTTER_FOOD = /\bbutter[-\s]+(lettuce|bean|beans)\b/gi;
+
+// "Cream of tartar" is a vegan/dairy-free leavening acid, not a dairy cream.
+const CREAM_OF_TARTAR = /\bcream\s+of\s+tartar\b/gi;
+
+// Naturally gluten-free noodles carry the bare blocklist word "noodle" but are
+// GF-safe. Drop "noodle", keep the qualifier (rice/glass/… — no diet blocks it).
+// Wheat/egg/udon/ramen noodles are NOT listed here, so they stay blocked.
+const GF_NOODLE =
+  /\b(rice|glass|kelp|shirataki|cellophane|zucchini|sweet potato|mung bean|bean thread) noodles?\b/gi;
+
+function scrubDietFalsePositives(text: string): string {
+  // Drop only the dairy/gluten word, keep the qualifier for allergen checks.
+  return text
+    .replace(BUTTER_FOOD, '$1')
+    .replace(CREAM_OF_TARTAR, 'tartar')
+    .replace(GF_NOODLE, '$1')
+    .replace(PLANT_DAIRY, '$1');
 }
 
 function isBlocked(text: string, blocked: string[]): boolean {
-  const scrubbed = scrubPlantDairy(text);
+  const scrubbed = scrubDietFalsePositives(text);
   return blocked.some(b => blockRegex(b).test(scrubbed));
 }
 

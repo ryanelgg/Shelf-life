@@ -14,6 +14,7 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { AvoConsentModal } from '../components/AvoConsentModal';
 import { predictRestocks } from '../lib/shoppingRadar';
 import { meetsDiet, nameAllowedByDiet } from '../lib/dietFilter';
+import { isPantryStaple } from '../lib/pantryStaples';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -368,9 +369,17 @@ function findPantryMatch(ingredientName: string, pantryItems: PantryItem[]): Pan
 // to buy. Mirrors the per-card "missing" badge (getIngredientStatus → 'missing'),
 // and replaces the static recipe.missingIngredients field, which is always empty
 // because setRecipes is never called and browse recipes hard-code it to [].
+//
+// Assumed-on-hand staples are excluded so the auto-built list isn't flooded with
+// "Salt"/"Water"/"Black pepper": an ingredient counts as a gap only if it isn't
+// flagged fromPantry, isn't a known pantry staple, and has no pantry match.
 function recipeGapIngredients(recipe: Recipe, pantryItems: PantryItem[]): string[] {
   return recipe.ingredients
-    .filter(ing => !findPantryMatch(ing.name, pantryItems))
+    .filter(ing =>
+      !ing.fromPantry &&
+      !isPantryStaple(ing.name) &&
+      !findPantryMatch(ing.name, pantryItems),
+    )
     .map(ing => ing.name);
 }
 

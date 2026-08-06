@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { meetsDiet, nameAllowedByDiet } from './dietFilter';
+import { meetsDiet, nameAllowedByDiet, DIET_BLOCKLIST } from './dietFilter';
 import type { Recipe, DietaryPref } from '../types';
 
 // Minimal recipe factory — meetsDiet only reads ingredient names.
@@ -81,6 +81,88 @@ describe('meetsDiet — plant-based milk/cream is vegan & dairy-free (regression
     // …but coconut/oat/soy milk are nut-free-safe.
     expect(meetsDiet(recipe('Coconut milk'), NUT_FREE)).toBe(true);
     expect(meetsDiet(recipe('Oat milk'), NUT_FREE)).toBe(true);
+  });
+});
+
+describe('meetsDiet — non-dairy "butter"/"cream" foods (regression: peanut butter was hidden)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('does NOT hide nut/seed/plant butters from vegan & dairy-free users', () => {
+    expect(meetsDiet(recipe('Peanut butter', 'Banana'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Peanut butter'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Almond butter'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Cocoa butter'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Apple butter'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Sunflower seed butter'), DAIRY_FREE)).toBe(true);
+  });
+
+  it('does NOT hide butter-named produce or cream of tartar', () => {
+    expect(meetsDiet(recipe('Butter lettuce'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Butter beans'), DAIRY_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Cream of tartar'), VEGAN)).toBe(true);
+  });
+
+  it('still blocks GENUINE butter/cream for vegan & dairy-free', () => {
+    expect(meetsDiet(recipe('Butter'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Salted butter'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Brown butter'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Heavy cream'), DAIRY_FREE)).toBe(false);
+    // "butter milk" (two words) is still dairy and must stay blocked
+    expect(meetsDiet(recipe('Butter milk'), VEGAN)).toBe(false);
+  });
+
+  it('keeps nut-free blocking nut butters via the qualifier', () => {
+    expect(meetsDiet(recipe('Peanut butter'), NUT_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Almond butter'), NUT_FREE)).toBe(false);
+    // …but sunflower/cocoa/apple butter are nut-free-safe.
+    expect(meetsDiet(recipe('Sunflower butter'), NUT_FREE)).toBe(true);
+    expect(meetsDiet(recipe('Cocoa butter'), NUT_FREE)).toBe(true);
+  });
+});
+
+describe('meetsDiet — naturally gluten-free noodles (regression: rice noodles were hidden)', () => {
+  it('does NOT hide GF noodles from gluten-free users', () => {
+    expect(meetsDiet(recipe('Rice noodles', 'Peanut butter'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Glass noodles'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Shirataki noodles'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Sweet potato noodles'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Mung bean noodles'), GF)).toBe(true);
+  });
+
+  it('still blocks wheat-based noodles for gluten-free', () => {
+    expect(meetsDiet(recipe('Egg noodles'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Udon noodles'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Ramen noodles'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Noodles'), GF)).toBe(false); // bare/unqualified stays blocked
+  });
+});
+
+describe('meetsDiet — vegan is a strict superset of vegetarian (regression: fish leaked)', () => {
+  it('blocks every vegetarian-blocked animal food for vegans too', () => {
+    // Vegan is stricter than vegetarian; any term the vegetarian list blocks the
+    // vegan list must also block, or a vegan gets told meat/fish is "vegan-safe".
+    const missing = DIET_BLOCKLIST.vegetarian.filter(
+      t => !DIET_BLOCKLIST.vegan.includes(t),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('specifically blocks halibut/trout/mahi/catfish for vegans', () => {
+    expect(meetsDiet(recipe('Halibut'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Trout'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Mahi'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Catfish'), VEGAN)).toBe(false);
+    // and the shopping-list gate (nameAllowedByDiet) rejects them too
+    expect(nameAllowedByDiet('Trout', VEGAN)).toBe(false);
+  });
+});
+
+describe('meetsDiet — mussels block shellfish diets (regression: singular escaped)', () => {
+  it('blocks mussels for vegetarians AND vegans, singular or plural', () => {
+    expect(meetsDiet(recipe('Mussels'), VEGETARIAN)).toBe(false);
+    expect(meetsDiet(recipe('Mussel'), VEGETARIAN)).toBe(false);
+    expect(meetsDiet(recipe('Mussels'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Mussel'), VEGAN)).toBe(false);
   });
 });
 
