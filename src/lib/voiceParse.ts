@@ -117,7 +117,10 @@ function extractDateOffset(text: string, today: Date): { offset: number; matched
   // Leading \b is essential: without it a weekday abbreviation matches as a
   // suffix of a real word — "salmon"→"mon", "cinnamon"→"mon", "persimmon"→"mon" —
   // silently corrupting the item name and setting a bogus expiry.
-  m = text.match(new RegExp(lead + '(this\\s+|next\\s+)?\\b(' + Object.keys(WEEKDAYS).join('|') + ')\\b', 'i'));
+  // Trailing (?!-\w) is essential too: \b treats a hyphen as a boundary, so
+  // "sun-dried tomatoes" would otherwise match "sun" (→ Sunday), strip it, and
+  // leave a corrupted "Dried Tomatoes" with a bogus expiry.
+  m = text.match(new RegExp(lead + '(this\\s+|next\\s+)?\\b(' + Object.keys(WEEKDAYS).join('|') + ')\\b(?!-\\w)', 'i'));
   if (m) {
     const isNext = /next/i.test(m[1] || '');
     const target = WEEKDAYS[m[2].toLowerCase()];
