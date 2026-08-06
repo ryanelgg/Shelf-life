@@ -10,5 +10,10 @@
 	<array>
 		<string>group.com.elghazzali.shelflife</string>
 	</array>
+	<!-- Required by the DeclaredAgeRange framework (iOS 26+). This capability
+	     must also be enabled on the App ID / provisioning profile in the Apple
+	     Developer portal, or device builds will fail to sign. -->
+	<key>com.apple.developer.declared-age-range</key>
+	<true/>
 </dict>
 </plist>
