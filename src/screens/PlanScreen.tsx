@@ -696,16 +696,18 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
       checked: false,
     }));
     const existing = shoppingLists.find(l => l.name === RADAR_LIST_NAME);
+    let addedCount = newItems.length;
     if (existing) {
       // Merge, skipping staples already on the list (case-insensitive) so
       // re-tapping doesn't pile up duplicates.
       const have = new Set(existing.items.map(it => it.name.toLowerCase()));
-      const merged = [...existing.items, ...newItems.filter(it => !have.has(it.name.toLowerCase()))];
-      updateShoppingList(existing.id, { items: merged });
+      const toAdd = newItems.filter(it => !have.has(it.name.toLowerCase()));
+      addedCount = toAdd.length; // report what we actually appended, not the full prediction count
+      updateShoppingList(existing.id, { items: [...existing.items, ...toAdd] });
     } else {
       addShoppingList({ id: `sl-${Date.now()}`, name: RADAR_LIST_NAME, items: newItems, createdDate: formatLocalDate(new Date()) });
     }
-    setRadarAddedCount(newItems.length);
+    setRadarAddedCount(addedCount);
     scheduleToast(() => setRadarAddedCount(0), 2500);
   };
 

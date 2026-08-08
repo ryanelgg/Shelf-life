@@ -166,6 +166,33 @@ describe('meetsDiet — mussels block shellfish diets (regression: singular esca
   });
 });
 
+describe('meetsDiet — vegan is a strict superset of dairy-free (regression: brie/mascarpone/half-and-half leaked)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('blocks every dairy-free-blocked food for vegans too', () => {
+    // Vegan bans all dairy, so anything dairy-free hides a vegan must hide as
+    // well — otherwise a vegan is told a dairy food is "vegan-safe".
+    for (const term of DIET_BLOCKLIST['dairy-free']) {
+      expect(meetsDiet(recipe(term), VEGAN)).toBe(false);
+    }
+  });
+
+  it('blocks brie, mascarpone, and half-and-half for BOTH vegan and dairy-free', () => {
+    expect(meetsDiet(recipe('Mascarpone'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Brie'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half and half'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half and half'), DAIRY_FREE)).toBe(false);
+    expect(nameAllowedByDiet('Mascarpone', VEGAN)).toBe(false);
+    expect(nameAllowedByDiet('Half and half', DAIRY_FREE)).toBe(false);
+  });
+
+  it('blocks bare named cheeses that carry no "cheese" word', () => {
+    expect(meetsDiet(recipe('Gouda'), DAIRY_FREE)).toBe(false);
+    expect(meetsDiet(recipe('Provolone'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Camembert'), DAIRY_FREE)).toBe(false);
+  });
+});
+
 describe('nameAllowedByDiet — single shopping-list item names', () => {
   it('rejects plural allergen item names', () => {
     expect(nameAllowedByDiet('Walnuts', NUT_FREE)).toBe(false);

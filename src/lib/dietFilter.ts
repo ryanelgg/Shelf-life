@@ -16,7 +16,13 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'halibut', 'trout', 'mahi', 'catfish',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
-    'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
+    'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
+    'honey', 'ghee', 'whey', 'half and half',
+    // Named cheeses that carry no generic "cheese" word (so bare user-entered /
+    // scanned / AI names like "Gouda" or "Camembert" are still caught). Vegan
+    // must stay a strict superset of dairy-free — see the invariant test.
+    'gouda', 'provolone', 'gruyere', 'havarti', 'muenster', 'colby',
+    'camembert', 'gorgonzola', 'asiago',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -26,7 +32,12 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
   'dairy-free': [
     'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
     'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
-    'half-and-half', 'sour cream',
+    // Stored with spaces to match how the app writes it everywhere else (the
+    // shelf-life table keys it "half and half"); the old hyphenated term never
+    // matched the spaced form and let it pass the filter.
+    'half and half', 'sour cream',
+    'gouda', 'provolone', 'gruyere', 'havarti', 'muenster', 'colby',
+    'camembert', 'gorgonzola', 'asiago',
   ],
   'nut-free': [
     'almond', 'walnut', 'pecan', 'cashew', 'peanut', 'pistachio', 'hazelnut',

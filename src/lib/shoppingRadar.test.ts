@@ -22,6 +22,20 @@ describe('normalizeName', () => {
     expect(normalizeName('Strawberries')).toBe('strawberry');
     expect(normalizeName('berry')).toBe('berry'); // already singular, unchanged
   });
+  it('folds true "-es" plurals to the singular (regression: "tomatoes" → "tomatoe" split history)', () => {
+    // sibilant / -o stems take "-es"; a blanket "-s" drop mangled these.
+    expect(normalizeName('Tomatoes')).toBe('tomato');
+    expect(normalizeName('Potatoes')).toBe('potato');
+    expect(normalizeName('Peaches')).toBe('peach');
+    expect(normalizeName('Radishes')).toBe('radish');
+    expect(normalizeName('Boxes')).toBe('box');
+    // singular forms are untouched, so the plural now folds onto them
+    expect(normalizeName('tomato')).toBe('tomato');
+    expect(normalizeName('peach')).toBe('peach');
+    // …and a silent-e word must NOT be over-stripped
+    expect(normalizeName('Grapes')).toBe('grape');
+    expect(normalizeName('Limes')).toBe('lime');
+  });
 });
 
 describe('predictRestocks', () => {
