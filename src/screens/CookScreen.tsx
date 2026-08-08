@@ -72,8 +72,11 @@ export function CookScreen() {
     if (isStreaming) return;
     hapticLight();
     if (!hasProAccess) { setUpgradeReason('briefing'); setShowUpgrade(true); return; }
-    const userMsg: AvoDisplayMessage = { id: `u-${crypto.randomUUID()}`, role: 'user', text: userText };
-    const avoMsg: AvoDisplayMessage = { id: `a-${crypto.randomUUID()}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
+    // Guard crypto.randomUUID (undefined in a WebView / non-secure context, where
+    // a bare call throws and aborts the briefing). Same idiom as PantryScreen.
+    const uid = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10);
+    const userMsg: AvoDisplayMessage = { id: `u-${uid()}`, role: 'user', text: userText };
+    const avoMsg: AvoDisplayMessage = { id: `a-${uid()}`, role: 'avo', text: buildDailyBriefingText(pantryItems, user?.name) };
     setMessages(prev => {
       const next = [...prev, userMsg, avoMsg];
       setAvoSessionMessages(next);

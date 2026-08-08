@@ -96,4 +96,16 @@ describe('parseVoiceItems weekday false-matches (regression)', () => {
     expect(items[0].name.toLowerCase()).toBe('sun-dried tomatoes');
     expect(items[0].expirationDate).toBeUndefined();
   });
+
+  it('does not read "sun" (→ Sunday) out of the SPACE form "sun dried tomatoes"', () => {
+    const items = parseVoiceItems('add sun dried tomatoes', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('sun dried tomatoes');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
+
+  it('still parses a real trailing weekday date ("milk sun" → next Sunday)', () => {
+    // TODAY is a Tuesday (2026-06-30); the next Sunday is 2026-07-05.
+    expect(parseVoiceItems('milk sun', TODAY)[0].expirationDate).toBe('2026-07-05');
+  });
 });
