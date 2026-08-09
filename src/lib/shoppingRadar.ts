@@ -50,6 +50,12 @@ export function normalizeName(raw: string): string {
   // "-ies" → "-y" first ("berries" → "berry"), otherwise a trailing "-s" drop
   // would fold it to "berrie" and it wouldn't match the singular "berry".
   if (s.length > 4 && s.endsWith('ies')) s = s.slice(0, -3) + 'y';
+  // True "-es" plurals on sibilant / -o stems drop the whole "-es" so the
+  // singular matches: "tomatoes" → "tomato", "potatoes" → "potato",
+  // "peaches" → "peach", "boxes" → "box". A blanket "-s" drop would leave
+  // "tomatoe"/"potatoe"/"peache", splitting a food's history across two buckets
+  // so neither ever gathers enough to predict a restock. Mirrors foldPlural.
+  else if (s.length > 3 && s.endsWith('es') && /(s|x|z|ch|sh|o)es$/.test(s)) s = s.slice(0, -2);
   else if (s.length > 3 && s.endsWith('s') && !s.endsWith('ss')) s = s.slice(0, -1);
   return s;
 }

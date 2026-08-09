@@ -157,6 +157,34 @@ describe('meetsDiet — vegan is a strict superset of vegetarian (regression: fi
   });
 });
 
+describe('meetsDiet — vegan is a strict superset of dairy-free (regression: brie/mascarpone leaked to vegans)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('blocks every dairy-free-blocked food for vegans too', () => {
+    // Vegan excludes all dairy, so the vegan list must block everything the
+    // dairy-free list blocks. When it didn't, a vegan was shown brie/mascarpone/
+    // half-and-half recipes as "vegan-safe."
+    const missing = DIET_BLOCKLIST['dairy-free'].filter(
+      t => !DIET_BLOCKLIST.vegan.includes(t),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('specifically blocks brie/mascarpone/half-and-half for vegans', () => {
+    expect(meetsDiet(recipe('Brie'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Mascarpone'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half-and-half'), VEGAN)).toBe(false);
+    expect(nameAllowedByDiet('Brie', VEGAN)).toBe(false);
+  });
+
+  it('blocks named cheeses that carry no generic "cheese" word (vegan & dairy-free)', () => {
+    for (const cheese of ['Gouda', 'Provolone', 'Gruyere', 'Havarti', 'Gorgonzola', 'Asiago']) {
+      expect(meetsDiet(recipe(cheese), VEGAN)).toBe(false);
+      expect(meetsDiet(recipe(cheese), DAIRY_FREE)).toBe(false);
+    }
+  });
+});
+
 describe('meetsDiet — mussels block shellfish diets (regression: singular escaped)', () => {
   it('blocks mussels for vegetarians AND vegans, singular or plural', () => {
     expect(meetsDiet(recipe('Mussels'), VEGETARIAN)).toBe(false);

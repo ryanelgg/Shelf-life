@@ -16,7 +16,12 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'halibut', 'trout', 'mahi', 'catfish',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
-    'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
+    'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
+    'honey', 'ghee', 'whey', 'half-and-half', 'sour cream',
+    // Named cheeses that carry no generic "cheese" word, so a bare user-entered
+    // or scanned name ("Gruyere", "Gouda") is still caught as non-vegan.
+    'gouda', 'provolone', 'gruyere', 'havarti', 'muenster', 'colby',
+    'camembert', 'gorgonzola', 'asiago',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -27,6 +32,10 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
     'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
     'half-and-half', 'sour cream',
+    // Named cheeses (see vegan list) — keep the two dairy lists in sync so a bare
+    // cheese name is blocked for dairy-free users too.
+    'gouda', 'provolone', 'gruyere', 'havarti', 'muenster', 'colby',
+    'camembert', 'gorgonzola', 'asiago',
   ],
   'nut-free': [
     'almond', 'walnut', 'pecan', 'cashew', 'peanut', 'pistachio', 'hazelnut',

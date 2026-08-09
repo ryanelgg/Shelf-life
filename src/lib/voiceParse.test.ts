@@ -96,4 +96,19 @@ describe('parseVoiceItems weekday false-matches (regression)', () => {
     expect(items[0].name.toLowerCase()).toBe('sun-dried tomatoes');
     expect(items[0].expirationDate).toBeUndefined();
   });
+
+  it('does not read "sun" out of the SPACE form "sun dried tomatoes"', () => {
+    // \b treats a space as a boundary too, so the hyphen-only guard let the
+    // space form match "sun" → Sunday, corrupting the name to "Dried Tomatoes".
+    const items = parseVoiceItems('add sun dried tomatoes', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('sun dried tomatoes');
+    expect(items[0].expirationDate).toBeUndefined();
+  });
+
+  it('still parses a trailing weekday even with the space guard ("milk friday")', () => {
+    // The guard only suppresses a weekday FOLLOWED by another word; a trailing
+    // weekday has no following word, so a real date still parses.
+    expect(parseVoiceItems('milk friday', TODAY)[0].expirationDate).toBe('2026-07-03');
+  });
 });
