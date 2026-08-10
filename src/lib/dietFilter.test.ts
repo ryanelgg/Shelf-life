@@ -157,6 +157,27 @@ describe('meetsDiet — vegan is a strict superset of vegetarian (regression: fi
   });
 });
 
+describe('meetsDiet — vegan is a strict superset of dairy-free (regression: dairy leaked)', () => {
+  it('blocks every dairy-free-blocked food for vegans too', () => {
+    // Vegan excludes all animal products, so anything the dairy-free list blocks
+    // the vegan list must also block — otherwise a vegan is shown dairy as
+    // "vegan-safe".
+    const missing = DIET_BLOCKLIST['dairy-free'].filter(
+      t => !DIET_BLOCKLIST.vegan.includes(t),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('specifically blocks brie/mascarpone/half-and-half/sour cream for vegans', () => {
+    expect(meetsDiet(recipe('Brie'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Mascarpone'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half-and-half'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Sour cream'), VEGAN)).toBe(false);
+    // the shopping-list gate rejects them too
+    expect(nameAllowedByDiet('Mascarpone', VEGAN)).toBe(false);
+  });
+});
+
 describe('meetsDiet — mussels block shellfish diets (regression: singular escaped)', () => {
   it('blocks mussels for vegetarians AND vegans, singular or plural', () => {
     expect(meetsDiet(recipe('Mussels'), VEGETARIAN)).toBe(false);

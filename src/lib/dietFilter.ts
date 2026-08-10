@@ -16,7 +16,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'halibut', 'trout', 'mahi', 'catfish',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
-    'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
+    'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
+    'honey', 'ghee', 'whey', 'half-and-half', 'sour cream',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',

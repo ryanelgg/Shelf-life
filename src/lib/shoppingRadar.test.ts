@@ -22,6 +22,18 @@ describe('normalizeName', () => {
     expect(normalizeName('Strawberries')).toBe('strawberry');
     expect(normalizeName('berry')).toBe('berry'); // already singular, unchanged
   });
+  it('folds true "-es" plurals (sibilant / -o stems) onto the singular', () => {
+    // A blanket trailing-"s" drop would leave "tomatoe"/"peache" and split a
+    // food's restock history across two buckets.
+    expect(normalizeName('Tomatoes')).toBe('tomato');
+    expect(normalizeName('Potatoes')).toBe('potato');
+    expect(normalizeName('Peaches')).toBe('peach');
+    expect(normalizeName('Boxes')).toBe('box');
+    expect(normalizeName('tomato')).toBe('tomato'); // already singular, unchanged
+    // …but silent-e words keep their stem (no over-stripping to "grap"/"lim").
+    expect(normalizeName('Grapes')).toBe('grape');
+    expect(normalizeName('Limes')).toBe('lime');
+  });
 });
 
 describe('predictRestocks', () => {
