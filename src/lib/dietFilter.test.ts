@@ -120,6 +120,27 @@ describe('meetsDiet — non-dairy "butter"/"cream" foods (regression: peanut but
   });
 });
 
+describe('meetsDiet — scrub must not leak across ingredient boundaries (regression)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('blocks real dairy/gluten when two SEPARATE ingredients form a scrub phrase', () => {
+    // Distinct ingredients "Butter" + "Beans" must NOT be scrubbed as the safe
+    // single food "butter beans" — the real Butter is genuine dairy.
+    expect(meetsDiet(recipe('Butter', 'Beans'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Butter', 'Lettuce'), DAIRY_FREE)).toBe(false);
+    // "Coconut" + "Cream" as separate ingredients: the Cream is real dairy.
+    expect(meetsDiet(recipe('Coconut', 'Cream'), VEGAN)).toBe(false);
+    // "Rice" + "Noodles" (i.e. wheat noodles) must stay blocked for gluten-free.
+    expect(meetsDiet(recipe('Rice', 'Noodles'), GF)).toBe(false);
+  });
+
+  it('still allows the same words as ONE legitimate ingredient', () => {
+    expect(meetsDiet(recipe('Butter beans', 'Tomato'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Coconut cream'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Rice noodles'), GF)).toBe(true);
+  });
+});
+
 describe('meetsDiet — naturally gluten-free noodles (regression: rice noodles were hidden)', () => {
   it('does NOT hide GF noodles from gluten-free users', () => {
     expect(meetsDiet(recipe('Rice noodles', 'Peanut butter'), GF)).toBe(true);

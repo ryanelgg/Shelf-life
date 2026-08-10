@@ -107,9 +107,18 @@ function isBlocked(text: string, blocked: string[]): boolean {
 export function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   const active = diets.filter(d => d !== 'none');
   if (active.length === 0) return true;
-  const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
+  // Check each ingredient name INDEPENDENTLY. Joining every name into one string
+  // first would let a false-positive scrub ("butter beans", "coconut cream",
+  // "rice noodles") match across two *separate but adjacent* ingredients and
+  // delete a genuinely blocked word — e.g. ["Butter","Beans"] → "butter beans"
+  // → the real Butter is scrubbed and dairy leaks to a vegan. nameAllowedByDiet
+  // checks a single name; meetsDiet must apply that same per-name rule to every
+  // ingredient.
   for (const diet of active) {
-    if (isBlocked(ingredNames, DIET_BLOCKLIST[diet] ?? [])) return false;
+    const blocked = DIET_BLOCKLIST[diet] ?? [];
+    for (const ing of recipe.ingredients) {
+      if (isBlocked(ing.name.toLowerCase(), blocked)) return false;
+    }
   }
   return true;
 }
