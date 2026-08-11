@@ -2368,6 +2368,12 @@ const shelfLifeMap: Record<string, ShelfLifeEntry> = {
   }
 };
 
+// A cold-chain food (has a fridge life but no shelf-stable pantry life — milk,
+// raw meat, seafood, cut fruit) left out on the counter at room temperature is
+// unsafe within about a day, so its reminder must fire fast instead of
+// inheriting a fridge-length expiry.
+export const COUNTER_COLD_CHAIN_DAYS = 1;
+
 export function lookupShelfLife(foodName: string, location: string): number | null {
   // Word-level matching instead of raw substring. Substring matching made
   // "buttermilk" and "butternut squash" match the "butter" keyword (90 fridge
@@ -2408,5 +2414,13 @@ export function lookupShelfLife(foodName: string, location: string): number | nu
   if (!bestMatch) return null;
   if (location === 'fridge')  return bestMatch.fridgeDays;
   if (location === 'freezer') return bestMatch.freezerDays;
-  return bestMatch.pantryDays ?? bestMatch.fridgeDays; // pantry or counter, fall back to fridge
+  if (location === 'counter') {
+    // Counter = room temperature. NEVER inherit the fridge shelf life here: a
+    // cold-chain food left on the counter spoils far faster than in the fridge,
+    // so borrowing fridgeDays would fire its reminder far too late.
+    if (bestMatch.pantryDays != null) return bestMatch.pantryDays;   // shelf-stable at room temp
+    if (bestMatch.fridgeDays != null) return COUNTER_COLD_CHAIN_DAYS; // cold-chain → ~1 day
+    return null;                                                     // unknown, don't guess
+  }
+  return bestMatch.pantryDays ?? bestMatch.fridgeDays; // pantry (shelf-stable storage) → fall back to fridge
 }
