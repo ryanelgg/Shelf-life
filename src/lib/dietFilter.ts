@@ -106,9 +106,18 @@ function isBlocked(text: string, blocked: string[]): boolean {
 export function meetsDiet(recipe: Recipe, diets: DietaryPref[]): boolean {
   const active = diets.filter(d => d !== 'none');
   if (active.length === 0) return true;
-  const ingredNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');
-  for (const diet of active) {
-    if (isBlocked(ingredNames, DIET_BLOCKLIST[diet] ?? [])) return false;
+  // Check each ingredient name INDEPENDENTLY (matching nameAllowedByDiet's
+  // per-name semantics). Joining every name into one string let a
+  // false-positive scrub match across two separate ingredients and delete a
+  // genuinely-blocked word — e.g. ["Butter","Beans"] → "butter beans" hid real
+  // butter from a vegan, and ["Coconut","Cream"] hid real cream. A multi-word
+  // single ingredient ("coconut milk", "peanut butter") is still scrubbed
+  // correctly because it arrives as one name.
+  for (const ing of recipe.ingredients) {
+    const name = ing.name.toLowerCase();
+    for (const diet of active) {
+      if (isBlocked(name, DIET_BLOCKLIST[diet] ?? [])) return false;
+    }
   }
   return true;
 }

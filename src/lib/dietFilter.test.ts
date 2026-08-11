@@ -137,6 +137,32 @@ describe('meetsDiet — naturally gluten-free noodles (regression: rice noodles 
   });
 });
 
+describe('meetsDiet — scrubs must NOT leak across ingredient boundaries (regression)', () => {
+  // Each ingredient is scrubbed independently. Two SEPARATE ingredients that
+  // happen to form a false-positive phrase when concatenated must not hide a
+  // genuinely-blocked word.
+  it('blocks real butter listed alongside beans (was: "butter beans" hid it)', () => {
+    expect(meetsDiet(recipe('Butter', 'Beans'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Butter', 'Lettuce'), VEGAN)).toBe(false);
+  });
+
+  it('blocks real cream listed alongside coconut (was: "coconut cream" hid it)', () => {
+    expect(meetsDiet(recipe('Coconut', 'Cream'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Coconut', 'Milk'), VEGAN)).toBe(false);
+  });
+
+  it('blocks wheat noodles listed alongside rice (was: "rice noodles" let it pass)', () => {
+    expect(meetsDiet(recipe('Rice', 'Noodles'), GF)).toBe(false);
+  });
+
+  it('still passes the genuine multi-word single ingredient', () => {
+    // One ingredient name, not two — the scrub is still correct here.
+    expect(meetsDiet(recipe('Butter beans'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Coconut cream'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Rice noodles'), GF)).toBe(true);
+  });
+});
+
 describe('meetsDiet — vegan is a strict superset of vegetarian (regression: fish leaked)', () => {
   it('blocks every vegetarian-blocked animal food for vegans too', () => {
     // Vegan is stricter than vegetarian; any term the vegetarian list blocks the

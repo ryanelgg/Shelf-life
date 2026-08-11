@@ -87,7 +87,9 @@ function generateItemId(): string {
   // A launch-scoped counter reset to 0 on every app start, so two phones in a
   // shared household adding in the same millisecond could collide and overwrite
   // each other over live sync. Use a globally-unique id instead.
-  return `p-${crypto.randomUUID()}`;
+  // `crypto.randomUUID()` throws in a non-secure-context WebView; fall back to a
+  // random string so an item add never aborts (idiom shared with Pantry/Plan).
+  return `p-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10)}`;
 }
 
 let nextReceiptRowId = 0;
