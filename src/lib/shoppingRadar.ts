@@ -50,6 +50,11 @@ export function normalizeName(raw: string): string {
   // "-ies" → "-y" first ("berries" → "berry"), otherwise a trailing "-s" drop
   // would fold it to "berrie" and it wouldn't match the singular "berry".
   if (s.length > 4 && s.endsWith('ies')) s = s.slice(0, -3) + 'y';
+  // True "-es" plurals on sibilant / -o stems drop the whole "-es" so they fold
+  // onto the singular ("tomatoes" → "tomato", "peaches" → "peach", "boxes" →
+  // "box"). A blanket trailing-"s" drop would leave "tomatoe"/"peache" and split
+  // a food's history across two buckets. Mirrors foldPlural in types/index.ts.
+  else if (s.length > 3 && s.endsWith('es') && /(s|x|z|ch|sh|o)es$/.test(s)) s = s.slice(0, -2);
   else if (s.length > 3 && s.endsWith('s') && !s.endsWith('ss')) s = s.slice(0, -1);
   return s;
 }

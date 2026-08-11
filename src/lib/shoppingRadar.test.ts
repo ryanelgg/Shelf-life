@@ -22,6 +22,19 @@ describe('normalizeName', () => {
     expect(normalizeName('Strawberries')).toBe('strawberry');
     expect(normalizeName('berry')).toBe('berry'); // already singular, unchanged
   });
+  it('folds true "-es" plurals onto the singular (regression: split buckets)', () => {
+    // A blanket trailing-"s" drop left "tomatoe"/"potatoe"/"peache", so a food's
+    // history split across two buckets and never hit the restock threshold.
+    expect(normalizeName('Tomatoes')).toBe('tomato');
+    expect(normalizeName('Potatoes')).toBe('potato');
+    expect(normalizeName('Peaches')).toBe('peach');
+    expect(normalizeName('Boxes')).toBe('box');
+    expect(normalizeName('tomato')).toBe('tomato'); // already singular, unchanged
+    // …but silent-e words must NOT lose "-es": apples → apple, not "appl".
+    expect(normalizeName('Apples')).toBe('apple');
+    expect(normalizeName('Grapes')).toBe('grape');
+    expect(normalizeName('Limes')).toBe('lime');
+  });
 });
 
 describe('predictRestocks', () => {
