@@ -183,6 +183,40 @@ describe('meetsDiet — vegan is a strict superset of vegetarian (regression: fi
   });
 });
 
+describe('meetsDiet — vegan is a strict superset of dairy-free (regression: brie/mascarpone leaked)', () => {
+  it('blocks every dairy-free-blocked food for vegans too', () => {
+    // A vegan must never be shown a food a dairy-free user is protected from.
+    // The vegan list omitted brie/mascarpone/half-and-half that dairy-free had.
+    const leaks = DIET_BLOCKLIST['dairy-free'].filter(
+      term => meetsDiet(recipe(term), VEGAN),
+    );
+    expect(leaks).toEqual([]);
+  });
+
+  it('specifically blocks brie/mascarpone/half-and-half for vegans', () => {
+    expect(meetsDiet(recipe('Brie'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Mascarpone'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half-and-half'), VEGAN)).toBe(false);
+    expect(nameAllowedByDiet('Brie', VEGAN)).toBe(false); // shopping-list gate too
+  });
+});
+
+describe('meetsDiet — naturally gluten-free corn tortillas & GF tamari (regression: hidden)', () => {
+  it('does NOT hide corn tortillas from gluten-free users', () => {
+    expect(meetsDiet(recipe('Corn tortillas', 'Cauliflower'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Corn tortilla'), GF)).toBe(true);
+  });
+
+  it('does NOT hide gluten-free tamari from gluten-free users', () => {
+    expect(meetsDiet(recipe('Tamari (gluten-free soy sauce)', 'Tofu'), GF)).toBe(true);
+  });
+
+  it('still blocks flour tortillas and ordinary soy sauce for gluten-free', () => {
+    expect(meetsDiet(recipe('Flour tortillas'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Soy sauce'), GF)).toBe(false);
+  });
+});
+
 describe('meetsDiet — mussels block shellfish diets (regression: singular escaped)', () => {
   it('blocks mussels for vegetarians AND vegans, singular or plural', () => {
     expect(meetsDiet(recipe('Mussels'), VEGETARIAN)).toBe(false);

@@ -16,7 +16,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'halibut', 'trout', 'mahi', 'catfish',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
-    'mozzarella', 'cheddar', 'feta', 'ricotta', 'yogurt', 'honey', 'ghee', 'whey',
+    'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
+    'honey', 'ghee', 'whey', 'half-and-half', 'sour cream',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -88,12 +89,25 @@ const CREAM_OF_TARTAR = /\bcream\s+of\s+tartar\b/gi;
 const GF_NOODLE =
   /\b(rice|glass|kelp|shirataki|cellophane|zucchini|sweet potato|mung bean|bean thread) noodles?\b/gi;
 
+// Corn tortillas are naturally gluten-free but carry the bare blocklist word
+// "tortilla". Drop "tortilla", keep "corn" (no diet blocks it). Flour/wheat
+// tortillas are NOT listed here, so they stay blocked.
+const GF_CORN_TORTILLA = /\bcorn tortillas?\b/gi;
+
+// Tamari explicitly labeled gluten-free carries "soy sauce" (which is blocked
+// because ordinary soy sauce contains wheat). Drop only the "gluten-free soy
+// sauce" phrase so the GF-labeled product passes; plain "soy sauce" stays
+// blocked.
+const GF_TAMARI = /\bgluten-free soy sauce\b/gi;
+
 function scrubDietFalsePositives(text: string): string {
   // Drop only the dairy/gluten word, keep the qualifier for allergen checks.
   return text
     .replace(BUTTER_FOOD, '$1')
     .replace(CREAM_OF_TARTAR, 'tartar')
     .replace(GF_NOODLE, '$1')
+    .replace(GF_CORN_TORTILLA, 'corn')
+    .replace(GF_TAMARI, 'tamari')
     .replace(PLANT_DAIRY, '$1');
 }
 
