@@ -405,7 +405,7 @@ const ORIGINAL_RECIPES: Recipe[] = [
       { name: 'Canned crushed tomatoes', amount: '28 oz can', fromPantry: false },
       { name: 'Onion', amount: '1, diced', fromPantry: false },
       { name: 'Garlic', amount: '3 cloves, minced', fromPantry: false },
-      { name: 'Chicken broth', amount: '1 cup', fromPantry: false },
+      { name: 'Vegetable broth', amount: '1 cup', fromPantry: false },
       { name: 'Heavy cream', amount: '1/4 cup', fromPantry: false },
       { name: 'Butter', amount: '2 tbsp', fromPantry: false },
       { name: 'Sugar', amount: '1 tsp', fromPantry: false },
@@ -413,7 +413,7 @@ const ORIGINAL_RECIPES: Recipe[] = [
     ],
     steps: [
       'Melt butter in a pot over medium heat. Saute onion until soft, about 5 minutes. Add garlic and cook 1 minute.',
-      'Add crushed tomatoes, chicken broth, sugar, and basil. Simmer 15 minutes.',
+      'Add crushed tomatoes, vegetable broth, sugar, and basil. Simmer 15 minutes.',
       'Blend soup until smooth using an immersion blender or regular blender.',
       'Stir in heavy cream, season with salt and pepper, and serve warm.',
     ],
@@ -461,7 +461,7 @@ const ORIGINAL_RECIPES: Recipe[] = [
     ingredients: [
       { name: 'Broccoli florets', amount: '4 cups', fromPantry: false },
       { name: 'Sharp cheddar cheese', amount: '2 cups, shredded', fromPantry: false },
-      { name: 'Chicken broth', amount: '3 cups', fromPantry: false },
+      { name: 'Vegetable broth', amount: '3 cups', fromPantry: false },
       { name: 'Milk', amount: '1 cup', fromPantry: false },
       { name: 'Onion', amount: '1, diced', fromPantry: false },
       { name: 'Butter', amount: '3 tbsp', fromPantry: false },
