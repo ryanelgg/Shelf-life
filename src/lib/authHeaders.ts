@@ -6,6 +6,12 @@ import { supabase } from './supabase';
  * 401. AI now requires sign-in so the server can attribute + rate-limit usage.
  */
 export class NotSignedInError extends Error {
+  // Marks this as a user-safe message the UI can show verbatim. Without it, the
+  // Avo chat catch (which only special-cases `friendly` / status codes) fell
+  // through to a generic "connection" error, so a guest who opened Ask Avo saw
+  // "Something went wrong connecting to my brain" instead of "sign in to use Avo".
+  friendly = true;
+
   constructor(message = 'Please sign in to use Avo.') {
     super(message);
     this.name = 'NotSignedInError';
