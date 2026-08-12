@@ -71,6 +71,41 @@ describe('parseVoiceItems compound foods', () => {
   });
 });
 
+describe('parseVoiceItems quantity words (regression)', () => {
+  it('"a couple apples" is 2 apples, not 1 "Couple Apples"', () => {
+    const items = parseVoiceItems('a couple apples', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].quantity).toBe(2);
+    expect(items[0].name.toLowerCase()).toBe('apples');
+  });
+
+  it('"a few bananas" is 3 bananas, not 1 "Few Bananas"', () => {
+    const items = parseVoiceItems('add a few bananas', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].quantity).toBe(3);
+    expect(items[0].name.toLowerCase()).toBe('bananas');
+  });
+
+  it('"couple apples" (no article) still parses as 2', () => {
+    const items = parseVoiceItems('couple apples', TODAY);
+    expect(items[0].quantity).toBe(2);
+    expect(items[0].name.toLowerCase()).toBe('apples');
+  });
+
+  it('"a dozen eggs" stays 1 × dozen (dozen is a unit, not a count here)', () => {
+    const items = parseVoiceItems('a dozen eggs', TODAY);
+    expect(items[0].quantity).toBe(1);
+    expect(items[0].unit).toBe('dozen');
+    expect(items[0].name.toLowerCase()).toBe('eggs');
+  });
+
+  it('a plain article "a banana" is still 1 banana', () => {
+    const items = parseVoiceItems('a banana', TODAY);
+    expect(items[0].quantity).toBe(1);
+    expect(items[0].name.toLowerCase()).toBe('banana');
+  });
+});
+
 describe('parseVoiceItems weekday false-matches (regression)', () => {
   it('does not read "mon" out of "salmon"', () => {
     const items = parseVoiceItems('add salmon', TODAY);

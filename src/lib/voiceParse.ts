@@ -172,11 +172,25 @@ function parseSegment(segment: string, today: Date): ParsedVoiceItem | null {
   } else {
     m = text.match(/^([a-z]+)\s+/i);
     if (m && NUMBER_WORDS[m[1].toLowerCase()] !== undefined) {
-      quantity = NUMBER_WORDS[m[1].toLowerCase()];
+      const word = m[1].toLowerCase();
+      quantity = NUMBER_WORDS[word];
       quantityGiven = true;
-      // "a"/"an" are articles — keep them out of the count-was-given heuristic
-      if (m[1].toLowerCase() === 'a' || m[1].toLowerCase() === 'an') quantityGiven = false;
       text = text.slice(m[0].length);
+      // "a"/"an" are articles, not an explicit count. If a real count word
+      // follows ("a couple apples", "a few bananas"), consume it as the
+      // quantity — otherwise the count word leaks into the item name and the
+      // quantity stays a wrong 1. Skip words that are also units so
+      // "a dozen eggs" stays 1 × dozen (handled by the unit branch below).
+      if (word === 'a' || word === 'an') {
+        quantityGiven = false;
+        const next = text.match(/^([a-z]+)\s+/i);
+        const nextWord = next?.[1].toLowerCase();
+        if (nextWord && NUMBER_WORDS[nextWord] !== undefined && !UNITS[nextWord]) {
+          quantity = NUMBER_WORDS[nextWord];
+          quantityGiven = true;
+          text = text.slice(next![0].length);
+        }
+      }
     }
   }
 
