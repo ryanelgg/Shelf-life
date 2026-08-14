@@ -44,12 +44,23 @@ export interface RestockPrediction {
   inPantry: boolean;           // still have unexpired stock on hand
 }
 
+// Stems of common foods whose singular ends in "-ie" (so the "-ies" plural must
+// fold back to "-ie", not "-y"). Keyed by the word minus its trailing "ies".
+const IE_SINGULAR_STEMS = new Set(['cook', 'brown', 'smooth', 'vegg']);
+
 /** Lowercase, collapse whitespace, and lightly singularize so "Eggs"/"egg" fold together. */
 export function normalizeName(raw: string): string {
   let s = raw.trim().toLowerCase().replace(/\s+/g, ' ');
-  // "-ies" → "-y" first ("berries" → "berry"), otherwise a trailing "-s" drop
-  // would fold it to "berrie" and it wouldn't match the singular "berry".
-  if (s.length > 4 && s.endsWith('ies')) s = s.slice(0, -3) + 'y';
+  // "-ies" → "-y" ("berries" → "berry"), otherwise a trailing "-s" drop would
+  // fold it to "berrie" and it wouldn't match the singular "berry". A handful of
+  // common foods, though, have a singular that already ends in "-ie" (cookie,
+  // brownie, smoothie, veggie): "-y" would give "cooky" and split them from
+  // their singular, so map those stems back to "-ie" instead. Both spellings
+  // then fold to one restock key.
+  if (s.length > 4 && s.endsWith('ies')) {
+    const stem = s.slice(0, -3);
+    s = IE_SINGULAR_STEMS.has(stem) ? stem + 'ie' : stem + 'y';
+  }
   // True "-es" plurals on sibilant / -o stems drop the whole "-es" so they fold
   // onto the singular ("tomatoes" → "tomato", "peaches" → "peach", "boxes" →
   // "box"). A blanket trailing-"s" drop would leave "tomatoe"/"peache" and split

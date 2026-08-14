@@ -36,15 +36,19 @@ export async function submitCommunityProduct(
     return;
   }
   const { data: { user } } = await supabase.auth.getUser();
-  // onConflict: 'barcode' targets the community_products_pkey so a re-scan of
-  // a known barcode updates the existing row instead of inserting a duplicate.
+  // insert-if-absent (ON CONFLICT DO NOTHING): a barcode's FIRST crowd-sourced
+  // entry wins and is never overwritten. Previously this upserted on the
+  // barcode key, so any later re-scan — including a mistyped or wrong-category
+  // one — clobbered a good existing entry that's served to every other user.
+  // ignoreDuplicates keeps the known-good row; corrections are a moderation
+  // concern, not something a single re-scan should silently do.
   const { error } = await supabase.from('community_products').upsert({
     barcode: cleanBarcode,
     name: cleanName,
     brand: product.brand.trim() || null,
     category: product.category,
     submitted_by: user?.id ?? null,
-  }, { onConflict: 'barcode' });
+  }, { onConflict: 'barcode', ignoreDuplicates: true });
   // Previously the result was discarded, so a rejected write (RLS, NOT NULL on
   // submitted_by for guests, network) failed completely silently. Surface it.
   if (error) debug.warn('[communityProducts] submit failed:', error.message);

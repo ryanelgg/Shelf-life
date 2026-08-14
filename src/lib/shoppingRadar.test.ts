@@ -22,6 +22,16 @@ describe('normalizeName', () => {
     expect(normalizeName('Strawberries')).toBe('strawberry');
     expect(normalizeName('berry')).toBe('berry'); // already singular, unchanged
   });
+  it('folds "-ies" foods whose singular ends in "-ie" back to "-ie", not "-y"', () => {
+    // cookies -> "cooky" would split from the singular "cookie"; keep them one key.
+    expect(normalizeName('Cookies')).toBe('cookie');
+    expect(normalizeName('cookie')).toBe('cookie');
+    expect(normalizeName('Brownies')).toBe('brownie');
+    expect(normalizeName('Smoothies')).toBe('smoothie');
+    expect(normalizeName('Veggies')).toBe('veggie');
+    // and the "-y" default is unaffected for ordinary "-ies" foods
+    expect(normalizeName('Cherries')).toBe('cherry');
+  });
   it('folds true "-es" plurals onto the singular (regression: split buckets)', () => {
     // A blanket trailing-"s" drop left "tomatoe"/"potatoe"/"peache", so a food's
     // history split across two buckets and never hit the restock threshold.
