@@ -3,6 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Shared, hoisted mock state (vi.mock is hoisted above imports).
 const h = vi.hoisted(() => ({
   result: { error: null as { message: string } | null },
+  // Rows a `pantryUpdate` .select() reports as matched. Default = 1 matched row;
+  // set to [] to simulate an update that matched nothing (row not created yet).
+  updateData: [{}] as unknown[],
   calls: [] as string[],
 }));
 
@@ -10,7 +13,10 @@ vi.mock('./supabase', () => ({
   supabase: {
     from: (table: string) => ({
       upsert: async () => { h.calls.push(`upsert:${table}`); return h.result; },
-      update: () => ({ eq: async () => { h.calls.push(`update:${table}`); return h.result; } }),
+      update: () => ({ eq: () => ({ select: async () => {
+        h.calls.push(`update:${table}`);
+        return { data: h.result.error ? null : h.updateData, error: h.result.error };
+      } }) }),
       delete: () => ({ eq: async () => { h.calls.push(`delete:${table}`); return h.result; } }),
     }),
   },
@@ -18,7 +24,7 @@ vi.mock('./supabase', () => ({
 
 vi.mock('./debug', () => ({ error: vi.fn(), warn: vi.fn(), log: vi.fn() }));
 
-import { enqueueOutbox, flushOutbox, outboxPending, outboxHasPendingAdd } from './syncOutbox';
+import { enqueueOutbox, flushOutbox, outboxPending, outboxHasPendingAdd, clearOutbox } from './syncOutbox';
 
 // In-memory localStorage (node has none).
 function installLocalStorage() {
@@ -36,6 +42,7 @@ function installLocalStorage() {
 beforeEach(() => {
   installLocalStorage();
   h.result = { error: null };
+  h.updateData = [{}];
   h.calls = [];
 });
 
@@ -112,6 +119,43 @@ describe('syncOutbox', () => {
     await p;
     expect(outboxPending()).toBe(1);
     expect(outboxHasPendingAdd('a2')).toBe(true);
+  });
+
+  it('keeps a pantryUpdate queued when it matches 0 rows (add not yet replayed)', async () => {
+    // The edit's row does not exist server-side yet (its own pantryAdd is still
+    // queued/failing). Supabase returns {error:null} for an update that matches
+    // nothing — treating that as success would silently drop the edit.
+    enqueueOutbox({ kind: 'pantryUpdate', id: 'p1', row: { name: 'Oat Milk' } });
+    h.updateData = []; // .select() reports 0 matched rows
+    await flushOutbox();
+    expect(outboxPending()).toBe(1); // retryable, not dropped
+  });
+
+  it('applies a pantryUpdate once its row exists (>=1 matched row)', async () => {
+    enqueueOutbox({ kind: 'pantryUpdate', id: 'p1', row: { name: 'Oat Milk' } });
+    h.updateData = [{ id: 'p1' }]; // row now exists
+    await flushOutbox();
+    expect(outboxPending()).toBe(0);
+  });
+
+  it('coalesces concurrent flush calls so the second awaits the same in-flight flush', async () => {
+    enqueueOutbox({ kind: 'pantryAdd', row: { id: 'a1', name: 'Milk' } });
+    const p1 = flushOutbox();
+    const p2 = flushOutbox(); // must NOT no-op early — shares the in-flight flush
+    expect(p2).toBe(p1);
+    await Promise.all([p1, p2]);
+    expect(outboxPending()).toBe(0);
+    // exactly one upsert — the second caller didn't start a duplicate flush
+    expect(h.calls.filter(c => c === 'upsert:pantry_items').length).toBe(1);
+  });
+
+  it('does not resurrect queued ops cleared by a concurrent sign-out mid-flush', async () => {
+    enqueueOutbox({ kind: 'wasteLogAdd', row: { id: 'w1', item_name: 'Bread' } });
+    h.result = { error: { message: 'offline' } }; // replay fails → would be re-persisted
+    const p = flushOutbox();  // snapshots [w1], then awaits the failing replay
+    clearOutbox();            // sign-out wipes the queue while the flush is in flight
+    await p;
+    expect(outboxPending()).toBe(0); // stale snapshot discarded, not resurrected
   });
 
   it('preserves a mid-flush write even when an overflow trim shifts indices', async () => {

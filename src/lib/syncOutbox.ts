@@ -85,6 +85,10 @@ export function outboxPending(): number {
  * pending offline writes can't replay under the next account's session.
  */
 export function clearOutbox(): void {
+  // Bump the generation so an in-flight flush knows the queue was cleared out
+  // from under it (sign-out) and must NOT re-persist its stale snapshot —
+  // otherwise the previous account's ops get resurrected after clearOutbox().
+  outboxGeneration++;
   try {
     localStorage.removeItem(OUTBOX_KEY);
   } catch (e) {
@@ -110,9 +114,18 @@ async function replayOp(op: OutboxOp): Promise<boolean> {
       // server-side doesn't fail on a duplicate primary key.
       ({ error } = await supabase.from('pantry_items').upsert(op.row));
       break;
-    case 'pantryUpdate':
-      ({ error } = await supabase.from('pantry_items').update(op.row).eq('id', op.id));
+    case 'pantryUpdate': {
+      // `.select()` so we can tell a real update from a 0-row match. Supabase
+      // returns `{error:null}` when `.update().eq('id',X)` matches NOTHING —
+      // a vacuous success. That happens when this edit's row hasn't been
+      // created server-side yet (its own `pantryAdd` is still queued/failing).
+      // Treating that as success would silently DROP the edit; instead return
+      // false so it stays queued and retries after the add lands.
+      const res = await supabase.from('pantry_items').update(op.row).eq('id', op.id).select();
+      if (!res.error && (!res.data || res.data.length === 0)) return false;
+      error = res.error;
       break;
+    }
     case 'pantryRemove':
       ({ error } = await supabase.from('pantry_items').delete().eq('id', op.id));
       break;
@@ -123,50 +136,70 @@ async function replayOp(op: OutboxOp): Promise<boolean> {
   return !error;
 }
 
-let flushing = false;
+// The promise of the flush currently in flight (null when idle). Concurrent
+// callers AWAIT this same promise instead of returning immediately — the old
+// `if (flushing) return;` resolved a second caller instantly, so a boot/reconnect
+// path that does `await flushOutbox()` then reads+overwrites cloud state could
+// run BEFORE the in-flight flush finished uploading queued offline writes,
+// making an offline add/edit/delete vanish until the next full reload.
+let flushPromise: Promise<void> | null = null;
+// Bumped by clearOutbox(); a flush that sees it change mid-run skips its
+// write-back so a concurrent sign-out can't be undone.
+let outboxGeneration = 0;
+
+async function flushOnce(): Promise<void> {
+  const startGeneration = outboxGeneration;
+  const entries = readOutbox();
+  if (entries.length === 0) return;
+
+  const remaining: OutboxEntry[] = [];
+  for (const entry of entries) {
+    let ok = false;
+    try {
+      ok = await replayOp(entry.op);
+    } catch (e) {
+      debug.error(`[outbox] replay ${entry.op.kind} threw:`, e);
+    }
+    if (ok) continue;
+
+    const attempts = entry.attempts + 1;
+    if (attempts >= MAX_ATTEMPTS) {
+      debug.error(`[outbox] dropping ${entry.op.kind} after ${attempts} failed attempts`);
+      continue;
+    }
+    remaining.push({ ...entry, attempts });
+  }
+
+  // The outbox was cleared mid-flush (sign-out): do NOT re-persist our snapshot,
+  // or we'd resurrect the signed-out account's queued ops.
+  if (outboxGeneration !== startGeneration) {
+    debug.warn('[outbox] cleared during flush — discarding stale snapshot');
+    return;
+  }
+
+  // A write enqueued DURING this flush lands in localStorage but not in our
+  // `entries` snapshot. Identify those appended entries by uid (NOT by array
+  // index): an overflow trim in enqueueOutbox can splice off the oldest
+  // entries mid-flush, which would shift positions and make an index-based
+  // slice preserve the wrong entries or drop valid ones (data loss).
+  const processedUids = new Set(entries.map(e => e.uid));
+  const appendedDuringFlush = readOutbox().filter(e => !processedUids.has(e.uid));
+  writeOutbox([...remaining, ...appendedDuringFlush]);
+  if (remaining.length > 0) {
+    debug.warn(`[outbox] ${remaining.length} operation(s) still pending after flush`);
+  }
+}
 
 /**
  * Replay every queued operation. Successful ops are removed; failed ops keep
  * their place (with an incremented attempt count) and are dropped only after
  * MAX_ATTEMPTS so a permanently-rejected entry can't wedge the queue forever.
- * Safe to call repeatedly and concurrently (guarded).
+ * Safe to call repeatedly and concurrently: concurrent callers share (and await)
+ * the same in-flight flush, so `await flushOutbox()` always resolves only after
+ * the queued writes have actually been pushed.
  */
-export async function flushOutbox(): Promise<void> {
-  if (flushing) return;
-  const entries = readOutbox();
-  if (entries.length === 0) return;
-
-  flushing = true;
-  try {
-    const remaining: OutboxEntry[] = [];
-    for (const entry of entries) {
-      let ok = false;
-      try {
-        ok = await replayOp(entry.op);
-      } catch (e) {
-        debug.error(`[outbox] replay ${entry.op.kind} threw:`, e);
-      }
-      if (ok) continue;
-
-      const attempts = entry.attempts + 1;
-      if (attempts >= MAX_ATTEMPTS) {
-        debug.error(`[outbox] dropping ${entry.op.kind} after ${attempts} failed attempts`);
-        continue;
-      }
-      remaining.push({ ...entry, attempts });
-    }
-    // A write enqueued DURING this flush lands in localStorage but not in our
-    // `entries` snapshot. Identify those appended entries by uid (NOT by array
-    // index): an overflow trim in enqueueOutbox can splice off the oldest
-    // entries mid-flush, which would shift positions and make an index-based
-    // slice preserve the wrong entries or drop valid ones (data loss).
-    const processedUids = new Set(entries.map(e => e.uid));
-    const appendedDuringFlush = readOutbox().filter(e => !processedUids.has(e.uid));
-    writeOutbox([...remaining, ...appendedDuringFlush]);
-    if (remaining.length > 0) {
-      debug.warn(`[outbox] ${remaining.length} operation(s) still pending after flush`);
-    }
-  } finally {
-    flushing = false;
-  }
+export function flushOutbox(): Promise<void> {
+  if (flushPromise) return flushPromise;
+  flushPromise = flushOnce().finally(() => { flushPromise = null; });
+  return flushPromise;
 }
