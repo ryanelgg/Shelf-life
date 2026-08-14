@@ -117,6 +117,11 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   const scannedRef = useRef(false);
   const onScanRef = useRef(onScan);
   useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+  // The decode callback closes over the initial render (empty deps), so mirror
+  // the "add unknown product" flag into a ref it can read live.
+  const addingProductRef = useRef(false);
+  // The post-"not found" re-arm timer, tracked so we can cancel it on unmount.
+  const rearmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cameraAvailable = !!(navigator.mediaDevices?.getUserMedia);
 
@@ -132,6 +137,8 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
   const [addBrand, setAddBrand] = useState('');
   const [addCategory, setAddCategory] = useState<FoodCategory>('Other');
   const [addSubmitting, setAddSubmitting] = useState(false);
+
+  useEffect(() => { addingProductRef.current = addingProduct; }, [addingProduct]);
 
   const emitScan = (product: ScannedProduct) => { onScanRef.current(product); };
 
@@ -172,7 +179,9 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
     v.setAttribute('webkit-playsinline', 'true');
 
     reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
-      if (scannedRef.current) return;
+      // Ignore new frames while a scan is being handled OR the "teach Avo"
+      // add-product form is open (a barcode still in frame must not fire then).
+      if (scannedRef.current || addingProductRef.current) return;
       if (err instanceof NotFoundException) return;
       if (err || !result) return;
 
@@ -183,7 +192,13 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
         emitScan(product);
       } else {
         handleNotFound(result.getText());
-        setTimeout(() => { scannedRef.current = false; }, 1500);
+        // Re-arm after a beat so the user can try another item — but never while
+        // the add-product form is open, and track the timer so it's cancelled on
+        // unmount (it would otherwise fire into a torn-down component).
+        rearmTimerRef.current = setTimeout(() => {
+          rearmTimerRef.current = null;
+          if (!addingProductRef.current) scannedRef.current = false;
+        }, 1500);
       }
     }).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : 'Camera error';
@@ -192,7 +207,10 @@ export function BarcodeScanner({ onScan, onClose }: Props) {
       setStatus('error');
     });
 
-    return () => { BrowserMultiFormatReader.releaseAllStreams(); };
+    return () => {
+      if (rearmTimerRef.current) { clearTimeout(rearmTimerRef.current); rearmTimerRef.current = null; }
+      BrowserMultiFormatReader.releaseAllStreams();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

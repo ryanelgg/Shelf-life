@@ -176,6 +176,11 @@ export function AddItemScreen() {
   const [unit, setUnit] = useState('pcs');
   const [value, setValue] = useState('');
   const [customDays, setCustomDays] = useState('');
+  // Set by a suggestion's onMouseDown (which fires before the input's onBlur) so
+  // onBlur can skip its recompute. Without this, onBlur runs with the stale
+  // pre-click closure (customDays still '' , name still the partial typed text)
+  // and overwrites the shelf-life the suggestion just filled in.
+  const suggestionPickedRef = useRef(false);
   // null = follow the category's safety-first default; set = user override.
   useEffect(() => {
     void preloadCoreDatabase();
@@ -600,6 +605,12 @@ export function AddItemScreen() {
                 }}
                 onBlur={() => {
                   setShowSuggestions(false);
+                  // A suggestion was just tapped — it already set the correct
+                  // name/category/shelf-life; don't recompute from stale values.
+                  if (suggestionPickedRef.current) {
+                    suggestionPickedRef.current = false;
+                    return;
+                  }
                   if (!customDays) {
                     applySuggestedShelfLifeDays(name, location, category);
                   }
@@ -640,6 +651,9 @@ export function AddItemScreen() {
                     <button
                       key={i}
                       onMouseDown={() => {
+                        // Mark that a suggestion is being applied so the input's
+                        // onBlur (which fires right after) skips its recompute.
+                        suggestionPickedRef.current = true;
                         hapticLight();
                         setName(s.name);
                         setCategory(s.category);
