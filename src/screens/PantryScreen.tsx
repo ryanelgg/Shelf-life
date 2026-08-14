@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTimeouts } from '../lib/useTimeouts';
 import posthog from 'posthog-js';
 import { AvocadoMascot, type AvoMood } from '../components/AvocadoMascot';
@@ -135,6 +135,14 @@ export function PantryScreen() {
   const [bitingId, setBitingId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'expiration' | 'name' | 'category'>('expiration');
   const scheduleTimeout = useTimeouts();
+  // Pending "eaten" finalizers (deferred behind the ~430ms bite animation). If
+  // the screen unmounts first — e.g. the user switches tabs — useTimeouts clears
+  // the timer and the log+removal would be lost, so we flush them on unmount.
+  const pendingEatenRef = useRef<Set<() => void>>(new Set());
+  useEffect(() => {
+    const pending = pendingEatenRef.current;
+    return () => { pending.forEach(run => run()); pending.clear(); };
+  }, []);
   const [listAnimKey, setListAnimKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterBubbleKey, setFilterBubbleKey] = useState(0);
@@ -201,7 +209,15 @@ export function PantryScreen() {
     if (action === 'eaten') {
       // Play the "bite" exit first, then log + remove (matches the CSS 430ms).
       setBitingId(item.id);
-      scheduleTimeout(finish, 430);
+      // Wrap so it runs at most once (timer OR unmount-flush, never both) and
+      // deregisters itself.
+      const run = () => {
+        if (!pendingEatenRef.current.has(run)) return;
+        pendingEatenRef.current.delete(run);
+        finish();
+      };
+      pendingEatenRef.current.add(run);
+      scheduleTimeout(run, 430);
       return;
     }
     finish();
