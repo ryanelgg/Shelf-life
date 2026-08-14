@@ -55,7 +55,10 @@ Deno.serve(async (request) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
+        // A long receipt can exceed 1024 output tokens; when it did the JSON
+        // array was cut off (no closing "]"), the parse failed, and the user was
+        // charged a scan credit for zero items. Give the list room to complete.
+        max_tokens: 4096,
         messages: [{
           role: 'user',
           content: [
@@ -78,13 +81,34 @@ Deno.serve(async (request) => {
     }
     const result = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
+      stop_reason?: string;
     };
+    // Truncated response: the list was cut off, so any JSON we could scrape is
+    // incomplete. Refund the credit and tell the user rather than silently
+    // returning a partial/empty list they paid for.
+    if (result.stop_reason === 'max_tokens') {
+      await refundAiUsage(guard.userId, 'receipt-ocr');
+      console.error('[receipt-ocr] response truncated (max_tokens)');
+      return json({ error: 'That receipt was too long to read in one go. Try scanning it in sections.' }, { status: 502 });
+    }
     const text = result.content?.find(b => b.type === 'text')?.text?.trim() ?? '[]';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      return json({ items: [] });
+      // No parseable array at all — a malformed response, not a legitimate empty
+      // result (the model returns "[]" for "no items"). Refund so a garbled
+      // response doesn't cost a scan credit.
+      await refundAiUsage(guard.userId, 'receipt-ocr');
+      console.error('[receipt-ocr] no JSON array in response');
+      return json({ error: 'Receipt scan had trouble. Please try again.' }, { status: 502 });
     }
-    const items = JSON.parse(jsonMatch[0]) as Array<{ name: string; price: number }>;
+    const parsed = JSON.parse(jsonMatch[0]) as Array<{ name?: unknown; price?: unknown }>;
+    // Keep only well-formed rows; coerce price to a non-negative number.
+    const items = (Array.isArray(parsed) ? parsed : [])
+      .filter(it => it && typeof it.name === 'string' && it.name.trim())
+      .map(it => ({
+        name: (it.name as string).trim(),
+        price: typeof it.price === 'number' && isFinite(it.price) && it.price >= 0 ? it.price : 0,
+      }));
     return json({ items });
   } catch (error) {
     Sentry.captureException(error);
