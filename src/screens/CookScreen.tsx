@@ -42,14 +42,22 @@ export function CookScreen() {
   const isProUser = user?.subscriptionTier === 'pro';
   const trialActive = user ? isAvoTrialActive(user) : false;
   const trialDaysLeft = user ? avoTrialDaysLeft(user) : 0;
+  // A free user who has NEVER started the trial is trial-eligible: their first
+  // send lazily starts the 7-day trial (see incrementAvoChat). We surface the
+  // trial allowance up front so the counter doesn't read "5/5 free" and then
+  // jump to "trial · 19 today" the instant they send their first message.
+  const trialEligible = !!user && !isProUser && !user.avoTrialStartedAt;
   // Pro users and users inside their 7-day trial both get the daily allowance;
   // free users past the trial fall back to the lifetime allotment.
   const hasProAccess = isProUser || trialActive;
+  // What the user effectively gets for the counter display (trial-eligible users
+  // will be on the trial the moment they send).
+  const effectiveProAccess = hasProAccess || trialEligible;
   const today = formatLocalDate(new Date());
-  const chatsUsed = hasProAccess
+  const chatsUsed = effectiveProAccess
     ? (user?.avoChatResetDate === today ? (user?.avoChatCount ?? 0) : 0)
     : (user?.avoFreeChatsUsed ?? 0);
-  const chatLimit = hasProAccess ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
+  const chatLimit = effectiveProAccess ? FREE_LIMITS.proChatPerDay : FREE_LIMITS.avoChatTotal;
   const chatsRemaining = chatLimit - chatsUsed;
   // Chips are dead when AI is off (declined) — disable them so a tap isn't a
   // silent no-op. (When consent is null the consent modal is covering the screen.)
@@ -127,6 +135,12 @@ export function CookScreen() {
       : '';
     const userContent = trimmed + pantryContext;
 
+    // Snapshot the history BEFORE adding this turn so a failed request can roll
+    // it back (see the catch). Otherwise the unanswered user turn lingers in
+    // historyRef and is re-sent as context on every later message — and if the
+    // backend enforced strict role alternation it would wedge the conversation.
+    const historyBeforeSend = historyRef.current;
+
     // Append to history
     historyRef.current = [
       ...historyRef.current,
@@ -160,6 +174,11 @@ export function CookScreen() {
       debug.error('[Avo chat error]', err);
       // Rollback the chat credit since the request failed
       decrementAvoChat(chargedBucket);
+      // Drop the failed user turn from the AI history so it isn't re-sent as
+      // context (or, on a strict-alternation backend, doesn't stack two user
+      // turns and break the next message).
+      historyRef.current = historyBeforeSend;
+      setAvoSessionHistory(historyRef.current);
       const status = (err as { status?: number })?.status;
       const friendly = (err as { friendly?: boolean })?.friendly;
       const errorMsg = friendly
@@ -230,6 +249,10 @@ export function CookScreen() {
             {trialActive
               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   <SparkleIcon size={12} /> Avo trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left · {chatsRemaining} chats today
+                </span>
+              : trialEligible
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <SparkleIcon size={12} /> {chatsRemaining} chats/day · 7-day Avo trial
                 </span>
               : `${chatsRemaining}/${FREE_LIMITS.avoChatTotal} free chats`}
           </div>

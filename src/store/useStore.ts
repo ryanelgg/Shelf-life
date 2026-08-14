@@ -487,17 +487,36 @@ export const useStore = create<ShelfLifeStore>()(
       decrementAvoChat: (bucket: AvoBucket): void => {
         const s = useStore.getState();
         if (!s.user) return;
+        const today = formatLocalDate(new Date());
         // Refund the exact counter that was charged for THIS request (passed in
         // by the caller), not whichever bucket the user's status maps to now —
         // the two can differ if Pro/trial status flipped between charging and
         // refunding, which would otherwise silently drain a free chat.
-        const nextUser = bucket === 'pro'
+        let nextUser = bucket === 'pro'
           ? { ...s.user, avoChatCount: Math.max(0, s.user.avoChatCount - 1) }
           : { ...s.user, avoFreeChatsUsed: Math.max(0, (s.user.avoFreeChatsUsed ?? 0) - 1) };
+
+        // If this refund was for the user's very FIRST chat — the one that
+        // lazily started the 7-day trial — un-start the trial too. Otherwise a
+        // failed first message silently burns a trial day (incrementAvoChat
+        // stamps avoTrialStartedAt, but the count-only refund left it stamped).
+        // Uniquely identified by: free tier, trial stamped today, and the
+        // refund brought today's count back to 0 (so it WAS the first chat).
+        const startedTrialToday = bucket === 'pro'
+          && s.user.subscriptionTier !== 'pro'
+          && s.user.avoTrialStartedAt === today
+          && s.user.avoChatResetDate === today
+          && nextUser.avoChatCount === 0;
+        if (startedTrialToday) {
+          nextUser = { ...nextUser, avoTrialStartedAt: null };
+        }
+
         set({ user: nextUser });
         if (s.supabaseUserId) {
           syncProfileUpdates(s.supabaseUserId, bucket === 'pro'
-            ? { avo_chat_count: nextUser.avoChatCount }
+            ? (startedTrialToday
+                ? { avo_chat_count: nextUser.avoChatCount, avo_trial_started_at: null }
+                : { avo_chat_count: nextUser.avoChatCount })
             : { avo_free_chats_used: nextUser.avoFreeChatsUsed },
           ).catch(debug.error);
         }
