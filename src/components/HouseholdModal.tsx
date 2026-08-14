@@ -10,6 +10,7 @@ import {
   getHouseholdMembers,
 } from '../lib/households';
 import { loadAllData } from '../lib/supabaseSync';
+import { flushOutbox } from '../lib/syncOutbox';
 import * as debug from '../lib/debug';
 
 
@@ -66,6 +67,11 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const reloadPantry = async (householdId: string | null) => {
     if (!supabaseUserId) return;
     try {
+      // Drain queued offline writes UP before reading the cloud snapshot DOWN,
+      // or an un-synced offline edit is overwritten out of the UI until the next
+      // flush/restart. Mirrors the App boot (App.tsx) and realtime-reconnect
+      // (householdRealtime.ts) reload paths, which flush for the same reason.
+      await flushOutbox();
       const { pantryItems, wasteLogs } = await loadAllData(supabaseUserId, householdId);
       loadCloudData(pantryItems, wasteLogs);
     } catch (e) {
