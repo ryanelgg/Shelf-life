@@ -150,6 +150,19 @@ function isCancelledAuthError(error: unknown): boolean {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 let googleSignInInFlight = false;
+let googleGuardHandle: { remove: () => void } | null = null;
+let googleGuardTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Clear the Google sign-in in-flight guard (and its listener/fallback timer).
+ * Call on a successful SIGNED_IN so a flow whose `browserFinished` event never
+ * arrives can't leave every later "Sign in with Google" tap a silent no-op.
+ */
+export function resetGoogleSignInGuard() {
+  googleSignInInFlight = false;
+  if (googleGuardTimer) { clearTimeout(googleGuardTimer); googleGuardTimer = null; }
+  if (googleGuardHandle) { void googleGuardHandle.remove(); googleGuardHandle = null; }
+}
 
 export async function signInWithGoogle() {
   if (googleSignInInFlight) return;
@@ -170,13 +183,17 @@ export async function signInWithGoogle() {
         // dismissed (success deep-link OR user cancel), not on a fixed timer.
         // A real OAuth flow can take far longer than the old 2s reset, which
         // let a second tap start a duplicate flow.
-        const handle = await Browser.addListener('browserFinished', () => {
-          googleSignInInFlight = false;
-          void handle.remove();
+        googleGuardHandle = await Browser.addListener('browserFinished', () => {
+          resetGoogleSignInGuard();
         });
+        // Fallback: if browserFinished never fires (a missed foreground/background
+        // edge on the system auth sheet), don't wedge sign-in for the whole
+        // session — clear the guard after a generous window. A successful
+        // SIGNED_IN clears it sooner via resetGoogleSignInGuard().
+        googleGuardTimer = setTimeout(() => { resetGoogleSignInGuard(); }, 120_000);
         await Browser.open({ url: data.url, presentationStyle: 'popover' });
       } else {
-        googleSignInInFlight = false;
+        resetGoogleSignInGuard();
       }
     } else {
       // Web: the page navigates away to the provider, tearing down this JS
@@ -187,7 +204,7 @@ export async function signInWithGoogle() {
       });
     }
   } catch (e) {
-    googleSignInInFlight = false;
+    resetGoogleSignInGuard();
     if (!isCancelledAuthError(e)) {
       debug.error('signInWithGoogle error:', e);
       throw e;

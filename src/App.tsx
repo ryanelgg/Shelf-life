@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
-import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag } from './lib/supabaseSync';
+import { loadProfile, loadAllData, flushOutbox, wasSignOutUserInitiated, clearUserInitiatedSignOutFlag, resetGoogleSignInGuard } from './lib/supabaseSync';
 import { getMyHousehold } from './lib/households';
 import { subscribeHousehold, unsubscribeHousehold } from './lib/householdRealtime';
 import { publishWidgetData } from './lib/widget';
@@ -290,6 +290,12 @@ export default function App() {
         return;
       }
       if (!session?.user) return;
+
+      // A session with a user means the OAuth round-trip landed — clear the
+      // Google sign-in guard here too, in case the in-app browser's
+      // `browserFinished` event never fired (which would otherwise wedge every
+      // later "Sign in with Google" tap for the rest of the session).
+      resetGoogleSignInGuard();
 
       const sbUser = session.user;
       setSupabaseUserId(sbUser.id);
