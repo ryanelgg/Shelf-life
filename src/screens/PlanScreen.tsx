@@ -15,6 +15,7 @@ import { AvoConsentModal } from '../components/AvoConsentModal';
 import { predictRestocks } from '../lib/shoppingRadar';
 import { meetsDiet, nameAllowedByDiet } from '../lib/dietFilter';
 import { isPantryStaple } from '../lib/pantryStaples';
+import { FEATURE_FLAGS } from '../lib/featureFlags';
 import type { FoodCategory, ShoppingItem, Recipe, PantryItem, DietaryPref, MealPlanDay } from '../types';
 
 // ── SVG icon helpers ────────────────────────────────────────────────────────
@@ -614,6 +615,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
   }, [generateAvoMealPlan, recipes, browseRecipes, pantryItems, activeDiets, addShoppingList, setMealPlanAutopilotWeek]);
 
   useEffect(() => {
+    if (!FEATURE_FLAGS.mealPlanAutopilot) return; // held for launch
     if (autopilotRanRef.current) return;
     if (!isPro() || !mealPlanAutopilot) return;
     // Only auto-fire an AI call once the user has granted Avo AI consent.
@@ -1025,7 +1027,8 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
               </div>
             )}
 
-            {/* Meal-Plan Autopilot — hands-free weekly plan + shopping list */}
+            {/* Meal-Plan Autopilot — hands-free weekly plan + shopping list. Held for launch (featureFlags). */}
+            {FEATURE_FLAGS.mealPlanAutopilot && (<>
             <button
               onClick={() => {
                 if (mealPlanAutopilot) {
@@ -1069,6 +1072,7 @@ Rules: meal names must be 3-5 words, pantryItems = how many pantry items used, t
                 {autopilotNote}
               </div>
             )}
+            </>)}
           </div>
         )}
 

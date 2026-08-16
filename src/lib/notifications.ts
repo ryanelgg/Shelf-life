@@ -2,6 +2,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import type { PantryItem } from '../types';
 import * as debug from './debug';
+import { FEATURE_FLAGS } from './featureFlags';
 
 // ── Avo's voice — friendly Duolingo energy ──────────────────────────────────
 //
@@ -299,6 +300,12 @@ export async function rescheduleItemNotifications(item: PantryItem, userName?: s
 
 export async function scheduleStreakProtection(streakDays: number, userName?: string | null): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
+  // Held for launch (see featureFlags). Cancel any prior one so flipping the
+  // flag off cleans up, then stop — only expiry reminders schedule.
+  if (!FEATURE_FLAGS.engagementNotifications) {
+    await cancelStreakProtection();
+    return;
+  }
   if (streakDays < 1) {
     await cancelStreakProtection();
     return;
@@ -332,6 +339,7 @@ export async function cancelStreakProtection(): Promise<void> {
 
 export async function celebrateStreakMilestone(streakDays: number): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
+  if (!FEATURE_FLAGS.engagementNotifications) return; // held for launch
   const builder = STREAK_MILESTONES[streakDays];
   if (!builder) return;
   try {
@@ -355,7 +363,9 @@ export async function celebrateStreakMilestone(streakDays: number): Promise<void
 export async function scheduleReEngagement(userName?: string | null): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
+    // Held for launch: cancel any prior one and stop scheduling new nudges.
     await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.reEngagement }] });
+    if (!FEATURE_FLAGS.engagementNotifications) return;
     const copy = pickRandom(RE_ENGAGEMENT)(firstName(userName));
     await LocalNotifications.schedule({
       notifications: [{
@@ -375,7 +385,9 @@ export async function scheduleReEngagement(userName?: string | null): Promise<vo
 export async function scheduleRecipeNudge(userName?: string | null): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
+    // Held for launch: cancel any prior one and stop scheduling new nudges.
     await LocalNotifications.cancel({ notifications: [{ id: ENGAGEMENT_IDS.recipeNudge }] });
+    if (!FEATURE_FLAGS.engagementNotifications) return;
     const copy = pickRandom(RECIPE_NUDGE)(firstName(userName));
     await LocalNotifications.schedule({
       notifications: [{
