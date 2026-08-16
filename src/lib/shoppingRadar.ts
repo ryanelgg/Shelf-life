@@ -41,7 +41,6 @@ export interface RestockPrediction {
   predictedRunOutDate: string; // YYYY-MM-DD
   daysUntilRunOut: number;     // negative = overdue
   confidence: 'high' | 'medium' | 'low';
-  inPantry: boolean;           // still have unexpired stock on hand
 }
 
 // Stems of common foods whose singular ends in "-ie" (so the "-ies" plural must
@@ -146,6 +145,12 @@ export function predictRestocks(
 
   const predictions: RestockPrediction[] = [];
   for (const agg of map.values()) {
+    // Don't suggest restocking something you currently have unexpired on hand.
+    // A prediction is about running OUT; if a fresh unit is still in the pantry,
+    // the run-out clock hasn't really started, so surfacing it (and auto-adding
+    // it to the shopping list) just nags about a staple you already have.
+    if (agg.freshInPantry) continue;
+
     const dates = [...agg.dates].sort();
     if (dates.length < RADAR_MIN_EVENTS) continue;
 
@@ -183,7 +188,6 @@ export function predictRestocks(
       predictedRunOutDate,
       daysUntilRunOut,
       confidence,
-      inPantry: agg.freshInPantry,
     });
   }
 

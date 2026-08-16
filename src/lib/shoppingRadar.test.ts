@@ -80,6 +80,25 @@ describe('predictRestocks', () => {
     expect(preds.find(p => p.key === 'milk')).toBeFalsy();
   });
 
+  it('suppresses a due staple when a fresh unit is still in the pantry', () => {
+    // Milk is due per cadence (last consumed 2026-07-08, ~7-day interval → run-out
+    // 2026-07-15, i.e. 1 day out), so on cadence alone it WOULD be predicted. But
+    // a still-unexpired carton is on hand (added 2026-07-02, before the last waste
+    // so it doesn't reset the clock; expires 2026-07-20 ≥ today). You already have
+    // it, so Radar must not suggest restocking it.
+    const logs = [
+      waste('Milk', '2026-06-10'),
+      waste('Milk', '2026-06-17'),
+      waste('Milk', '2026-06-24'),
+      waste('Milk', '2026-07-01'),
+      waste('Milk', '2026-07-08'),
+    ];
+    const fresh = [pantry('Milk', '2026-07-02', '2026-07-20')];
+    // Without the fresh unit it is predicted; with it, it is suppressed.
+    expect(predictRestocks([], logs, TODAY).find(p => p.key === 'milk')).toBeTruthy();
+    expect(predictRestocks(fresh, logs, TODAY).find(p => p.key === 'milk')).toBeFalsy();
+  });
+
   it('surfaces an overdue staple with a negative daysUntilRunOut', () => {
     const logs = [
       waste('Eggs', '2026-06-01'),
