@@ -226,6 +226,35 @@ describe('meetsDiet — mussels block shellfish diets (regression: singular esca
   });
 });
 
+describe('meetsDiet — extended blocklists (gluten grains + non-obvious animal foods)', () => {
+  it('blocks additional gluten grains for gluten-free users', () => {
+    // Seitan is pure wheat gluten; spelt/farro/bulgur/semolina/orzo are wheat.
+    expect(meetsDiet(recipe('Seitan'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Spelt flour'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Farro'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Bulgur'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Semolina'), GF)).toBe(false);
+    expect(meetsDiet(recipe('Orzo'), GF)).toBe(false);
+    // shopping-list gate rejects them too
+    expect(nameAllowedByDiet('Orzo', GF)).toBe(false);
+  });
+
+  it('blocks non-obvious animal foods for vegetarians AND vegans', () => {
+    for (const food of ['Duck', 'Veal', 'Venison', 'Bison', 'Gelatin', 'Lard']) {
+      expect(meetsDiet(recipe(food), VEGETARIAN)).toBe(false);
+      expect(meetsDiet(recipe(food), VEGAN)).toBe(false);
+    }
+    expect(nameAllowedByDiet('Gelatin', VEGAN)).toBe(false);
+  });
+
+  it('keeps the whole-word guards — must NOT block innocent substrings', () => {
+    // \b guards mean the new terms can't hide these look-alikes.
+    expect(meetsDiet(recipe('Reveal'), VEGAN)).toBe(true);          // contains "veal"
+    expect(meetsDiet(recipe('Mallard sauce'), VEGETARIAN)).toBe(true); // contains "lard"
+    expect(meetsDiet(recipe('Duckweed'), VEGAN)).toBe(true);         // fused, no boundary
+  });
+});
+
 describe('nameAllowedByDiet — single shopping-list item names', () => {
   it('rejects plural allergen item names', () => {
     expect(nameAllowedByDiet('Walnuts', NUT_FREE)).toBe(false);
