@@ -80,6 +80,18 @@ describe('predictRestocks', () => {
     expect(preds.find(p => p.key === 'milk')).toBeFalsy();
   });
 
+  it('suppresses a due staple you still have unexpired on hand (no duplicate buy)', () => {
+    // Rice bought on a ~10-day cadence so the cadence says it is due, but there
+    // is still an unexpired bag in the pantry (shelf-stable, expires far out).
+    // Radar must not put it on the restock list — you'd buy a duplicate.
+    const logs = [waste('Rice', '2026-05-31'), waste('Rice', '2026-06-10'), waste('Rice', '2026-06-20')];
+    const fresh = [pantry('Rice', '2026-06-20', '2026-12-31')]; // still unexpired as of TODAY
+    expect(predictRestocks(fresh, logs, TODAY).find(p => p.key === 'rice')).toBeFalsy();
+    // …but with no unexpired stock on hand (already used up), it comes back.
+    const gone = [pantry('Rice', '2026-06-20', '2026-07-01')]; // expired before TODAY
+    expect(predictRestocks(gone, logs, TODAY).find(p => p.key === 'rice')).toBeTruthy();
+  });
+
   it('surfaces an overdue staple with a negative daysUntilRunOut', () => {
     const logs = [
       waste('Eggs', '2026-06-01'),

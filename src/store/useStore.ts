@@ -71,7 +71,6 @@ interface ShelfLifeStore {
   addPantryItem: (item: PantryItem, method?: 'barcode' | 'manual' | 'receipt' | 'voice') => void;
   updatePantryItem: (id: string, updates: Partial<PantryItem>) => void;
   removePantryItem: (id: string) => void;
-  clearPantry: () => void;
   // Realtime: apply a change pushed by another household member. These only
   // mutate local state (idempotent, no write-back to Supabase) so they never
   // echo into a sync loop.
@@ -290,16 +289,6 @@ export const useStore = create<ShelfLifeStore>()(
         // A member removed a shared item — drop its reminders on this device too.
         void cancelItemNotifications(id);
       },
-      clearPantry: () => {
-        // Cancel only the per-item expiry reminders for the items being cleared
-        // — NOT cancelAllNotifications, which would also wipe the streak-
-        // protection, re-engagement, recipe-nudge and milestone reminders.
-        // Emptying the pantry shouldn't tear down the engagement schedule.
-        const { pantryItems } = useStore.getState();
-        set({ pantryItems: [] });
-        for (const item of pantryItems) void cancelItemNotifications(item.id);
-      },
-
       addWasteLog: (log) => {
         const { supabaseUserId, household } = useStore.getState();
         // Attribute the entry to its author so the household leaderboard can
