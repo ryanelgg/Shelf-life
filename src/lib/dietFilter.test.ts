@@ -238,3 +238,33 @@ describe('nameAllowedByDiet — single shopping-list item names', () => {
     expect(nameAllowedByDiet('Buckwheat', GF)).toBe(true);
   });
 });
+
+describe('meetsDiet — additional gluten grains blocked for gluten-free (regression: omitted)', () => {
+  it('blocks seitan, spelt, farro, bulgur, semolina and orzo (all wheat/gluten)', () => {
+    for (const g of ['Seitan', 'Spelt', 'Farro', 'Bulgur', 'Semolina', 'Orzo']) {
+      expect(meetsDiet(recipe(g), GF)).toBe(false);
+    }
+  });
+
+  it('does not hit innocent words that merely contain a grain substring', () => {
+    // \b guards: "revealed" must not trip "veal"; these carry no blocked whole word.
+    expect(meetsDiet(recipe('Revealed sauce'), GF)).toBe(true);
+    expect(meetsDiet(recipe('Corn'), GF)).toBe(true);
+  });
+});
+
+describe('meetsDiet — additional animal foods blocked for vegetarian/vegan (regression: omitted)', () => {
+  it('blocks duck, veal, venison, bison, gelatin and lard for both diets', () => {
+    for (const a of ['Duck', 'Veal', 'Venison', 'Bison', 'Gelatin', 'Lard']) {
+      expect(meetsDiet(recipe(a), VEGETARIAN)).toBe(false);
+      expect(meetsDiet(recipe(a), VEGAN)).toBe(false);
+    }
+  });
+
+  it('does not hit innocent words containing an animal-term substring', () => {
+    // "reveal" ⊃ "veal", "mallard" ⊃ "lard"/"ard", "larder" ⊃ "lard" — \b keeps them safe.
+    expect(meetsDiet(recipe('Reveal'), VEGETARIAN)).toBe(true);
+    expect(meetsDiet(recipe('Mallard-free broth'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Larder staples'), VEGAN)).toBe(true);
+  });
+});
