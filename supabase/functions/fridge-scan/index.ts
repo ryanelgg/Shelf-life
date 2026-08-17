@@ -1,5 +1,5 @@
 import * as Sentry from "https://deno.land/x/sentry/index.mjs";
-import { corsHeaders, json, guardAiRequest, refundAiUsage } from '../_shared/aiGuard.ts';
+import { corsHeaders, json, guardAiRequest, refundAiUsage, parseImageInput } from '../_shared/aiGuard.ts';
 
 const DAILY_LIMIT = 40;
 
@@ -38,15 +38,13 @@ Deno.serve(async (request) => {
       await refundAiUsage(guard.userId, 'fridge-scan');
       return json({ error: 'No image provided' }, { status: 400 });
     }
-    let mediaType = 'image/jpeg';
-    let base64Data = image;
-    if (image.startsWith('data:')) {
-      const match = image.match(/^data:(image\/\w+);base64,(.+)$/);
-      if (match) {
-        mediaType = match[1];
-        base64Data = match[2];
-      }
+    const img = parseImageInput(image);
+    if (!img.ok) {
+      // Pre-provider validation (bad format / oversized) — no billed call made, so refund.
+      await refundAiUsage(guard.userId, 'fridge-scan');
+      return json({ error: img.error }, { status: img.status });
     }
+    const { mediaType, base64Data } = img;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

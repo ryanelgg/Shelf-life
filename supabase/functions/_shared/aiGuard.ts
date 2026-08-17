@@ -80,6 +80,52 @@ export async function guardAiRequest(
   return { ok: true, userId };
 }
 
+// Media types the Anthropic vision API accepts. A data: URL that declares
+// anything else (e.g. image/svg+xml) is rejected before we spend a provider call.
+const ANTHROPIC_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+// Cap the decoded image at roughly 5 MB (base64 is ~4/3 the byte size). Bounds
+// the per-call cost and stops an oversized payload being forwarded to Anthropic.
+const MAX_IMAGE_BASE64 = 7_000_000;
+
+export type ImageParseResult =
+  | { ok: true; mediaType: string; base64Data: string }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Validate + normalize a client-supplied scan image (raw base64, or a data: URL)
+ * before it is sent to the vision model. Tolerant of data: URLs whose base64 body
+ * is line-wrapped (newlines) — the previous strict full-string regex silently
+ * failed on those and forwarded the whole `data:` prefix, which 400s upstream and
+ * wasted a provider round-trip. Enforces an accepted media type and a size cap.
+ * All failures here are pre-provider (un-billed), so the caller should refund.
+ */
+export function parseImageInput(image: string): ImageParseResult {
+  let mediaType = 'image/jpeg';
+  let data = image;
+  if (image.startsWith('data:')) {
+    const comma = image.indexOf(',');
+    if (comma === -1) {
+      return { ok: false, error: 'That image could not be read. Please try again.', status: 400 };
+    }
+    const typeMatch = image.slice(5, comma).match(/^([\w.+-]+\/[\w.+-]+)/);
+    if (typeMatch) mediaType = typeMatch[1].toLowerCase();
+    data = image.slice(comma + 1);
+  }
+  // Drop any whitespace/newlines a wrapping encoder inserted into the base64 body.
+  data = data.replace(/\s+/g, '');
+  if (!data) {
+    return { ok: false, error: 'No image provided', status: 400 };
+  }
+  if (!ANTHROPIC_IMAGE_TYPES.has(mediaType)) {
+    return { ok: false, error: 'That image format is not supported. Use a JPEG or PNG photo.', status: 400 };
+  }
+  if (data.length > MAX_IMAGE_BASE64) {
+    return { ok: false, error: 'That image is too large — try a smaller or lower-resolution photo.', status: 413 };
+  }
+  return { ok: true, mediaType, base64Data: data };
+}
+
 /**
  * Refund one counted use when the downstream provider call fails, so a user
  * isn't charged against their daily ceiling for a request that never produced a
