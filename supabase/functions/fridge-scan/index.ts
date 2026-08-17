@@ -82,21 +82,20 @@ Deno.serve(async (request) => {
       content?: Array<{ type: string; text?: string }>;
       stop_reason?: string;
     };
-    // Truncated response: the list was cut off, so any JSON we could scrape is
-    // incomplete. Refund the credit and tell the user rather than silently
-    // returning a partial/empty list they paid for.
+    // Truncated response: the list was cut off. This was a real, BILLED provider
+    // call, so it counts against the daily scan cap — do NOT refund (a user who
+    // reliably forces truncation could otherwise make unlimited billed calls
+    // without ever hitting the ceiling). Still tell the user rather than
+    // returning a partial list.
     if (result.stop_reason === 'max_tokens') {
-      await refundAiUsage(guard.userId, 'fridge-scan');
       console.error('[fridge-scan] response truncated (max_tokens)');
       return json({ error: 'That was a lot to look at — try scanning one shelf at a time.' }, { status: 502 });
     }
     const text = result.content?.find(b => b.type === 'text')?.text?.trim() ?? '[]';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      // No parseable array at all — a malformed response, not a legitimate empty
-      // result (the model returns "[]" for "no items"). Refund so a garbled
-      // response doesn't cost a scan credit.
-      await refundAiUsage(guard.userId, 'fridge-scan');
+      // No parseable array at all — a garbled but BILLED response. Same reasoning
+      // as the max_tokens path: it counts against the cap, so no refund.
       console.error('[fridge-scan] no JSON array in response');
       return json({ error: 'Fridge scan had trouble. Please try again.' }, { status: 502 });
     }
