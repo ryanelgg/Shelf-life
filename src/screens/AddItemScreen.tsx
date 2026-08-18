@@ -1166,6 +1166,7 @@ export function AddItemScreen() {
                   </div>
                   <button
                     onClick={() => setReceiptItems(prev => prev.filter(row => row.id !== item.id))}
+                    aria-label={`Remove ${item.name || 'item'}`}
                     style={{
                       marginTop: '21px',
                       width: 32,

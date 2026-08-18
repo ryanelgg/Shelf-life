@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from './Card';
 import { useStore } from '../store/useStore';
 import { HOUSEHOLD_MAX_MEMBERS } from '../types';
@@ -62,6 +62,12 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   }, [household]);
 
   useEffect(() => { void refreshMembers(); }, [refreshMembers]);
+
+  // Track the "Copied!" reset timer so tearing the modal down within its 1.5s
+  // window can't fire setCopied on an unmounted component (mirrors the toast/
+  // close-timer cleanup pattern used across the app's screens).
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); }, []);
 
   // After joining/creating/leaving, reload the now-current pantry (shared or solo).
   const reloadPantry = async (householdId: string | null) => {
@@ -128,7 +134,8 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     try {
       await navigator.clipboard.writeText(household.inviteCode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // clipboard may be unavailable; the code is shown on screen regardless
     }

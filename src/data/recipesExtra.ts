@@ -1117,7 +1117,7 @@ export const EXTRA_RECIPES: Recipe[] = [
       'Layer lettuce, herbs, noodles, shrimp; roll tightly burrito-style.',
       'Whisk peanut butter, hoisin, and water for dip.',
     ],
-    savingsEstimate: 7, tags: ['lunch', 'dinner', 'healthy', 'gluten-free'] },
+    savingsEstimate: 7, tags: ['lunch', 'dinner', 'healthy'] },
 
   { id: 'br126', name: 'Lentil Soup', description: 'Earthy lentil soup with carrots, celery, and warm spices.', matchedItemIds: [], missingIngredients: [], cookTime: 40, difficulty: 'easy', servings: 6,
     ingredients: [

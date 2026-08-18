@@ -907,12 +907,14 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
     const progressInterval = 30;
     let elapsed = 0;
 
+    let doneTimer: ReturnType<typeof setTimeout> | undefined;
+
     const progressTimer = setInterval(() => {
       elapsed += progressInterval;
       setProgress(Math.min(100, (elapsed / totalDuration) * 100));
       if (elapsed >= totalDuration) {
         clearInterval(progressTimer);
-        setTimeout(() => onDoneRef.current(), 400);
+        doneTimer = setTimeout(() => onDoneRef.current(), 400);
       }
     }, progressInterval);
 
@@ -924,7 +926,7 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
       });
     }, msgInterval);
 
-    return () => { clearInterval(progressTimer); clearInterval(msgTimer); };
+    return () => { clearInterval(progressTimer); clearInterval(msgTimer); if (doneTimer) clearTimeout(doneTimer); };
   }, []);
 
   return (

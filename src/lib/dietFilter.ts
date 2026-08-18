@@ -9,6 +9,7 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam',
     'mussel', 'halibut', 'trout', 'mahi', 'catfish',
+    'fish', 'squid', 'calamari', 'octopus', 'herring', 'mackerel', 'prawn',
     'duck', 'veal', 'venison', 'bison', 'gelatin', 'lard',
   ],
   vegan: [
@@ -16,6 +17,7 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'bacon', 'ham', 'sausage', 'anchovy', 'prosciutto', 'pancetta', 'steak',
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'halibut', 'trout', 'mahi', 'catfish',
+    'fish', 'squid', 'calamari', 'octopus', 'herring', 'mackerel', 'prawn',
     'duck', 'veal', 'venison', 'bison', 'gelatin', 'lard',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
     'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
@@ -26,6 +28,7 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'wheat', 'barley', 'rye', 'couscous', 'noodle', 'tortilla', 'pita',
     'crouton', 'panko', 'udon', 'ramen',
     'seitan', 'spelt', 'farro', 'bulgur', 'semolina', 'orzo',
+    'hoisin', 'teriyaki', 'malt', 'graham', 'pretzel',
   ],
   'dairy-free': [
     'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',

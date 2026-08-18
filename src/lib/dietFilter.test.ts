@@ -253,6 +253,43 @@ describe('meetsDiet — additional gluten grains blocked for gluten-free (regres
   });
 });
 
+describe('meetsDiet — hoisin sauce is NOT gluten-free (regression: br125 mistagged)', () => {
+  it('blocks hoisin sauce for gluten-free (standard hoisin is thickened with wheat)', () => {
+    expect(meetsDiet(recipe('Hoisin sauce', 'Rice paper wrappers'), GF)).toBe(false);
+    // the shopping-list gate must not add hoisin to a celiac user's list
+    expect(nameAllowedByDiet('Hoisin sauce', GF)).toBe(false);
+  });
+
+  it('blocks other common wheat-based items for gluten-free', () => {
+    for (const g of ['Teriyaki sauce', 'Malt vinegar', 'Graham crackers', 'Pretzels']) {
+      expect(meetsDiet(recipe(g), GF)).toBe(false);
+    }
+  });
+
+  it('keeps whole-word guards — innocent lookalikes stay allowed', () => {
+    expect(meetsDiet(recipe('Malted-free bar'), GF)).toBe(true); // "malted" is not "malt"
+  });
+});
+
+describe('meetsDiet — additional seafood blocked for vegetarian/vegan (regression: omitted)', () => {
+  it('blocks fish/squid/calamari/octopus/herring/mackerel/prawn for both diets', () => {
+    for (const s of ['Fish', 'Squid', 'Calamari', 'Octopus', 'Herring', 'Mackerel', 'Prawn']) {
+      expect(meetsDiet(recipe(s), VEGETARIAN)).toBe(false);
+      expect(meetsDiet(recipe(s), VEGAN)).toBe(false);
+    }
+    // shopping-list gate rejects them too
+    expect(nameAllowedByDiet('Prawns', VEGAN)).toBe(false);
+  });
+
+  it('keeps whole-word guards — fused/lookalike words stay put', () => {
+    // \bfish\b needs a boundary the fused word denies, so "fisherman" is unaffected.
+    expect(meetsDiet(recipe('Fisherman salad greens'), VEGAN)).toBe(true);
+    // "oyster" was deliberately NOT added to the blocklist: it would hide vegan
+    // oyster mushrooms, so they stay allowed.
+    expect(meetsDiet(recipe('Oyster mushroom'), VEGAN)).toBe(true);
+  });
+});
+
 describe('meetsDiet — additional animal foods blocked for vegetarian/vegan (regression: omitted)', () => {
   it('blocks duck, veal, venison, bison, gelatin and lard for both diets', () => {
     for (const a of ['Duck', 'Veal', 'Venison', 'Bison', 'Gelatin', 'Lard']) {
