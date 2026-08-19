@@ -226,6 +226,7 @@ export const useStore = create<ShelfLifeStore>()(
           mealPlanAutopilotWeek: null,
           notificationsEnabled: null,
           hasSeenTutorial: false,
+          reviewPrompted: false,
         });
         void cancelAllNotifications();
       },

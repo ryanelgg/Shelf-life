@@ -132,3 +132,24 @@ describe('parseVoiceItems weekday false-matches (regression)', () => {
     expect(items[0].expirationDate).toBeUndefined();
   });
 });
+
+describe('parseVoiceItems name integrity (regression: name corruption)', () => {
+  it('keeps "half and half" as one item, not "Half" + "Half"', () => {
+    const items = parseVoiceItems('add half and half', TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].name.toLowerCase()).toBe('half and half');
+  });
+
+  it('does not drop load-bearing "extra"/"fresh" from product names', () => {
+    // "extra" was filler → "extra virgin olive oil" became "Virgin Olive Oil".
+    expect(parseVoiceItems('add extra virgin olive oil', TODAY)[0].name.toLowerCase())
+      .toBe('extra virgin olive oil');
+    expect(parseVoiceItems('add fresh mozzarella', TODAY)[0].name.toLowerCase())
+      .toBe('fresh mozzarella');
+  });
+
+  it('still splits a genuine two-item "X and Y" utterance', () => {
+    const items = parseVoiceItems('add milk and eggs', TODAY);
+    expect(items).toHaveLength(2);
+  });
+});

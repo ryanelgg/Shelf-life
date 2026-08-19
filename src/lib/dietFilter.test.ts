@@ -268,3 +268,26 @@ describe('meetsDiet — additional animal foods blocked for vegetarian/vegan (re
     expect(meetsDiet(recipe('Larder staples'), VEGAN)).toBe(true);
   });
 });
+
+describe('meetsDiet — half-and-half spelled with spaces (regression: canonical key uses spaces)', () => {
+  // The app's canonical spelling (shelfLife.ts key, receipt/voice output) is the
+  // SPACE form "half and half"; the blocklist previously only had the hyphenated
+  // spelling, so the space form leaked past vegan/dairy-free as "safe".
+  it('blocks "half and half" (spaces) for vegan and dairy-free', () => {
+    expect(meetsDiet(recipe('Half and half'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half and half'), ['dairy-free'])).toBe(false);
+    expect(nameAllowedByDiet('Half and half', VEGAN)).toBe(false); // shopping-list gate
+  });
+
+  it('still blocks the hyphenated spelling', () => {
+    expect(meetsDiet(recipe('Half-and-half'), ['dairy-free'])).toBe(false);
+  });
+});
+
+describe('meetsDiet — "creamed" dishes are dairy (regression: \\bcream\\b missed "creamed")', () => {
+  it('blocks creamed spinach / creamed corn for vegan and dairy-free', () => {
+    expect(meetsDiet(recipe('Creamed spinach'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Creamed corn'), ['dairy-free'])).toBe(false);
+    expect(nameAllowedByDiet('Creamed spinach', ['dairy-free'])).toBe(false);
+  });
+});

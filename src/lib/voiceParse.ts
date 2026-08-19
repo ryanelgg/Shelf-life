@@ -52,7 +52,12 @@ const UNITS: Record<string, string> = {
 
 // Filler we strip from the start of an utterance and from inside item names.
 const LEAD_COMMANDS = /^(?:hey\s+avo[,\s]+)?(?:please\s+)?(?:can you\s+)?(?:add|put|log|track|i(?:'ve| have)?\s+(?:just\s+)?(?:bought|got|have|need|grabbed|picked up))\s+/i;
-const NAME_FILLER = new Set(['of', 'some', 'the', 'my', 'a', 'an', 'fresh', 'more', 'extra']);
+// Only true articles/quantifiers are stripped from item names. 'fresh', 'more',
+// and 'extra' were removed: they are load-bearing in real product names
+// ("extra virgin olive oil", "fresh mozzarella") and stripping them corrupted
+// the stored name. Keeping them ("Extra Milk") stays faithful to what the user
+// said and is the safer failure mode.
+const NAME_FILLER = new Set(['of', 'some', 'the', 'my', 'a', 'an']);
 
 // Foods whose name contains "and" — we must NOT split these into two items.
 const COMPOUND_FOODS = [
@@ -60,6 +65,7 @@ const COMPOUND_FOODS = [
   'peanut butter and jelly', 'rice and beans', 'bread and butter', 'fish and chips',
   'cookies and cream', 'biscuits and gravy', 'oil and vinegar', 'ham and cheese',
   'spaghetti and meatballs', 'bangers and mash', 'surf and turf', 'sweet and sour',
+  'half and half',
 ];
 // Placeholder that survives the comma/"and" split; restored before naming.
 const AND_TOKEN = 'ANDJOIN';

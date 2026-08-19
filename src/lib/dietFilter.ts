@@ -19,7 +19,8 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'duck', 'veal', 'venison', 'bison', 'gelatin', 'lard',
     'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
     'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
-    'honey', 'ghee', 'whey', 'half-and-half', 'sour cream',
+    'honey', 'ghee', 'whey', 'half-and-half', 'half and half', 'creamed',
+    'sour cream',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -30,7 +31,7 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
   'dairy-free': [
     'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
     'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
-    'half-and-half', 'sour cream',
+    'half-and-half', 'half and half', 'creamed', 'sour cream',
   ],
   'nut-free': [
     'almond', 'walnut', 'pecan', 'cashew', 'peanut', 'pistachio', 'hazelnut',
