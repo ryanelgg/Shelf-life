@@ -268,3 +268,33 @@ describe('meetsDiet — additional animal foods blocked for vegetarian/vegan (re
     expect(meetsDiet(recipe('Larder staples'), VEGAN)).toBe(true);
   });
 });
+
+describe('meetsDiet — "half and half" (space form) + "creamed" dishes are dairy (regression: leaked as safe)', () => {
+  const DAIRY_FREE: DietaryPref[] = ['dairy-free'];
+
+  it('blocks the canonical space spelling "half and half" that shelfLife.ts uses', () => {
+    // The blocklist previously only had the hyphenated "half-and-half", but the
+    // app's canonical key (src/data/shelfLife.ts) is the space form, so a real
+    // dairy item slipped past vegan and dairy-free as "safe".
+    expect(meetsDiet(recipe('Half and half'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half and half'), DAIRY_FREE)).toBe(false);
+    expect(nameAllowedByDiet('Half and half', DAIRY_FREE)).toBe(false);
+  });
+
+  it('still blocks the hyphenated "half-and-half"', () => {
+    expect(meetsDiet(recipe('Half-and-half'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Half-and-half'), DAIRY_FREE)).toBe(false);
+  });
+
+  it('blocks "creamed" dishes (\\bcream\\b never matched "creamed")', () => {
+    expect(meetsDiet(recipe('Creamed spinach'), VEGAN)).toBe(false);
+    expect(meetsDiet(recipe('Creamed corn'), DAIRY_FREE)).toBe(false);
+    expect(nameAllowedByDiet('Creamed spinach', VEGAN)).toBe(false);
+  });
+
+  it('does NOT hide "creamed coconut" — a vegan/dairy-free coconut product', () => {
+    expect(meetsDiet(recipe('Creamed coconut'), VEGAN)).toBe(true);
+    expect(meetsDiet(recipe('Creamed coconut', 'Rice'), DAIRY_FREE)).toBe(true);
+    expect(nameAllowedByDiet('Creamed coconut', VEGAN)).toBe(true);
+  });
+});
