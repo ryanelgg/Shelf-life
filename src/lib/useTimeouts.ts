@@ -18,6 +18,12 @@ export function useTimeouts(): (fn: () => void, ms: number) => void {
     timers.current = [];
   }, []);
   return (fn, ms) => {
-    timers.current.push(window.setTimeout(fn, ms));
+    const id = window.setTimeout(() => {
+      // Drop this id once it fires so the tracking array doesn't grow unbounded
+      // on a long-lived screen that schedules many transient toasts/badges.
+      timers.current = timers.current.filter(t => t !== id);
+      fn();
+    }, ms);
+    timers.current.push(id);
   };
 }

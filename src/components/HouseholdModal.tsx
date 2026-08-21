@@ -11,6 +11,7 @@ import {
 } from '../lib/households';
 import { loadAllData } from '../lib/supabaseSync';
 import { flushOutbox } from '../lib/syncOutbox';
+import { useTimeouts } from '../lib/useTimeouts';
 import * as debug from '../lib/debug';
 
 
@@ -51,6 +52,7 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const schedule = useTimeouts();
 
   const refreshMembers = useCallback(async () => {
     if (!household) return;
@@ -128,7 +130,7 @@ export function HouseholdModal({ onClose }: HouseholdModalProps) {
     try {
       await navigator.clipboard.writeText(household.inviteCode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      schedule(() => setCopied(false), 1500);
     } catch {
       // clipboard may be unavailable; the code is shown on screen regardless
     }

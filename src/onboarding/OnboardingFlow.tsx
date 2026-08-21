@@ -900,6 +900,7 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
   const [progress, setProgress] = useState(0);
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+  const doneTimer = useRef<number | null>(null);
 
   useEffect(() => {
     const totalDuration = 4000;
@@ -912,7 +913,7 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
       setProgress(Math.min(100, (elapsed / totalDuration) * 100));
       if (elapsed >= totalDuration) {
         clearInterval(progressTimer);
-        setTimeout(() => onDoneRef.current(), 400);
+        doneTimer.current = window.setTimeout(() => onDoneRef.current(), 400);
       }
     }, progressInterval);
 
@@ -924,7 +925,11 @@ function SetupAnimation({ name, onDone }: { name: string; onDone: () => void }) 
       });
     }, msgInterval);
 
-    return () => { clearInterval(progressTimer); clearInterval(msgTimer); };
+    return () => {
+      clearInterval(progressTimer);
+      clearInterval(msgTimer);
+      if (doneTimer.current) clearTimeout(doneTimer.current);
+    };
   }, []);
 
   return (
