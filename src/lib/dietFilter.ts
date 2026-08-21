@@ -17,9 +17,9 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'cod', 'tilapia', 'crab', 'lobster', 'sardine', 'scallop', 'clam', 'mussel',
     'halibut', 'trout', 'mahi', 'catfish',
     'duck', 'veal', 'venison', 'bison', 'gelatin', 'lard',
-    'egg', 'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan',
+    'egg', 'milk', 'buttermilk', 'butter', 'cream', 'creamed', 'cheese', 'parmesan',
     'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
-    'honey', 'ghee', 'whey', 'half-and-half', 'sour cream',
+    'honey', 'ghee', 'whey', 'half-and-half', 'half and half', 'sour cream',
   ],
   'gluten-free': [
     'spaghetti', 'pasta', 'flour', 'bread', 'breadcrumb', 'soy sauce',
@@ -28,9 +28,9 @@ export const DIET_BLOCKLIST: Record<string, string[]> = {
     'seitan', 'spelt', 'farro', 'bulgur', 'semolina', 'orzo',
   ],
   'dairy-free': [
-    'milk', 'buttermilk', 'butter', 'cream', 'cheese', 'parmesan', 'mozzarella',
-    'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt', 'ghee', 'whey',
-    'half-and-half', 'sour cream',
+    'milk', 'buttermilk', 'butter', 'cream', 'creamed', 'cheese', 'parmesan',
+    'mozzarella', 'cheddar', 'feta', 'brie', 'ricotta', 'mascarpone', 'yogurt',
+    'ghee', 'whey', 'half-and-half', 'half and half', 'sour cream',
   ],
   'nut-free': [
     'almond', 'walnut', 'pecan', 'cashew', 'peanut', 'pistachio', 'hazelnut',
@@ -86,6 +86,11 @@ const BUTTER_FOOD = /\bbutter[-\s]+(lettuce|bean|beans)\b/gi;
 // "Cream of tartar" is a vegan/dairy-free leavening acid, not a dairy cream.
 const CREAM_OF_TARTAR = /\bcream\s+of\s+tartar\b/gi;
 
+// "Creamed coconut" is a pressed-coconut product (vegan/dairy-free), not dairy —
+// drop the leading "creamed" so the new `creamed` dairy term can't hide it,
+// while "creamed spinach"/"creamed corn" (which contain dairy) stay blocked.
+const CREAMED_COCONUT = /\bcreamed\s+coconut\b/gi;
+
 // Naturally gluten-free noodles carry the bare blocklist word "noodle" but are
 // GF-safe. Drop "noodle", keep the qualifier (rice/glass/… — no diet blocks it).
 // Wheat/egg/udon/ramen noodles are NOT listed here, so they stay blocked.
@@ -108,6 +113,7 @@ function scrubDietFalsePositives(text: string): string {
   return text
     .replace(BUTTER_FOOD, '$1')
     .replace(CREAM_OF_TARTAR, 'tartar')
+    .replace(CREAMED_COCONUT, 'coconut')
     .replace(GF_NOODLE, '$1')
     .replace(GF_CORN_TORTILLA, 'corn')
     .replace(GF_TAMARI, 'tamari')
